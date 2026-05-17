@@ -1,0 +1,9 @@
+defaultSystem: margherita-pizza
+
+services:
+  dough-service: margherita-pizza
+  tomato-sauce-api: margherita-pizza
+  mozzarella-service: margherita-pizza
+  crispy-coating-api: fried-chicken
+  brine-service: fried-chicken
+  frying-controller: fried-chicken

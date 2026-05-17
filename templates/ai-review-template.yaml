@@ -1,0 +1,413 @@
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  MRInspect — Reusable AI Code Review Template                           │
+# │                                                                         │
+# │  Two parallel review layers, each posts its own MR comment:            │
+# │                                                                         │
+# │  Layer 1 · mrinspect     Go binary — calls Claude / Gemini / OpenAI     │
+# │                           profile-based prompts from projects/           │
+# │                                                                         │
+# │  Layer 2 · superpowers   Claude Code CLI + superpowers plugin           │
+# │                           /code-review, /security-review,               │
+# │                           /pr-review-toolkit:review-pr                  │
+# │                                                                         │
+# │  Both jobs are allow_failure: true — neither can block a merge.        │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# HOW TO INCLUDE IN YOUR REPO
+# ─────────────────────────────
+# Add to your .gitlab-ci.yml:
+#
+#   include:
+#     - project: 'your-group/mrinspect'
+#       ref: main
+#       file: 'templates/ai-review-template.yaml'
+#
+#   # Minimal usage — extend one or both layers:
+#   ai-review-mrinspect:
+#     extends: .mrinspect-go-review
+#     variables:
+#       TARGET_SERVICE_NAME: my-service     # maps to projects/registry.yaml
+#       TARGET_SERVICE_TYPE: backend        # backend | frontend | ai | iac
+#
+#   ai-review-superpowers:
+#     extends: .superpowers-review
+#     variables:
+#       TARGET_SERVICE_NAME: my-service
+#       TARGET_SERVICE_TYPE: backend
+#
+#   # Or use the convenience wrapper to run both at once:
+#   ai-review:
+#     extends: .mrinspect-full
+#     variables:
+#       TARGET_SERVICE_NAME: my-service
+#       TARGET_SERVICE_TYPE: backend
+#
+# ─────────────────────────────
+# REQUIRED CI/CD VARIABLES (set in GitLab → Settings → CI/CD → Variables)
+#
+#   AI_PROVIDER_KEY    API key for the AI provider selected in AI_PROVIDER
+#                      (Gemini key by default; Anthropic or OpenAI key for other providers)
+#   ANTHROPIC_API_KEY  Anthropic key — required by Claude Code / superpowers layer
+#   GITLAB_TOKEN       GitLab personal/project access token with api + write_repository scope
+#
+# ─────────────────────────────
+# LOCAL / MANUAL DEV USAGE
+#
+#   # Layer 1 — mrinspect binary
+#   AI_PROVIDER_KEY=xxx \
+#   GITLAB_TOKEN=xxx \
+#   CI_PROJECT_ID=123 \
+#   CI_MERGE_REQUEST_IID=45 \
+#     ./bin/mrinspect
+#
+#   # Layer 2 — superpowers skills (requires Claude Code installed locally)
+#   claude /plugin install superpowers@claude-plugins-official && claude /reload-plugins
+#   claude --print "Run /code-review:code-review for MR !45 in project 123. GITLAB_TOKEN=xxx"
+#   claude --print "Run /security-review for MR !45. GITLAB_TOKEN=xxx"
+#   claude --print "Run /pr-review-toolkit:review-pr for MR !45. GITLAB_TOKEN=xxx"
+
+stages:
+  - ai-review
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYER 1 — mrinspect (Go binary)
+#
+# What it does:
+#   1. Reads CI env vars to detect local-MR vs cross-repo trigger mode
+#   2. Resolves TARGET_SERVICE_NAME → system profile via projects/registry.yaml
+#   3. Loads YAML + Markdown review docs for the matched system
+#   4. Composes a profile-aware prompt (falls back to legacy template if no profile)
+#   5. Calls the configured AI provider with retry + exponential backoff
+#   6. Optionally runs a self-reflection second pass (IS_SELF_REFLECTION=true)
+#   7. Posts the review as an MR note via GitLab API
+#   8. Saves run metrics to mrinspect-metrics.json artifact
+# ══════════════════════════════════════════════════════════════════════════════
+.mrinspect-go-review:
+  stage: ai-review
+  # Image contains the compiled mrinspect binary and the projects/ directory.
+  # Build your own with: docker build -t registry.example.com/mrinspect:latest .
+  image: registry.example.com/mrinspect:latest
+  script:
+    - |
+      # ── Debug: show available variables ───────────────────────────────────
+      echo "🔧 DEBUG: Environment Variable Check"
+      echo "   CI_PIPELINE_SOURCE:      ${CI_PIPELINE_SOURCE:-<not set>}"
+      echo "   CI_PROJECT_ID:           ${CI_PROJECT_ID:-<not set>}"
+      echo "   CI_MERGE_REQUEST_IID:    ${CI_MERGE_REQUEST_IID:-<not set>}"
+      echo "   CI_COMMIT_REF_NAME:      ${CI_COMMIT_REF_NAME:-<not set>}"
+      echo "   TARGET_SERVICE_NAME:     ${TARGET_SERVICE_NAME:-<not set>}"
+      echo "   TARGET_SERVICE_TYPE:     ${TARGET_SERVICE_TYPE:-<not set>}"
+      echo "   AI_PROVIDER:             ${AI_PROVIDER:-<not set>}"
+      echo "   AI_PROVIDER_KEY:         $([ -n "$AI_PROVIDER_KEY" ] && echo "<set>" || echo "<NOT SET>")"
+      echo "   GITLAB_TOKEN:            $([ -n "$GITLAB_TOKEN" ] && echo "<set>" || echo "<NOT SET>")"
+      echo ""
+      # ── Validate required variables ────────────────────────────────────────
+      echo "🔍 Validating required environment variables..."
+      if [ -z "$AI_PROVIDER_KEY" ]; then
+        echo ""
+        echo "❌ CRITICAL ERROR: AI_PROVIDER_KEY is missing!"
+        echo "   Add it in GitLab → Settings → CI/CD → Variables"
+        echo "🚫 AI Review ABORTED - Missing required key"
+        exit 1
+      fi
+      if [ -z "$GITLAB_TOKEN" ]; then
+        echo ""
+        echo "❌ CRITICAL ERROR: GITLAB_TOKEN is missing!"
+        echo "   Add it in GitLab → Settings → CI/CD → Variables"
+        echo "🚫 AI Review ABORTED - Missing required token"
+        exit 1
+      fi
+      if [ "$CI_PIPELINE_SOURCE" = "trigger" ]; then
+        if [ -z "$TARGET_PROJECT_ID" ] || [ -z "$TARGET_MR_IID" ]; then
+          echo ""
+          echo "❌ CRITICAL ERROR: Cross-repo trigger mode requires TARGET_PROJECT_ID and TARGET_MR_IID"
+          echo "🚫 AI Review ABORTED - Missing trigger variables"
+          exit 1
+        fi
+      else
+        if [ -z "$CI_PROJECT_ID" ] || [ -z "$CI_MERGE_REQUEST_IID" ]; then
+          echo ""
+          echo "❌ CRITICAL ERROR: CI_PROJECT_ID and CI_MERGE_REQUEST_IID must be set"
+          echo "   These are auto-set by GitLab on merge_request_event pipelines."
+          echo "🚫 AI Review ABORTED - Missing CI variables"
+          exit 1
+        fi
+      fi
+      echo "✅ All required variables are present"
+    - mrinspect
+  variables:
+    # ── Provider (anthropic | gemini | openai) ─────────────────────────────
+    AI_PROVIDER: gemini
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY       # Gemini / Anthropic / OpenAI key
+
+    # ── GitLab authentication ─────────────────────────────────────────────
+    GITLAB_TOKEN: $GITLAB_TOKEN
+
+    # ── Service identity — override in consuming repo ─────────────────────
+    # TARGET_SERVICE_NAME must match a key in projects/registry.yaml.
+    # If not found, the default system profile (margherita-pizza) is used.
+    TARGET_SERVICE_NAME: unknown
+    TARGET_SERVICE_TYPE: backend            # backend | frontend | ai | iac
+
+    # ── Optional: second AI validation pass ───────────────────────────────
+    IS_SELF_REFLECTION: "false"             # set "true" to enable
+
+    # ── Profile directory inside the mrinspect Docker image ───────────────
+    PROJECTS_DIR: /app/projects
+
+    # ── Cross-repo trigger variables ──────────────────────────────────────
+    # These are forwarded automatically by GitLab when another repo triggers
+    # this pipeline via the trigger API. You do not need to set them manually
+    # for GitLab MR pipelines (CI_PIPELINE_SOURCE == "merge_request_event").
+    #
+    # TARGET_PROJECT_ID:  $TARGET_PROJECT_ID
+    # TARGET_MR_IID:      $TARGET_MR_IID
+    # SOURCE_BRANCH:      $SOURCE_BRANCH
+    # TARGET_BRANCH:      $TARGET_BRANCH
+    # TARGET_REPO_URL:    $TARGET_REPO_URL   (optional)
+  artifacts:
+    paths:
+      - mrinspect-metrics.json
+    when: always
+    expire_in: 7 days
+  allow_failure: true
+  rules:
+    # Automatic on every MR event
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    # Triggered by another repository's pipeline
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    # Manual run from GitLab UI or local dev
+    - when: manual
+      allow_failure: true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYER 1b — TypeScript script runner (no Go binary required)
+#
+# Drop-in alternative to .mrinspect-go-review that runs TypeScript directly via
+# `tsx` — no compile step.  Uses the same projects/ directory and env vars as
+# the Go binary, with support for all three AI providers (anthropic/gemini/openai).
+#
+# Usage: extend this hidden job instead of .mrinspect-go-review:
+#
+#   my-ts-review:
+#     extends: .mrinspect-ts-review
+#     variables:
+#       TARGET_SERVICE_NAME: my-service
+#       AI_PROVIDER: anthropic
+# ══════════════════════════════════════════════════════════════════════════════
+.mrinspect-ts-review:
+  stage: ai-review
+  image: node:22
+  before_script:
+    - npm install --frozen-lockfile --quiet
+  script:
+    - npx tsx review.ts
+  variables:
+    PROJECTS_DIR: ./projects
+  artifacts:
+    paths:
+      - mrinspect-metrics.json
+    when: always
+    expire_in: 7 days
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - when: manual
+      allow_failure: true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYER 2 — superpowers (Claude Code CLI + superpowers plugin)
+#
+# What it does:
+#   Runs three skills sequentially; each posts its own MR comment:
+#
+#   Skill 1 · /code-review:code-review
+#     Full PR review: logic bugs, style, conventions, performance.
+#     Output format: findings table + verdict (LGTM / Needs Changes).
+#
+#   Skill 2 · /security-review
+#     OWASP Top 10 scan, secrets exposure check, dependency CVEs,
+#     injection vectors, auth bypass risks.
+#
+#   Skill 3 · /pr-review-toolkit:review-pr
+#     Dispatches five parallel sub-agents and aggregates their output:
+#       • code-reviewer         style, conventions, logic bugs
+#       • type-design-analyzer  type encapsulation & invariant expression
+#       • silent-failure-hunter swallowed errors, bad fallback behaviour
+#       • comment-analyzer      comment accuracy & documentation rot
+#       • pr-test-analyzer      test coverage gaps & missing edge cases
+#
+# Image choice:
+#   node:22 (Debian-based) is used because:
+#     • git is pre-installed — no extra install step
+#     • no native module compatibility issues (unlike alpine's musl libc)
+#   For faster pipelines, replace with a custom image that pre-installs
+#   @anthropic-ai/claude-code and the superpowers plugin:
+#     image: registry.example.com/claude-code-superpowers:latest
+# ══════════════════════════════════════════════════════════════════════════════
+.superpowers-review:
+  stage: ai-review
+  # node:22 — git pre-installed, glibc compatible, no extra apk/apt step needed.
+  # To speed up pipelines: build a custom image with claude-code + superpowers
+  # pre-installed and set image: registry.example.com/claude-code-superpowers:latest
+  image: node:22
+  before_script:
+    - npm install -g @anthropic-ai/claude-code --quiet
+    - claude /plugin install superpowers@claude-plugins-official
+    - claude /reload-plugins
+  script:
+    - |
+      # ── Debug: show available variables ───────────────────────────────────
+      echo "🔧 DEBUG: Environment Variable Check"
+      echo "   CI_PIPELINE_SOURCE:      ${CI_PIPELINE_SOURCE:-<not set>}"
+      echo "   CI_PROJECT_ID:           ${CI_PROJECT_ID:-<not set>}"
+      echo "   CI_MERGE_REQUEST_IID:    ${CI_MERGE_REQUEST_IID:-<not set>}"
+      echo "   CI_COMMIT_REF_NAME:      ${CI_COMMIT_REF_NAME:-<not set>}"
+      echo "   TARGET_SERVICE_NAME:     ${TARGET_SERVICE_NAME:-<not set>}"
+      echo "   TARGET_SERVICE_TYPE:     ${TARGET_SERVICE_TYPE:-<not set>}"
+      echo "   ANTHROPIC_API_KEY:       $([ -n "$ANTHROPIC_API_KEY" ] && echo "<set>" || echo "<NOT SET>")"
+      echo "   GITLAB_TOKEN:            $([ -n "$GITLAB_TOKEN" ] && echo "<set>" || echo "<NOT SET>")"
+      echo ""
+      # ── Validate required variables ────────────────────────────────────────
+      echo "🔍 Validating required environment variables..."
+      if [ -z "$ANTHROPIC_API_KEY" ]; then
+        echo ""
+        echo "❌ CRITICAL ERROR: ANTHROPIC_API_KEY is missing!"
+        echo "   Add it in GitLab → Settings → CI/CD → Variables"
+        echo "🚫 AI Review ABORTED - Missing required key"
+        exit 1
+      fi
+      if [ -z "$GITLAB_TOKEN" ]; then
+        echo ""
+        echo "❌ CRITICAL ERROR: GITLAB_TOKEN is missing!"
+        echo "   Add it in GitLab → Settings → CI/CD → Variables"
+        echo "🚫 AI Review ABORTED - Missing required token"
+        exit 1
+      fi
+      if [ -z "$CI_PROJECT_ID" ] || [ -z "$CI_MERGE_REQUEST_IID" ]; then
+        echo ""
+        echo "❌ CRITICAL ERROR: CI_PROJECT_ID and CI_MERGE_REQUEST_IID must be set"
+        echo "   These are auto-set by GitLab on merge_request_event pipelines."
+        echo "🚫 AI Review ABORTED - Missing CI variables"
+        exit 1
+      fi
+      echo "✅ All required variables are present"
+
+    # ── Skill 1: Full code review ──────────────────────────────────────────
+    - |
+      claude --print "
+        Use the /code-review:code-review skill to review MR !${CI_MERGE_REQUEST_IID}
+        in GitLab project ${CI_PROJECT_ID}.
+        Service: ${TARGET_SERVICE_NAME} (${TARGET_SERVICE_TYPE}).
+        After generating the review, post it as an MR note:
+          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
+          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
+      "
+
+    # ── Skill 2: Security review ───────────────────────────────────────────
+    - |
+      claude --print "
+        Use the /security-review skill on MR !${CI_MERGE_REQUEST_IID}
+        in project ${CI_PROJECT_ID}.
+        Focus on: OWASP Top 10, secrets/credentials exposure, dependency CVEs,
+        SQL/command injection, authentication bypass.
+        Post findings as an MR note:
+          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
+          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
+      "
+
+    # ── Skill 3: Multi-agent PR review toolkit ─────────────────────────────
+    - |
+      claude --print "
+        Use the /pr-review-toolkit:review-pr skill on MR !${CI_MERGE_REQUEST_IID}
+        in project ${CI_PROJECT_ID}.
+        Dispatch all sub-agents in parallel:
+          • code-reviewer         — style, conventions, logic bugs
+          • type-design-analyzer  — type safety, encapsulation, invariants
+          • silent-failure-hunter — swallowed errors, unsafe fallbacks
+          • comment-analyzer      — comment accuracy, documentation rot
+          • pr-test-analyzer      — test coverage gaps, missing edge cases
+        Aggregate all sub-agent findings into a single consolidated comment and post it:
+          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
+          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
+      "
+  variables:
+    # Claude Code requires an Anthropic key regardless of which AI_PROVIDER
+    # the mrinspect layer uses.
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+
+    # Service context forwarded to skills as prompt context
+    TARGET_SERVICE_NAME: unknown
+    TARGET_SERVICE_TYPE: backend
+
+    # GitLab CI auto-populated — no need to set manually
+    CI_PROJECT_ID: $CI_PROJECT_ID
+    CI_MERGE_REQUEST_IID: $CI_MERGE_REQUEST_IID
+    CI_API_V4_URL: $CI_API_V4_URL
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - when: manual
+      allow_failure: true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CONVENIENCE WRAPPER — runs both layers in parallel under one job name
+#
+# Usage in consuming repo:
+#
+#   ai-review:
+#     extends: .mrinspect-full
+#     variables:
+#       TARGET_SERVICE_NAME: my-service
+#       TARGET_SERVICE_TYPE: backend
+# ══════════════════════════════════════════════════════════════════════════════
+.mrinspect-full:
+  stage: ai-review
+  parallel:
+    matrix:
+      - REVIEW_LAYER: [mrinspect, superpowers]
+  image:
+    name: $([[ "$REVIEW_LAYER" == "mrinspect" ]] && echo "registry.example.com/mrinspect:latest" || echo "node:22")
+  before_script:
+    - |
+      if [ "$REVIEW_LAYER" = "superpowers" ]; then
+        npm install -g @anthropic-ai/claude-code --quiet
+        claude /plugin install superpowers@claude-plugins-official
+        claude /reload-plugins
+      fi
+  script:
+    - |
+      if [ "$REVIEW_LAYER" = "mrinspect" ]; then
+        mrinspect
+      else
+        claude --print "
+          Run /code-review:code-review, /security-review, and
+          /pr-review-toolkit:review-pr for MR !${CI_MERGE_REQUEST_IID}
+          in project ${CI_PROJECT_ID}.
+          Post each result as a separate MR note using GITLAB_TOKEN.
+          Service: ${TARGET_SERVICE_NAME} (${TARGET_SERVICE_TYPE}).
+        "
+      fi
+  variables:
+    AI_PROVIDER: gemini
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+    TARGET_SERVICE_NAME: unknown
+    TARGET_SERVICE_TYPE: backend
+    IS_SELF_REFLECTION: "false"
+    PROJECTS_DIR: /app/projects
+  artifacts:
+    paths:
+      - mrinspect-metrics.json
+    when: always
+    expire_in: 7 days
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - when: manual
+      allow_failure: true

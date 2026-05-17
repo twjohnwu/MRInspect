@@ -1,0 +1,15 @@
+name: Margherita Pizza
+description: >
+  The Margherita Pizza system manages the classic three-ingredient pipeline:
+  fresh dough preparation, San Marzano tomato sauce processing, and
+  fresh mozzarella distribution. Services communicate via REST APIs
+  and share a PostgreSQL database for ingredient inventory.
+defaultServiceType: backend
+frameworks:
+  - Go
+  - PostgreSQL
+  - Redis
+  - gRPC
+serviceTypeOverrides:
+  pizza-portal: frontend
+  ingredient-dashboard: frontend

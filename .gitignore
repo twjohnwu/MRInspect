@@ -1,0 +1,28 @@
+# Build output
+bin/
+dist-scripts/
+
+# Node.js
+node_modules/
+
+# Local env file — never commit secrets
+.env
+
+# Test artifacts
+mrinspect-metrics.json
+*.test
+*.out
+coverage/
+
+# macOS
+.DS_Store
+
+# LLM
+AGENTS.local.md
+CLAUDE.local.md
+.claude/*
+.cursor/*
+.opencode/*
+.serena/*
+.specify/*
+specs/*

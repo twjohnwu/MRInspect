@@ -1,0 +1,29 @@
+stages:
+  - test
+  - ai-review
+
+test:
+  stage: test
+  image: golang:1.23-alpine
+  script:
+    - go build ./...
+    - go test -count=1 ./...
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+mrinspect:
+  stage: ai-review
+  image: registry.example.com/mrinspect:latest
+  script:
+    - mrinspect
+  variables:
+    AI_PROVIDER: gemini
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+    PROJECTS_DIR: /app/projects
+    TARGET_SERVICE_NAME: mrinspect
+    TARGET_SERVICE_TYPE: backend
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'

@@ -1,0 +1,14 @@
+name: Fried Chicken
+description: >
+  The Fried Chicken system handles the end-to-end crispy coating pipeline:
+  brining logic, seasoned flour coating management, and frying temperature
+  control. Services are event-driven via Kafka and persist state in MongoDB.
+defaultServiceType: backend
+frameworks:
+  - Go
+  - Kafka
+  - MongoDB
+  - Prometheus
+serviceTypeOverrides:
+  frying-dashboard: frontend
+  coating-inspector: ai
