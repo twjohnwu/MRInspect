@@ -21,8 +21,8 @@ mrinspect:
     AI_PROVIDER_KEY: $AI_PROVIDER_KEY
     GITLAB_TOKEN: $GITLAB_TOKEN
     PROJECTS_DIR: /app/projects
-    TARGET_SERVICE_NAME: mrinspect
-    TARGET_SERVICE_TYPE: backend
+    MRI_SERVICE_NAME: mrinspect
+    MRI_SERVICE_TYPE: backend
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

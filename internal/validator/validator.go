@@ -37,34 +37,34 @@ func (v *Validator) IsRunningInCrossRepoMode() bool {
 
 func (v *Validator) GetProjectID() string {
 	if v.IsRunningInCrossRepoMode() {
-		return os.Getenv("TARGET_PROJECT_ID")
+		return os.Getenv("MRI_PROJECT_ID")
 	}
 	return os.Getenv("CI_PROJECT_ID")
 }
 
 func (v *Validator) GetMRIID() string {
 	if v.IsRunningInCrossRepoMode() {
-		return os.Getenv("TARGET_MR_IID")
+		return os.Getenv("MRI_MR_IID")
 	}
 	return os.Getenv("CI_MERGE_REQUEST_IID")
 }
 
 func (v *Validator) GetSourceBranch() string {
 	if v.IsRunningInCrossRepoMode() {
-		return os.Getenv("SOURCE_BRANCH")
+		return os.Getenv("MRI_SOURCE_BRANCH")
 	}
 	return os.Getenv("CI_COMMIT_REF_NAME")
 }
 
 func (v *Validator) GetTargetBranch() string {
 	if v.IsRunningInCrossRepoMode() {
-		return os.Getenv("TARGET_BRANCH")
+		return os.Getenv("MRI_TARGET_BRANCH")
 	}
 	return os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
 }
 
 func (v *Validator) GetServiceType() string {
-	if t := os.Getenv("TARGET_SERVICE_TYPE"); t != "" {
+	if t := os.Getenv("MRI_SERVICE_TYPE"); t != "" {
 		return t
 	}
 	return "backend"
@@ -73,7 +73,7 @@ func (v *Validator) GetServiceType() string {
 func (v *Validator) ValidateEnvironment() error {
 	required := []string{"AI_PROVIDER_KEY", "GITLAB_TOKEN"}
 	if v.IsRunningInCrossRepoMode() {
-		required = append(required, "TARGET_PROJECT_ID", "TARGET_MR_IID", "SOURCE_BRANCH", "TARGET_BRANCH")
+		required = append(required, "MRI_PROJECT_ID", "MRI_MR_IID", "MRI_SOURCE_BRANCH", "MRI_TARGET_BRANCH")
 	} else {
 		required = append(required, "CI_PROJECT_ID", "CI_MERGE_REQUEST_IID")
 	}

@@ -6,8 +6,8 @@ export class ApiDiffFetcher implements IDiffFetcher {
   constructor(private readonly gitlab: IGitLabClient) {}
 
   async fetch(sourceBranch: string, targetBranch: string): Promise<string> {
-    const projectId = process.env.CI_PROJECT_ID ?? process.env.TARGET_PROJECT_ID ?? '';
-    const mrIid     = process.env.CI_MERGE_REQUEST_IID ?? process.env.TARGET_MR_IID ?? '';
+    const projectId = process.env.CI_PROJECT_ID ?? process.env.MRI_PROJECT_ID ?? '';
+    const mrIid     = process.env.CI_MERGE_REQUEST_IID ?? process.env.MRI_MR_IID ?? '';
     const changes   = await this.gitlab.getChanges(projectId, mrIid);
     return convertChangesToDiff(changes);
   }

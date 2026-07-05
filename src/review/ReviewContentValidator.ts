@@ -17,32 +17,32 @@ export class ReviewContentValidator implements IReviewValidator {
 
   getProjectId(): string {
     return this.isCrossRepoMode()
-      ? (process.env.TARGET_PROJECT_ID ?? '')
+      ? (process.env.MRI_PROJECT_ID ?? '')
       : (process.env.CI_PROJECT_ID ?? '');
   }
 
   getMrIid(): string {
     return this.isCrossRepoMode()
-      ? (process.env.TARGET_MR_IID ?? '')
+      ? (process.env.MRI_MR_IID ?? '')
       : (process.env.CI_MERGE_REQUEST_IID ?? '');
   }
 
   getSourceBranch(): string {
     return this.isCrossRepoMode()
-      ? (process.env.SOURCE_BRANCH ?? '')
+      ? (process.env.MRI_SOURCE_BRANCH ?? '')
       : (process.env.CI_COMMIT_REF_NAME ?? '');
   }
 
   getTargetBranch(): string {
     return this.isCrossRepoMode()
-      ? (process.env.TARGET_BRANCH ?? '')
+      ? (process.env.MRI_TARGET_BRANCH ?? '')
       : (process.env.CI_MERGE_REQUEST_TARGET_BRANCH_NAME ?? '');
   }
 
   validateEnvironment(): void {
     const required = ['AI_PROVIDER_KEY', 'GITLAB_TOKEN'];
     if (this.isCrossRepoMode()) {
-      required.push('TARGET_PROJECT_ID', 'TARGET_MR_IID', 'SOURCE_BRANCH', 'TARGET_BRANCH');
+      required.push('MRI_PROJECT_ID', 'MRI_MR_IID', 'MRI_SOURCE_BRANCH', 'MRI_TARGET_BRANCH');
     } else {
       required.push('CI_PROJECT_ID', 'CI_MERGE_REQUEST_IID');
     }

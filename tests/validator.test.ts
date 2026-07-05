@@ -138,9 +138,9 @@ describe('ReviewContentValidator env helpers', () => {
   afterEach(() => {
     delete process.env.CI_PIPELINE_SOURCE;
     delete process.env.CI_PROJECT_ID;
-    delete process.env.TARGET_PROJECT_ID;
+    delete process.env.MRI_PROJECT_ID;
     delete process.env.CI_MERGE_REQUEST_IID;
-    delete process.env.TARGET_MR_IID;
+    delete process.env.MRI_MR_IID;
   });
 
   test('isCrossRepoMode returns true when CI_PIPELINE_SOURCE=trigger', () => {
@@ -148,9 +148,9 @@ describe('ReviewContentValidator env helpers', () => {
     expect(makeValidator().isCrossRepoMode()).toBe(true);
   });
 
-  test('getProjectId uses TARGET_PROJECT_ID in cross-repo mode', () => {
+  test('getProjectId uses MRI_PROJECT_ID in cross-repo mode', () => {
     process.env.CI_PIPELINE_SOURCE = 'trigger';
-    process.env.TARGET_PROJECT_ID = '999';
+    process.env.MRI_PROJECT_ID = '999';
     expect(makeValidator().getProjectId()).toBe('999');
   });
 

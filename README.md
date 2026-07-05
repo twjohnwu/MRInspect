@@ -197,8 +197,8 @@ Set these in your CI/CD secrets store before use:
 | `AI_PROVIDER_KEY` | _(required)_ | API key for the selected provider |
 | `GITLAB_TOKEN` | _(required)_ | GitLab API token |
 | `GITLAB_API_BASE` | `https://gitlab.com/api/v4` | GitLab API base URL (set for self-hosted) |
-| `TARGET_SERVICE_NAME` | `unknown` | Service name — must match a key in `projects/registry.yaml` |
-| `TARGET_SERVICE_TYPE` | `backend` | Service type: `backend` \| `frontend` \| `ai` \| `iac` |
+| `MRI_SERVICE_NAME` | `unknown` | Service name — must match a key in `projects/registry.yaml` |
+| `MRI_SERVICE_TYPE` | `backend` | Service type: `backend` \| `frontend` \| `ai` \| `iac` |
 | `IS_SELF_REFLECTION` | `false` | Set `true` to run a second AI validation pass |
 | `PROJECTS_DIR` | `./projects` | Path to the projects directory |
 | `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Override the Anthropic model |
@@ -236,12 +236,12 @@ mrinspect auto-detects its execution mode from `CI_PIPELINE_SOURCE`.
 
 | Variable | Description |
 |---|---|
-| `TARGET_PROJECT_ID` | Project ID of the repository being reviewed |
-| `TARGET_MR_IID` | MR IID in the target repository |
-| `SOURCE_BRANCH` | Source branch of the MR |
-| `TARGET_BRANCH` | Target branch of the MR |
-| `TARGET_SERVICE_NAME` | Service name for profile lookup |
-| `TARGET_SERVICE_TYPE` | Service type override |
+| `MRI_PROJECT_ID` | Project ID of the repository being reviewed |
+| `MRI_MR_IID` | MR IID in the target repository |
+| `MRI_SOURCE_BRANCH` | Source branch of the MR |
+| `MRI_TARGET_BRANCH` | Target branch of the MR |
+| `MRI_SERVICE_NAME` | Service name for profile lookup |
+| `MRI_SERVICE_TYPE` | Service type override |
 
 </details>
 
@@ -264,8 +264,8 @@ include:
 ai-review:
   extends: .mrinspect-full       # runs all layers in parallel
   variables:
-    TARGET_SERVICE_NAME: my-service
-    TARGET_SERVICE_TYPE: backend  # backend | frontend | ai | iac
+    MRI_SERVICE_NAME: my-service
+    MRI_SERVICE_TYPE: backend  # backend | frontend | ai | iac
 ```
 
 To run only one layer:
@@ -274,17 +274,17 @@ To run only one layer:
 ai-review-go:
   extends: .mrinspect-go-review  # Go binary only
   variables:
-    TARGET_SERVICE_NAME: my-service
+    MRI_SERVICE_NAME: my-service
 
 ai-review-ts:
   extends: .mrinspect-ts-review  # TypeScript runner only
   variables:
-    TARGET_SERVICE_NAME: my-service
+    MRI_SERVICE_NAME: my-service
 
 ai-review-superpowers:
   extends: .superpowers-review   # Claude Code skills only
   variables:
-    TARGET_SERVICE_NAME: my-service
+    MRI_SERVICE_NAME: my-service
 ```
 
 ### Option B — GitLab pipeline trigger (cross-repo, works from any Git host)
@@ -303,12 +303,12 @@ trigger-ai-review:
       curl --silent --fail --request POST \
         --form "token=$MRINSPECT_TRIGGER_TOKEN" \
         --form "ref=main" \
-        --form "variables[TARGET_PROJECT_ID]=$CI_PROJECT_ID" \
-        --form "variables[TARGET_MR_IID]=$CI_MERGE_REQUEST_IID" \
-        --form "variables[SOURCE_BRANCH]=$CI_COMMIT_REF_NAME" \
-        --form "variables[TARGET_BRANCH]=$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" \
-        --form "variables[TARGET_SERVICE_NAME]=my-service" \
-        --form "variables[TARGET_SERVICE_TYPE]=backend" \
+        --form "variables[MRI_PROJECT_ID]=$CI_PROJECT_ID" \
+        --form "variables[MRI_MR_IID]=$CI_MERGE_REQUEST_IID" \
+        --form "variables[MRI_SOURCE_BRANCH]=$CI_COMMIT_REF_NAME" \
+        --form "variables[MRI_TARGET_BRANCH]=$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" \
+        --form "variables[MRI_SERVICE_NAME]=my-service" \
+        --form "variables[MRI_SERVICE_TYPE]=backend" \
         "https://gitlab.com/api/v4/projects/<MRINSPECT_PROJECT_ID>/trigger/pipeline"
   allow_failure: true
   rules:
@@ -338,12 +338,12 @@ jobs:
           curl --silent --fail --request POST \
             --form "token=${{ secrets.MRINSPECT_TRIGGER_TOKEN }}" \
             --form "ref=main" \
-            --form "variables[TARGET_PROJECT_ID]=${{ secrets.GITLAB_PROJECT_ID }}" \
-            --form "variables[TARGET_MR_IID]=${{ github.event.pull_request.number }}" \
-            --form "variables[SOURCE_BRANCH]=${{ github.head_ref }}" \
-            --form "variables[TARGET_BRANCH]=${{ github.base_ref }}" \
-            --form "variables[TARGET_SERVICE_NAME]=my-service" \
-            --form "variables[TARGET_SERVICE_TYPE]=backend" \
+            --form "variables[MRI_PROJECT_ID]=${{ secrets.GITLAB_PROJECT_ID }}" \
+            --form "variables[MRI_MR_IID]=${{ github.event.pull_request.number }}" \
+            --form "variables[MRI_SOURCE_BRANCH]=${{ github.head_ref }}" \
+            --form "variables[MRI_TARGET_BRANCH]=${{ github.base_ref }}" \
+            --form "variables[MRI_SERVICE_NAME]=my-service" \
+            --form "variables[MRI_SERVICE_TYPE]=backend" \
             "https://gitlab.com/api/v4/projects/${{ secrets.GITLAB_PROJECT_ID }}/trigger/pipeline"
 ```
 

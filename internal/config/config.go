@@ -120,8 +120,8 @@ func Load() (Config, error) {
 		SelfReflection: getEnv("IS_SELF_REFLECTION", "false") == "true",
 
 		Service: ServiceConfig{
-			Name: getEnv("TARGET_SERVICE_NAME", "unknown"),
-			Type: getEnv("TARGET_SERVICE_TYPE", "backend"),
+			Name: getEnv("MRI_SERVICE_NAME", "unknown"),
+			Type: getEnv("MRI_SERVICE_TYPE", "backend"),
 		},
 
 		CrossRepo: struct{ Enabled bool }{

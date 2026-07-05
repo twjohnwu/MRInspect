@@ -125,14 +125,14 @@ Both runners use the same `projects/` directory. In CI the Go binary bakes proje
 | `AI_PROVIDER_KEY` | _(required)_ | API key for Gemini / Anthropic / OpenAI |
 | `GITLAB_TOKEN` | _(required)_ | GitLab token with `api` + `write_repository` |
 | `AI_PROVIDER` | `gemini` | `gemini` \| `anthropic` \| `openai` |
-| `TARGET_SERVICE_NAME` | `unknown` | Must match a key in `projects/registry.yaml` |
-| `TARGET_SERVICE_TYPE` | `backend` | `backend` \| `frontend` \| `ai` \| `iac` |
+| `MRI_SERVICE_NAME` | `unknown` | Must match a key in `projects/registry.yaml` |
+| `MRI_SERVICE_TYPE` | `backend` | `backend` \| `frontend` \| `ai` \| `iac` |
 | `IS_SELF_REFLECTION` | `false` | Set `true` for a second AI validation pass |
 | `PROJECTS_DIR` | `./projects` | Override projects directory path |
 | `CI_PROJECT_ID` | _(auto by GitLab)_ | Project ID for local MR mode |
 | `CI_MERGE_REQUEST_IID` | _(auto by GitLab)_ | MR IID for local MR mode |
 
-Cross-repo trigger mode uses `TARGET_PROJECT_ID`, `TARGET_MR_IID`, `SOURCE_BRANCH`, `TARGET_BRANCH` instead.
+Cross-repo trigger mode uses `MRI_PROJECT_ID`, `MRI_MR_IID`, `MRI_SOURCE_BRANCH`, `MRI_TARGET_BRANCH` instead.
 
 ---
 

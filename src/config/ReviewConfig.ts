@@ -35,8 +35,8 @@ export function loadConfig(): Config {
     selfReflection: env('IS_SELF_REFLECTION', 'false') === 'true',
 
     service: {
-      name: env('TARGET_SERVICE_NAME', 'unknown'),
-      type: env('TARGET_SERVICE_TYPE', 'backend'),
+      name: env('MRI_SERVICE_NAME', 'unknown'),
+      type: env('MRI_SERVICE_TYPE', 'backend'),
     },
 
     crossRepo: {

@@ -26,21 +26,21 @@
 #   ai-review-mrinspect:
 #     extends: .mrinspect-go-review
 #     variables:
-#       TARGET_SERVICE_NAME: my-service     # maps to projects/registry.yaml
-#       TARGET_SERVICE_TYPE: backend        # backend | frontend | ai | iac
+#       MRI_SERVICE_NAME: my-service     # maps to projects/registry.yaml
+#       MRI_SERVICE_TYPE: backend        # backend | frontend | ai | iac
 #
 #   ai-review-superpowers:
 #     extends: .superpowers-review
 #     variables:
-#       TARGET_SERVICE_NAME: my-service
-#       TARGET_SERVICE_TYPE: backend
+#       MRI_SERVICE_NAME: my-service
+#       MRI_SERVICE_TYPE: backend
 #
 #   # Or use the convenience wrapper to run both at once:
 #   ai-review:
 #     extends: .mrinspect-full
 #     variables:
-#       TARGET_SERVICE_NAME: my-service
-#       TARGET_SERVICE_TYPE: backend
+#       MRI_SERVICE_NAME: my-service
+#       MRI_SERVICE_TYPE: backend
 #
 # ─────────────────────────────
 # REQUIRED CI/CD VARIABLES (set in GitLab → Settings → CI/CD → Variables)
@@ -74,7 +74,7 @@ stages:
 #
 # What it does:
 #   1. Reads CI env vars to detect local-MR vs cross-repo trigger mode
-#   2. Resolves TARGET_SERVICE_NAME → system profile via projects/registry.yaml
+#   2. Resolves MRI_SERVICE_NAME → system profile via projects/registry.yaml
 #   3. Loads YAML + Markdown review docs for the matched system
 #   4. Composes a profile-aware prompt (falls back to legacy template if no profile)
 #   5. Calls the configured AI provider with retry + exponential backoff
@@ -95,8 +95,8 @@ stages:
       echo "   CI_PROJECT_ID:           ${CI_PROJECT_ID:-<not set>}"
       echo "   CI_MERGE_REQUEST_IID:    ${CI_MERGE_REQUEST_IID:-<not set>}"
       echo "   CI_COMMIT_REF_NAME:      ${CI_COMMIT_REF_NAME:-<not set>}"
-      echo "   TARGET_SERVICE_NAME:     ${TARGET_SERVICE_NAME:-<not set>}"
-      echo "   TARGET_SERVICE_TYPE:     ${TARGET_SERVICE_TYPE:-<not set>}"
+      echo "   MRI_SERVICE_NAME:     ${MRI_SERVICE_NAME:-<not set>}"
+      echo "   MRI_SERVICE_TYPE:     ${MRI_SERVICE_TYPE:-<not set>}"
       echo "   AI_PROVIDER:             ${AI_PROVIDER:-<not set>}"
       echo "   AI_PROVIDER_KEY:         $([ -n "$AI_PROVIDER_KEY" ] && echo "<set>" || echo "<NOT SET>")"
       echo "   GITLAB_TOKEN:            $([ -n "$GITLAB_TOKEN" ] && echo "<set>" || echo "<NOT SET>")"
@@ -118,9 +118,9 @@ stages:
         exit 1
       fi
       if [ "$CI_PIPELINE_SOURCE" = "trigger" ]; then
-        if [ -z "$TARGET_PROJECT_ID" ] || [ -z "$TARGET_MR_IID" ]; then
+        if [ -z "$MRI_PROJECT_ID" ] || [ -z "$MRI_MR_IID" ]; then
           echo ""
-          echo "❌ CRITICAL ERROR: Cross-repo trigger mode requires TARGET_PROJECT_ID and TARGET_MR_IID"
+          echo "❌ CRITICAL ERROR: Cross-repo trigger mode requires MRI_PROJECT_ID and MRI_MR_IID"
           echo "🚫 AI Review ABORTED - Missing trigger variables"
           exit 1
         fi
@@ -144,10 +144,10 @@ stages:
     GITLAB_TOKEN: $GITLAB_TOKEN
 
     # ── Service identity — override in consuming repo ─────────────────────
-    # TARGET_SERVICE_NAME must match a key in projects/registry.yaml.
+    # MRI_SERVICE_NAME must match a key in projects/registry.yaml.
     # If not found, the default system profile (margherita-pizza) is used.
-    TARGET_SERVICE_NAME: unknown
-    TARGET_SERVICE_TYPE: backend            # backend | frontend | ai | iac
+    MRI_SERVICE_NAME: unknown
+    MRI_SERVICE_TYPE: backend            # backend | frontend | ai | iac
 
     # ── Optional: second AI validation pass ───────────────────────────────
     IS_SELF_REFLECTION: "false"             # set "true" to enable
@@ -160,10 +160,10 @@ stages:
     # this pipeline via the trigger API. You do not need to set them manually
     # for GitLab MR pipelines (CI_PIPELINE_SOURCE == "merge_request_event").
     #
-    # TARGET_PROJECT_ID:  $TARGET_PROJECT_ID
-    # TARGET_MR_IID:      $TARGET_MR_IID
-    # SOURCE_BRANCH:      $SOURCE_BRANCH
-    # TARGET_BRANCH:      $TARGET_BRANCH
+    # MRI_PROJECT_ID:  $MRI_PROJECT_ID
+    # MRI_MR_IID:      $MRI_MR_IID
+    # MRI_SOURCE_BRANCH:      $MRI_SOURCE_BRANCH
+    # MRI_TARGET_BRANCH:      $MRI_TARGET_BRANCH
     # TARGET_REPO_URL:    $TARGET_REPO_URL   (optional)
   artifacts:
     paths:
@@ -192,7 +192,7 @@ stages:
 #   my-ts-review:
 #     extends: .mrinspect-ts-review
 #     variables:
-#       TARGET_SERVICE_NAME: my-service
+#       MRI_SERVICE_NAME: my-service
 #       AI_PROVIDER: anthropic
 # ══════════════════════════════════════════════════════════════════════════════
 .mrinspect-ts-review:
@@ -264,8 +264,8 @@ stages:
       echo "   CI_PROJECT_ID:           ${CI_PROJECT_ID:-<not set>}"
       echo "   CI_MERGE_REQUEST_IID:    ${CI_MERGE_REQUEST_IID:-<not set>}"
       echo "   CI_COMMIT_REF_NAME:      ${CI_COMMIT_REF_NAME:-<not set>}"
-      echo "   TARGET_SERVICE_NAME:     ${TARGET_SERVICE_NAME:-<not set>}"
-      echo "   TARGET_SERVICE_TYPE:     ${TARGET_SERVICE_TYPE:-<not set>}"
+      echo "   MRI_SERVICE_NAME:     ${MRI_SERVICE_NAME:-<not set>}"
+      echo "   MRI_SERVICE_TYPE:     ${MRI_SERVICE_TYPE:-<not set>}"
       echo "   ANTHROPIC_API_KEY:       $([ -n "$ANTHROPIC_API_KEY" ] && echo "<set>" || echo "<NOT SET>")"
       echo "   GITLAB_TOKEN:            $([ -n "$GITLAB_TOKEN" ] && echo "<set>" || echo "<NOT SET>")"
       echo ""
@@ -299,7 +299,7 @@ stages:
       claude --print "
         Use the /code-review:code-review skill to review MR !${CI_MERGE_REQUEST_IID}
         in GitLab project ${CI_PROJECT_ID}.
-        Service: ${TARGET_SERVICE_NAME} (${TARGET_SERVICE_TYPE}).
+        Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
         After generating the review, post it as an MR note:
           POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
           Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
@@ -339,8 +339,8 @@ stages:
     GITLAB_TOKEN: $GITLAB_TOKEN
 
     # Service context forwarded to skills as prompt context
-    TARGET_SERVICE_NAME: unknown
-    TARGET_SERVICE_TYPE: backend
+    MRI_SERVICE_NAME: unknown
+    MRI_SERVICE_TYPE: backend
 
     # GitLab CI auto-populated — no need to set manually
     CI_PROJECT_ID: $CI_PROJECT_ID
@@ -361,8 +361,8 @@ stages:
 #   ai-review:
 #     extends: .mrinspect-full
 #     variables:
-#       TARGET_SERVICE_NAME: my-service
-#       TARGET_SERVICE_TYPE: backend
+#       MRI_SERVICE_NAME: my-service
+#       MRI_SERVICE_TYPE: backend
 # ══════════════════════════════════════════════════════════════════════════════
 .mrinspect-full:
   stage: ai-review
@@ -388,7 +388,7 @@ stages:
           /pr-review-toolkit:review-pr for MR !${CI_MERGE_REQUEST_IID}
           in project ${CI_PROJECT_ID}.
           Post each result as a separate MR note using GITLAB_TOKEN.
-          Service: ${TARGET_SERVICE_NAME} (${TARGET_SERVICE_TYPE}).
+          Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
         "
       fi
   variables:
@@ -396,8 +396,8 @@ stages:
     AI_PROVIDER_KEY: $AI_PROVIDER_KEY
     ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
     GITLAB_TOKEN: $GITLAB_TOKEN
-    TARGET_SERVICE_NAME: unknown
-    TARGET_SERVICE_TYPE: backend
+    MRI_SERVICE_NAME: unknown
+    MRI_SERVICE_TYPE: backend
     IS_SELF_REFLECTION: "false"
     PROJECTS_DIR: /app/projects
   artifacts:

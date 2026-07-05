@@ -189,17 +189,17 @@ func TestValidateEnvironment(t *testing.T) {
 		}
 	})
 
-	t.Run("cross-repo mode missing TARGET_PROJECT_ID", func(t *testing.T) {
+	t.Run("cross-repo mode missing MRI_PROJECT_ID", func(t *testing.T) {
 		t.Setenv("CI_PIPELINE_SOURCE", "trigger")
 		t.Setenv("AI_PROVIDER_KEY", "key")
 		t.Setenv("GITLAB_TOKEN", "token")
-		t.Setenv("TARGET_PROJECT_ID", "")
-		t.Setenv("TARGET_MR_IID", "1")
-		t.Setenv("SOURCE_BRANCH", "feat")
-		t.Setenv("TARGET_BRANCH", "main")
+		t.Setenv("MRI_PROJECT_ID", "")
+		t.Setenv("MRI_MR_IID", "1")
+		t.Setenv("MRI_SOURCE_BRANCH", "feat")
+		t.Setenv("MRI_TARGET_BRANCH", "main")
 		err := v.ValidateEnvironment()
-		if err == nil || !strings.Contains(err.Error(), "TARGET_PROJECT_ID") {
-			t.Fatalf("expected error mentioning TARGET_PROJECT_ID, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "MRI_PROJECT_ID") {
+			t.Fatalf("expected error mentioning MRI_PROJECT_ID, got %v", err)
 		}
 	})
 
