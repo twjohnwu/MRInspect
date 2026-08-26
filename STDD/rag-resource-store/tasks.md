@@ -30,13 +30,24 @@ direct/indirect 的分類在 T02 建立第一個 import 後自然解決；**T01 
 
 Verification command: `CGO_ENABLED=0 go build ./... && go list -m modernc.org/sqlite && grep -q 'golang:1.25-alpine' Dockerfile && grep -q 'golang:1.25-alpine' .gitlab-ci.yml`
 
-## T02 [INFRA] `internal/rag/sqlite/schema.sql` ＋ go:embed
+## T02 [x] [INFRA] `internal/rag/sqlite/schema.sql` ＋ go:embed
 
 理由：無 scenario 對應——DDL 正本，其後的 store/indexer/retriever task 都依賴它。
 含 documents / chunks / resource_sets / tags / set_tags / chunks_fts（external content
 ＋ 同步 trigger）/ embeddings / schema_meta。**不含** `resource_sets.mode` 欄。
 本 task 建立第一個 `modernc.org/sqlite` 的 import，故在此執行 `go mod tidy`（T01 刻意不執行），使該相依成為 direct。
-Verification command: `go mod tidy && go build ./internal/rag/sqlite/ && grep -c 'CREATE' internal/rag/sqlite/schema.sql && ! grep -E 'modernc.org/sqlite.*// indirect' go.mod`
+
+**Plan drift 修正（2026-08-26）**：原標題只講「schema.sql ＋ go:embed」，但
+`go:embed` 本身不 import 任何東西——tidy 不會因為多了一個嵌入字串就把
+`modernc.org/sqlite` 標為 direct，光嵌入而不使用等於 T01 的 indirect 問題原地
+重演。故 T02 範圍內含 `internal/rag/sqlite/store.go` 的最小 `Open()`／`Close()`：
+`Open()` 帶 `_ "modernc.org/sqlite"` blank import 並實際執行 DDL，這才是讓相依
+成為 direct 的必要條件；一份沒有人套用的內嵌 schema 也沒有意義。`Open()` 的 DDL
+語句一律加 `IF NOT EXISTS`，讓重複開啟既有 store（後續 indexer／retriever 的
+正常用法）不出錯——這點原task敘述未提及，屬本 task 內合理的最小實作判斷，非
+新增 scope。索引、檢索、embeddings 寫入不在本 task 範圍。
+
+Verification command: `go mod tidy && CGO_ENABLED=0 go build ./... && grep -c 'CREATE' internal/rag/sqlite/schema.sql && ! grep -E 'modernc.org/sqlite.*// indirect' go.mod && ! grep -n 'mode' internal/rag/sqlite/schema.sql | grep -v journal_mode | grep -v embed_model && go test ./...`
 
 ## T03 [ ] [NEW] `S-01,S-02,S-03,S-04,S-36,S-56,S-69` — resources loader
 
@@ -80,6 +91,13 @@ Verification command: `go test ./internal/rag/chunk/ -run TestChunk_OpenAPI -cou
 
 Test file: `internal/rag/sqlite/store_test.go`
 重點：斷言必須在 alpine 容器內跑——本機 darwin 的 `go test` 不構成 musl 環境的證據。
+**追加範圍（T02 驗證時發現）**：T02 的 FTS5 同步 trigger 與 `Open()` 冪等性當時只由
+兩份用完即刪的臨時測試證實，repo 內沒有留下任何常設測試——trigger 被改壞時，
+要到 T10 的檢索測試以「查詢結果為空」的形式失敗才會被發現，而那看起來像查詢 bug
+不像 schema bug。本 task 既然已經擁有 `store_test.go`，一併補上三項常設回歸測試：
+external-content FTS5 的 insert／update／delete 同步、對同一路徑重複 `Open()` 不報錯
+且不重複寫入 `schema_meta`、以及 `SchemaVersion` 可被讀回。
+
 Verification command: `docker run --rm -v "$PWD":/src -w /src -e CGO_ENABLED=0 golang:1.25-alpine go test ./internal/rag/sqlite/ -run TestStore_FTS5AvailableCGOFree -count=1`
 
 ## T09 [ ] [NEW] `S-28,S-38,S-53` — indexer
