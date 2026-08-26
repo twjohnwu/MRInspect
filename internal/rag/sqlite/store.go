@@ -31,14 +31,15 @@ func Open(path string) (*Store, error) {
 
 	if _, err := db.Exec(
 		`INSERT OR IGNORE INTO schema_meta
-            (id, schema_version, tool_version, built_at, resources_sha256, embed_model, embed_dim)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			(id, schema_version, tool_version, built_at, resources_sha256, embed_model, embed_dim, chunk_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		1,
 		SchemaVersion,
 		"dev",
 		time.Now().UTC().Format(time.RFC3339),
 		"",
 		"",
+		0,
 		0,
 	); err != nil {
 		db.Close()

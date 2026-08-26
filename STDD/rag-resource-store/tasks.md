@@ -100,7 +100,7 @@ external-content FTS5 的 insert／update／delete 同步、對同一路徑重�
 
 Verification command: `docker run --rm -v "$PWD":/src -w /src -e CGO_ENABLED=0 golang:1.25-alpine go test ./internal/rag/sqlite/ -run TestStore_FTS5AvailableCGOFree -count=1`
 
-## T09 [ ] [NEW] `S-28,S-38,S-53` — indexer
+## T09 [x] [NEW] `S-28,S-38,S-53` — indexer
 
 Test file: `internal/rag/sqlite/indexer_test.go`
 重點：embeddings 預設關閉時 `IndexStats.Embeddings` 為 0 且 embeddings 表無列；

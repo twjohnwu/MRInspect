@@ -79,5 +79,6 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     built_at TEXT NOT NULL,
     resources_sha256 TEXT NOT NULL,
     embed_model TEXT NOT NULL,
-    embed_dim INTEGER NOT NULL
+    embed_dim INTEGER NOT NULL,
+    chunk_count INTEGER NOT NULL
 );

@@ -44,6 +44,16 @@ internal/reviewer/            reviewer.go（改：footer、S-64 移除靜默 leg
 （`internal/ai/provider.go:18-21`）的先例，而非放進 `internal/interfaces/interfaces.go`
 ——後者收的是 `internal/reviewer` 跨套件依賴的 collaborator 介面。
 
+## T09 執行期的一處 plan drift（schema_meta.chunk_count）
+
+spec 有四處（`spec.md:415`、`473`、`733`、`901`）以「chunk 數與 `schema_meta`
+記錄的 manifest 數一致」作為斷言，但 T02 落地的 `schema_meta` 並沒有這個欄位——
+S-38 與 S-22 依原文無法實作。T09 的 RED 階段補上 `chunk_count INTEGER NOT NULL`，
+並同步修正 `store.go` 的 `INSERT OR IGNORE`（初始值 0）。
+
+`SchemaVersion` 維持 1：本 change 尚未出貨，這是對未發佈 schema 的更正，
+不是 migration，因此不提供升級路徑。spec 已指紋鎖定故不改動；此處記錄漂移。
+
 ## Table schema
 
 SQLite，DDL 正本為 `internal/rag/sqlite/schema.sql`（以 `go:embed` 內嵌）。
