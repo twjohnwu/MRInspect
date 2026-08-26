@@ -87,7 +87,7 @@ Test file: `internal/rag/chunk/structured_test.go`
 並在 `IndexStats.Failures` 具名該檔。
 Verification command: `go test ./internal/rag/chunk/ -run TestChunk_OpenAPI -count=1 && go test ./internal/rag/chunk/ -run TestChunk_Unparseable -count=1`
 
-## T08 [ ] [NEW] `S-23` — FTS5 在 CGO-free alpine 可用
+## T08 [x] [NEW] `S-23` — FTS5 在 CGO-free alpine 可用
 
 Test file: `internal/rag/sqlite/store_test.go`
 重點：斷言必須在 alpine 容器內跑——本機 darwin 的 `go test` 不構成 musl 環境的證據。
