@@ -49,7 +49,7 @@ Verification command: `CGO_ENABLED=0 go build ./... && go list -m modernc.org/sq
 
 Verification command: `go mod tidy && CGO_ENABLED=0 go build ./... && grep -c 'CREATE' internal/rag/sqlite/schema.sql && ! grep -E 'modernc.org/sqlite.*// indirect' go.mod && ! grep -n 'mode' internal/rag/sqlite/schema.sql | grep -v journal_mode | grep -v embed_model && go test ./...`
 
-## T03 [ ] [NEW] `S-01,S-02,S-03,S-04,S-36,S-56,S-69` — resources loader
+## T03 [x] [NEW] `S-01,S-02,S-03,S-04,S-36,S-56,S-69` — resources loader
 
 Test file: `internal/rag/resources/loader_test.go`
 重點：`sets:` 宣告序列必須保留（讀進 map 再輸出會使 S-69 間歇失敗，故以 `-count=5` 跑）；
@@ -213,6 +213,26 @@ Verification command: `docker build -t mrinspect:t21 . && docker run --rm --entr
 排程（每週）＋ 命中任一已宣告資源路徑的 push ＋ 手動；發佈 artifact 或 package；
 `expire_in` 為排程週期三倍。既有 `test` 與 `mrinspect` job 不得改動。
 Verification command: `git diff --stat .gitlab-ci.yml && grep -c 'rules:' .gitlab-ci.yml`
+
+## T23 [ ] [NEW] REQ-01 — `Resolve` 的 tag 選取（spec 覆蓋缺口）
+
+理由：無對應 `S-XX`——這正是缺口本身。REQ-01 正文說消費端「以 name 或 tag 引用」，
+但 spec 的 68 個 scenario 沒有任何一個斷言 tag 那一半；T03 交付的 `Resolve`
+因此把 `tags` 參數整個忽略（`internal/rag/resources/loader.go:58`，簽章有、函式體從未讀取）。
+change B 的 lane registry 明文以 `sets:` 與 `tags:` 兩者的**聯集**引用資源集
+（`STDD/multi-lane-review/spec.md:85`），故 B 一旦傳 tag 就會靜默取得零筆，
+而 A 的任何測試都不會紅。
+
+這與 round 1 刪掉五個 interface 欄位的理由同一類：不可否證的死欄位。
+差別只在這次它出現在實作而非契約。
+
+本 task 以 REQ-01 正文為驗收依據（非某個 `S-XX`）：`Resolve` 需以 name 與 tag 的
+聯集比對，未命中的 selector 仍列入 `unknown`；tag 與 name 同名時不得重複回傳同一個 set。
+需自帶測試，涵蓋：只給 tag、name 與 tag 混合、tag 未命中、以及 name 與 tag 指向
+同一個 set 時的去重。
+
+Test file: `internal/rag/resources/resolve_tags_test.go`
+Verification command: `go test ./internal/rag/resources/ -run TestResolve -count=5`
 
 ## Manual verification checklist
 
