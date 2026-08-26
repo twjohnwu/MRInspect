@@ -73,7 +73,7 @@ Test file: `internal/rag/intake/walk_test.go`
 可觀察地跳過並計數。
 Verification command: `go test ./internal/rag/intake/ -run TestWalk -count=1`
 
-## T06 [ ] [NEW] `S-08,S-09` — markdown 分塊
+## T06 [x] [NEW] `S-08,S-09` — markdown 分塊
 
 Test file: `internal/rag/chunk/markdown_test.go`
 重點：heading 階層字串與起訖行號要對得上原始檔；fenced code block 內的 `#` 不得
@@ -256,6 +256,28 @@ Rejected options），檔名 denylist 因此是本 change **唯一**的密鑰防
 
 Test file: `internal/rag/intake/denylist_test.go`
 Verification command: `go test ./internal/rag/intake/ -run TestDenylist -count=1`
+
+## T25 [ ] [NEW] REQ-03 — markdown 分塊的兩個資料遺失情形
+
+理由：無對應 `S-XX`——S-08 與 S-09 都被滿足，這兩個情形在 spec 的 68 個 scenario
+之外，由 T06 的驗證以獨立 fixture 探測發現。
+
+**一、第一個標題之前的內文被靜默丟棄。** 文件若在第一個 ATX 標題之前有前言
+（「本文件說明……」這類開場，規範文件極常見），該段完全不進入任何 chunk，
+於是在檢索中不存在。這不是格式瑕疵而是資料遺失：內容在 store 裡查不到，
+而沒有任何錯誤或 `Degraded` 訊息指出它被丟掉了。
+
+**二、巢狀圍籬使用不同標記時解析錯誤。** `internal/rag/chunk/markdown.go:16-18`
+的 `isFence` 對任何一行 ``` 或 ~~~ 都翻轉狀態，因此 ``` 區塊內的一行 ~~~ 會提前
+關閉外層圍籬，其後的 `#` 行被誤判為真標題，產生假的 chunk 邊界。
+S-09 只要求 ``` 這一種情形，故不算違反 spec，但規範文件裡巢狀圍籬並不罕見。
+
+驗收依據為 REQ-03 正文（標題感知分塊須保留文件內容）：
+第一個標題前的內文必須成為一個 chunk（breadcrumb 可為空字串或文件名），
+且圍籬狀態必須依標記種類配對，不得以單一布林開關處理。
+
+Test file: `internal/rag/chunk/markdown_preamble_test.go`
+Verification command: `go test ./internal/rag/chunk/ -run 'TestChunk_Preamble|TestChunk_NestedFence' -count=1`
 
 ## Manual verification checklist
 
