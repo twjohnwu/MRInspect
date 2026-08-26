@@ -80,7 +80,7 @@ Test file: `internal/rag/chunk/markdown_test.go`
 形成 chunk 邊界。
 Verification command: `go test ./internal/rag/chunk/ -run TestChunk_Heading -count=1 && go test ./internal/rag/chunk/ -run TestChunk_Fenced -count=1`
 
-## T07 [ ] [NEW] `S-10,S-11` — structured 分塊
+## T07 [x] [NEW] `S-10,S-11` — structured 分塊
 
 Test file: `internal/rag/chunk/structured_test.go`
 重點：OpenAPI 依 operation 切且不因字數上限再切；無法解析的 YAML 退回 `lines`
@@ -278,6 +278,30 @@ S-09 只要求 ``` 這一種情形，故不算違反 spec，但規範文件裡�
 
 Test file: `internal/rag/chunk/markdown_preamble_test.go`
 Verification command: `go test ./internal/rag/chunk/ -run 'TestChunk_Preamble|TestChunk_NestedFence' -count=1`
+
+## T26 [ ] [NEW] REQ-03 — operation 邊界的常設回歸測試
+
+理由：無對應 `S-XX`——S-10 的 fixture 之後沒有任何內容，因此兩個真實缺陷都通過了
+frozen 測試。兩者都在 GREEN 之後才被獨立探測發現：
+
+1. **多吃**：最後一個 operation 原本延伸到 EOF，把其後的 `components:`、全部 schema
+   一起吞進該 chunk。真實 OpenAPI 檔案都有 `components:`，所以這在正式語料上必然發生。
+   後果是 chunk 內容與其 heading 不符、token 成本被整個 schema 區段灌大、
+   引用該 operation 的發現指向它並不包含的內容。
+2. **少吃**：第一次修正改用縮排啟發式，於是合法 YAML 的 flow collection 跨行到第 0 欄
+   （`tags: [a,` 換行 `b]`）被誤判為 sibling 邊界，`b]` 與其後的 `summary:` 從所有 chunk
+   中靜默消失。縮排不等於結構巢狀——flow collection 與 block scalar 都會使兩者分離。
+
+最終修法是不再從文字推導邊界，改用 parser 已知的資訊：走訪 operation value node 的
+整個子樹取最大 `Line`（scalar 另加其換行數）。`gopkg.in/yaml.v3` 對每個 node 都給
+`Line`，邊界因此是解析結果而非猜測。
+
+本 task 把上述五個情形寫成常設測試，避免日後有人「簡化」回文字啟發式：
+sibling operation、最後一個 operation 後接 `components:`、flow collection 跨行到第 0 欄、
+block scalar、以及檔尾無換行的最後一個 operation。
+
+Test file: `internal/rag/chunk/structured_boundary_test.go`
+Verification command: `go test ./internal/rag/chunk/ -run TestStructured_Boundary -count=1`
 
 ## Manual verification checklist
 
