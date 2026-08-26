@@ -64,7 +64,7 @@ Test file: `internal/rag/resources/citrigger_test.go`
 清單；宣告了新路徑但未同步 `rules.changes` 必須失敗。CI lint 只檢語法，觀察不到命中語意。
 Verification command: `go test ./internal/rag/resources/ -run TestCITriggers -count=1`
 
-## T05 [ ] [NEW] `S-12,S-13` — intake 走訪與檔名 denylist
+## T05 [x] [NEW] `S-12,S-13` — intake 走訪與檔名 denylist
 
 Test file: `internal/rag/intake/walk_test.go`
 **偏離註記**：S-12 的 Test mapping 寫 `internal/rag/sqlite/walk_test.go`，但 REQ-03
@@ -233,6 +233,29 @@ change B 的 lane registry 明文以 `sets:` 與 `tags:` 兩者的**聯集**引�
 
 Test file: `internal/rag/resources/resolve_tags_test.go`
 Verification command: `go test ./internal/rag/resources/ -run TestResolve -count=5`
+
+## T24 [ ] [NEW] REQ-03／REQ-11 — denylist 樣式的真實世界涵蓋範圍
+
+理由：無對應 `S-XX`——S-12 只列舉九個**字面檔名**，實作全部命中，spec 因此已被滿足；
+本 task 處理的是 spec 沒說、但真實 repo 會遇到的命名。T05 驗證時逐一比對樣式與
+真實命名慣例，發現三個樣式是精確比對而真實檔案不是：
+
+| 樣式 | 漏接的真實檔名 |
+|---|---|
+| `kubeconfig` | `admin.kubeconfig`、`kubeconfig.yaml` |
+| `terraform.tfvars` | `prod.tfvars`、`secret.auto.tfvars` |
+| `*.pem` | `server.pem.bak` |
+
+為什麼現在值得做：第五輪把內容層密鑰掃描整項移除（門檻無法校準，見 spec 的
+Rejected options），檔名 denylist 因此是本 change **唯一**的密鑰防護。
+一個看起來綠、實際漏接 `prod.tfvars` 的 denylist，比沒有 denylist 更危險。
+
+本 task 以 REQ-03／REQ-11 正文為驗收依據：把三個樣式放寬到涵蓋常見前後綴，
+並為每個放寬後的樣式各補一個正例與一個反例（避免放寬到誤殺一般文件）。
+`internal/rag/intake/denylist.go` 已把樣式集中在 `secretDenylist` 一處，改動範圍限於該處。
+
+Test file: `internal/rag/intake/denylist_test.go`
+Verification command: `go test ./internal/rag/intake/ -run TestDenylist -count=1`
 
 ## Manual verification checklist
 

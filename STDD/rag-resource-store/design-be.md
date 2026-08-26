@@ -5,7 +5,7 @@ language: zh-TW
 # design-be — rag-resource-store
 
 實作 `STDD/rag-resource-store/spec.md`（status: approved，fingerprint
-`c3cdad61…462ac2`）的 REQ-01 ~ REQ-14。Go only；TypeScript 對等實作延後為獨立 change。
+`cafce137…29788a`）的 REQ-01 ~ REQ-14。Go only；TypeScript 對等實作延後為獨立 change。
 無 HTTP surface，故 `api.yml` 與 `design-fe.md` 皆為 **N/A**。
 
 ## 與現況慣例的三處刻意分歧（使用者已裁決）
