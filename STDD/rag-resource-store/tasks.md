@@ -115,7 +115,7 @@ TopK；`-race` 下併發安全；store 缺失／版本不符／未知 SetRef 三
 embedding 重排順序必須**異於** BM25；`TokenEst` 精確等於公式；`Close()` 冪等。
 Verification command: `go test -race ./internal/rag/sqlite/ -run TestRetrieve -count=1`
 
-## T11 [ ] [NEW] `S-05,S-06,S-07` — backend registry
+## T11 [x] [NEW] `S-05,S-06,S-07` — backend registry
 
 Test file: `internal/rag/registry_test.go`
 重點：未設定時預設 `sqlite`；未知名稱回 error 且訊息含已註冊名稱清單；
