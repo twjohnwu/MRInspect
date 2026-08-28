@@ -199,7 +199,8 @@ func insertDocument(ctx context.Context, tx *sql.Tx, setID int64, relPath, path 
 }
 
 func insertChunk(ctx context.Context, tx *sql.Tx, documentID int64, order int, item chunk.Chunk, indexedAt string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO chunks (document_id, ord, heading, text, start_line, end_line, token_est, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, documentID, order, item.Heading, chunkText(item), item.StartLine, item.EndLine, item.TokenEst, indexedAt)
+	text := chunkText(item)
+	_, err := tx.ExecContext(ctx, `INSERT INTO chunks (document_id, ord, heading, text, start_line, end_line, token_est, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, documentID, order, item.Heading, text, item.StartLine, item.EndLine, chunk.TokenEst(text), indexedAt)
 	if err != nil {
 		return fmt.Errorf("Index: insert chunk %d: %w", order, err)
 	}

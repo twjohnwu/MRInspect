@@ -107,7 +107,7 @@ Test file: `internal/rag/sqlite/indexer_test.go`
 寫入失敗不得留下可讀但不全的 store（暫存檔 ＋ rename）；`mode: full` 的集合不建 chunk。
 Verification command: `go test ./internal/rag/sqlite/ -run TestIndex -count=1`
 
-## T10 [ ] [NEW] `S-14,S-15,S-16,S-17,S-24,S-25,S-26,S-29,S-30,S-39,S-40,S-41` — sqlite retriever
+## T10 [x] [NEW] `S-14,S-15,S-16,S-17,S-24,S-25,S-26,S-29,S-30,S-39,S-40,S-41` — sqlite retriever
 
 Test file: `internal/rag/sqlite/retriever_test.go`
 本檔最大（12 個 scenario），RED 一次寫齊。重點：BM25 排序與可引用出處；SetRef 隔離；
