@@ -136,7 +136,7 @@ Verification command: `go test ./internal/rag/ -run TestResolveStore -count=1 &&
 `test -z` 恆成立。最後一段是正控制，證明這條讀環境變數的管線本身有效。
 T21 的 docker 指令斷言的是「store 檔存在」，與本條不同，不能互相取代。）
 
-## T13 [ ] [NEW] `S-58,S-59,S-60,S-61,S-63,S-70,S-72` — 預算與整段移除
+## T13 [x] [NEW] `S-58,S-59,S-60,S-61,S-63,S-70,S-72` — 預算與整段移除
 
 Test file: `internal/prompt/budget_test.go`
 重點：預算 = per-model 上限 × 安全係數，floor 取整；依宣告順序由尾端往前移除，
