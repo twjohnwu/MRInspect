@@ -123,7 +123,7 @@ Test file: `internal/rag/registry_test.go`
 以 map ＋ `Register()` 實作（與 `ai/provider.go` 的 switch 分歧，理由見 design-be）。
 Verification command: `go test ./internal/rag/ -run TestNew -count=1`
 
-## T12 [ ] [NEW] `S-42,S-43,S-44,S-47,S-48,S-49,S-66,S-67` — 來源鏈
+## T12 [x] [NEW] `S-42,S-43,S-44,S-47,S-48,S-49,S-66,S-67` — 來源鏈
 
 Test file: `internal/rag/source_test.go`
 重點：有序 slice 依序解析、先成功者勝出且**回傳勝出者**（非只寫 log）；
