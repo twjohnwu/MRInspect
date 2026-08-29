@@ -122,7 +122,7 @@ Test file: `internal/prompt/composer_test.go`
 golden 從未紅過，等於零證據。
 Verification command: `go test ./internal/prompt/ -run TestCompose_SingleModeUnchanged -count=1`
 
-## T11 [ ] [MODIFY] `S-12,S-27,S-28,S-34,S-37,S-41` — reviewer 分流與貼出（`internal/reviewer/reviewer.go`）
+## T11 [x] [MODIFY] `S-12,S-27,S-28,S-34,S-37,S-41` — reviewer 分流與貼出（`internal/reviewer/reviewer.go`）
 
 Test file: `internal/reviewer/reviewer_test.go`
 **跨 change 相依（重要）**：change A 的 T15 也對同一個檔案宣告「目前不存在，本 task 新建」。

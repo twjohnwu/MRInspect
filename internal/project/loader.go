@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"mrinspect/internal/config"
 	"gopkg.in/yaml.v3"
+	"mrinspect/internal/config"
 )
 
 type Loader struct {
@@ -54,6 +54,7 @@ func (l *Loader) LoadProfile(serviceName, serviceType string) (LoadedProject, er
 	shared, system := l.loadDocs(systemName, resolvedType)
 
 	return LoadedProject{
+		SystemDirectory:     systemName,
 		System:              sys,
 		SharedDocContents:   shared,
 		SystemDocContents:   system,

@@ -177,3 +177,13 @@ sequenceDiagram
    資源區塊（nonce 界定由 change A 負責）。結構化 JSON 輸出契約**不進模板**，
    由 compose 統一附加，與 parse 的欄位定義同源，避免模板與解析器漂移。
 3. **模板語言：English**（prompt 為機器讀，沿用既有單一 prompt 路徑慣例）。
+
+## T11 執行期補充 — 單一留言的身分判定與 ModelLimits 來源（plan drift 記錄）
+
+1. **CurrentUser**：S-41 的「作者為本 token 使用者」需要知道 bot 身分，T12 的
+   ListNotes/UpdateNote 不足。裁決：`IGitLabClient` 增加 `CurrentUser(ctx)`
+   （GET /user），不新增操作者設定項。
+2. **留言標記**：`reviewer.ReviewNoteMarker = "<!-- mrinspect:review -->"`，
+   HTML 註解，GitLab 渲染不可見；身分判定 = 標記 AND 作者，缺一不可。
+3. **ModelLimits 生產來源**：`prompt.DefaultModelLimits` 具名預設表；
+   per-lane model 必須在表內，否則 fan-out 前整體失敗（S-33）。

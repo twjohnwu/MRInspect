@@ -72,7 +72,8 @@ func main() {
 		PackageName: "rag-index", ArtifactRef: v.GetTargetBranch(), ArtifactJob: "rag-index",
 		StoreName: "mrinspect-rag.sqlite",
 	}})
-	resourceRegistry, err := resources.Load(".", "")
+	repoRoot := "."
+	resourceRegistry, err := resources.Load(repoRoot, "")
 	if err != nil {
 		log.Warn("failed to load RAG resource sets", "error", err)
 	}
@@ -94,11 +95,19 @@ func main() {
 
 	r := reviewer.New(cfg, gitlabClient, aiProvider, diffFetcher,
 		projectLoader, promptComposer, v, errHandler, log)
-	r.SetRAGReviewPath(ragwire.NewProductionReviewPath(cfg, ragwire.ReviewPathConfig{
+	productionRAG := ragwire.NewProductionReviewDependencies(cfg, ragwire.ReviewPathConfig{
 		ResolverConfig: rag.DefaultResolverConfig(),
 		ResourceSets:   resourceRegistry.Sets,
 		Composer:       promptComposer,
-	}))
+	})
+	r.SetRAGReviewPath(productionRAG.ReviewPath)
+	r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{
+		RepoRoot:         repoRoot,
+		ResourceRegistry: resourceRegistry,
+		Retriever:        productionRAG.Retriever,
+		FullLoader:       productionRAG.FullLoader,
+		ModelLimits:      prompt.DefaultModelLimits,
+	})
 
 	r.Run(ctx)
 }

@@ -125,6 +125,11 @@ type FakeGitLabClient struct {
 	updateNoteCalls   []UpdateNoteCall
 }
 
+// CurrentUser is a T11 RED compile-only stub.
+func (*FakeGitLabClient) CurrentUser(context.Context) (gitlab.Author, error) {
+	return gitlab.Author{}, nil
+}
+
 // HealthCheck records its context and returns the next programmed response.
 func (f *FakeGitLabClient) HealthCheck(ctx context.Context) bool {
 	f.mu.Lock()

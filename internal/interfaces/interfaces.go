@@ -12,6 +12,7 @@ import (
 // IGitLabClient abstracts all GitLab API operations.
 type IGitLabClient interface {
 	HealthCheck(ctx context.Context) bool
+	CurrentUser(ctx context.Context) (gitlab.Author, error)
 	GetMergeRequest(ctx context.Context, projectID, mrIID string) (gitlab.MergeRequest, error)
 	GetMRChanges(ctx context.Context, projectID, mrIID string) (gitlab.MRChangesResponse, error)
 	ListNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error)

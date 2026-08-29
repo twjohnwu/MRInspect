@@ -19,6 +19,7 @@ type DocFile struct {
 }
 
 type LoadedProject struct {
+	SystemDirectory     string
 	System              SystemProject
 	SharedDocContents   []DocFile
 	SystemDocContents   []DocFile

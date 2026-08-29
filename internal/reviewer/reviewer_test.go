@@ -3,15 +3,19 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
+	"mrinspect/internal/lane"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
@@ -157,23 +161,365 @@ func TestPostReview_FooterFlagsUnpinnedVersion(t *testing.T) {
 	}
 }
 
-type fakeGitLab struct{ notes []string }
+// TestRun_AllLanesFailedIsVisible verifies REQ-03 / S-12.
+func TestRun_AllLanesFailedIsVisible(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{
+		{id: "spec-conformance", enabled: true},
+		{id: "standards", enabled: true},
+		{id: "code-diff", enabled: true},
+	})
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	provider := newModeRoutingProvider()
+	provider.laneErrors = map[string]error{
+		"spec-conformance": errors.New("spec provider unavailable"),
+		"standards":        errors.New("standards quota exhausted"),
+		"code-diff":        errors.New("code diff response timed out"),
+	}
+	r.ai = provider
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: root, ModelLimits: reviewerModelLimits()})
+	r.rag.State = ReviewRAGState{
+		StorePresent: true,
+		Store:        rag.StoreResolution{BuiltAt: "2026-08-20T01:02:03Z"},
+		Degraded:     []string{"shared store degradation"},
+	}
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	for laneID, laneErr := range provider.laneErrors {
+		if !strings.Contains(note, laneID) || !strings.Contains(note, laneErr.Error()) {
+			t.Errorf("posted note does not name failed lane %q and reason %q: %q", laneID, laneErr, note)
+		}
+	}
+	if !strings.Contains(note, "Verdict\nIncomplete") && !strings.Contains(note, "Verdict: Incomplete") {
+		t.Errorf("all-lanes-failed note lacks Verdict Incomplete: %q", note)
+	}
+	if strings.Contains(note, "Verdict\nApproved") || strings.Contains(note, "Verdict: Approved") {
+		t.Errorf("all-lanes-failed note looks like a normal zero-finding review: %q", note)
+	}
+	// T11 pins the minimum integration-level footer contract here. Per-lane
+	// eviction union labels, lane counts, and skipped-file sums are deferred until
+	// the GREEN path exposes those records to the reviewer.
+	if got := strings.Count(note, "store built_at:"); got != 1 {
+		t.Errorf("store provenance occurrence count = %d, want exactly 1: %q", got, note)
+	}
+	if !strings.Contains(note, "Degraded entries: 1") {
+		t.Errorf("multi note lacks aggregated Degraded sum line: %q", note)
+	}
+}
+
+// TestRun_MissingLaneConfigFallsBackToSingle verifies REQ-07 / S-27.
+func TestRun_MissingLaneConfigFallsBackToSingle(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	provider := newModeRoutingProvider()
+	r.ai = provider
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: t.TempDir(), ModelLimits: reviewerModelLimits()})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if !strings.Contains(note, singleReviewSentinel) {
+		t.Errorf("missing lanes.yaml did not complete through single review path: %q", note)
+	}
+	lower := strings.ToLower(note)
+	if !strings.Contains(lower, "degrad") || !strings.Contains(lower, "lanes") || !strings.Contains(lower, "missing") {
+		t.Errorf("missing lanes.yaml degradation is not named in posted note: %q", note)
+	}
+	if got := provider.callCount(); got != 1 {
+		t.Errorf("Generate call count = %d, want 1 single-path review call", got)
+	}
+}
+
+// TestRun_SelfReflectionOnlyInSingleMode verifies REQ-07 / S-28.
+func TestRun_SelfReflectionOnlyInSingleMode(t *testing.T) {
+	t.Setenv("IS_SELF_REFLECTION", "true")
+
+	t.Run("multi skips reflection", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_MODE", "multi")
+		root := writeLaneFixture(t, []laneFixture{
+			{id: "spec-conformance", enabled: true},
+			{id: "standards", enabled: true},
+			{id: "code-diff", enabled: true},
+		})
+		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.SelfReflection = true
+		provider := newModeRoutingProvider()
+		r.ai = provider
+		r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: root, ModelLimits: reviewerModelLimits()})
+
+		r.Run(context.Background())
+
+		if got, want := provider.callCount(), 3; got != want {
+			t.Errorf("multi Generate call count = %d, want enabled lane count %d exactly (no reflection)", got, want)
+		}
+	})
+
+	t.Run("single keeps reflection", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_MODE", "single")
+		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.SelfReflection = true
+		provider := newModeRoutingProvider()
+		r.ai = provider
+
+		r.Run(context.Background())
+
+		if got, want := provider.callCount(), 2; got != want {
+			t.Errorf("single Generate call count = %d, want %d including reflection", got, want)
+		}
+	})
+}
+
+// TestRun_NormativeEvictionFailIsNotSwallowed verifies REQ-03 / S-34.
+func TestRun_NormativeEvictionFailIsNotSwallowed(t *testing.T) {
+	root := writeLaneFixture(t, []laneFixture{
+		{id: "spec-conformance", enabled: true},
+		{id: "normative-standards", enabled: true},
+		{id: "code-diff", enabled: true},
+	})
+	policyErr := actualNormativeEvictionError(t)
+
+	for _, policy := range []string{"fail", "warn"} {
+		t.Run(policy, func(t *testing.T) {
+			t.Setenv("MRI_REVIEW_MODE", "multi")
+			t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", policy)
+			r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+			r.ai = newModeRoutingProvider()
+			fanoutCalls := 0
+			r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+				RepoRoot:    root,
+				ModelLimits: reviewerModelLimits(),
+				Fanout: func(context.Context, lane.FanoutInput) (lane.FanoutResult, error) {
+					fanoutCalls++
+					return normativeEvictionFanout(policyErr), nil
+				},
+			})
+
+			r.Run(context.Background())
+
+			note := gl.lastNote(t)
+			if fanoutCalls != 1 {
+				t.Errorf("multi fanout call count = %d, want 1", fanoutCalls)
+			}
+			if policy == "fail" {
+				if !strings.Contains(note, policyErr.Error()) || !strings.Contains(strings.ToLower(note), "normative") {
+					t.Errorf("strict normative eviction did not visibly fail the whole review: %q", note)
+				}
+				if strings.Contains(note, "sibling-spec-result") || strings.Contains(note, "sibling-code-result") {
+					t.Errorf("strict failure posted normal sibling lane results: %q", note)
+				}
+				return
+			}
+			for _, want := range []string{"sibling-spec-result", "sibling-code-result", "normative-standards", policyErr.Error(), "Incomplete"} {
+				if !strings.Contains(note, want) {
+					t.Errorf("warn-mode review missing %q: %q", want, note)
+				}
+			}
+		})
+	}
+}
+
+// TestRun_NoEnabledLanesIsNotAnEmptyReview verifies REQ-07 / S-37.
+func TestRun_NoEnabledLanesIsNotAnEmptyReview(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{
+		{id: "spec-conformance", enabled: false},
+		{id: "standards", enabled: false},
+		{id: "code-diff", enabled: false},
+	})
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	provider := newModeRoutingProvider()
+	r.ai = provider
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: root, ModelLimits: reviewerModelLimits()})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if !strings.Contains(note, singleReviewSentinel) || provider.callCount() == 0 {
+		t.Errorf("no-enabled-lane case did not complete a single review: %q", note)
+	}
+	lower := strings.ToLower(note)
+	if !strings.Contains(lower, "no runnable lane") || !strings.Contains(lower, "degrad") || !strings.Contains(lower, "single") {
+		t.Errorf("posted note does not visibly name no-runnable-lane degradation to single: %q", note)
+	}
+}
+
+// TestPostReview_UpdatesExistingNote verifies REQ-06 / S-41.
+func TestPostReview_UpdatesExistingNote(t *testing.T) {
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	bot := gitlab.Author{ID: 101, Username: "mrinspect-bot"}
+	decoyAuthor := gitlab.Author{ID: 202, Username: "decoy-user"}
+	gl.currentUser = bot
+	gl.listedNotes = []gitlab.Note{
+		{ID: 41, Body: ReviewNoteMarker + " old bot review", Author: bot},
+		{ID: 42, Body: ReviewNoteMarker + " decoy review", Author: decoyAuthor},
+	}
+	decoyBefore := gl.listedNotes[1]
+
+	if err := r.postReview(context.Background(), "## Findings\nreplacement review\n## Verdict"); err != nil {
+		t.Fatalf("postReview: %v", err)
+	}
+
+	if len(gl.updateCalls) != 1 || gl.updateCalls[0].noteID != 41 {
+		t.Errorf("UpdateNote calls = %#v, want exactly bot note ID 41", gl.updateCalls)
+	} else if !strings.Contains(gl.updateCalls[0].body, ReviewNoteMarker) {
+		t.Errorf("updated body lacks exported stable marker %q: %q", ReviewNoteMarker, gl.updateCalls[0].body)
+	}
+	if len(gl.notes) != 0 {
+		t.Errorf("PostNote call count = %d, want 0 on rerun", len(gl.notes))
+	}
+	if got := gl.noteByID(42); got != decoyBefore {
+		t.Errorf("decoy note changed: got %#v, want %#v", got, decoyBefore)
+	}
+	if got := gl.markedNoteCountByAuthor(bot.ID); got != 1 {
+		t.Errorf("marked notes by bot author = %d, want 1 after rerun", got)
+	}
+}
+
+const (
+	laneTemplatePrefix   = "REVIEWER-LANE-TEMPLATE::"
+	singleReviewSentinel = "SINGLE-REVIEW-COMPLETE"
+)
+
+type laneFixture struct {
+	id      string
+	enabled bool
+}
+
+func writeLaneFixture(t *testing.T, declarations []laneFixture) string {
+	t.Helper()
+	root := t.TempDir()
+	projectsDir := filepath.Join(root, "projects")
+	templateDir := filepath.Join(projectsDir, "_lanes")
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatalf("create lane fixture directory: %v", err)
+	}
+
+	var registry strings.Builder
+	registry.WriteString("lanes:\n")
+	for _, declaration := range declarations {
+		templatePath := filepath.Join(templateDir, declaration.id+".tmpl.md")
+		if err := os.WriteFile(templatePath, []byte(laneTemplatePrefix+declaration.id), 0o644); err != nil {
+			t.Fatalf("write template for %q: %v", declaration.id, err)
+		}
+		fmt.Fprintf(&registry, "  - id: %s\n    enabled: %t\n    template: %q\n    intent: review %s\n    resources:\n      sets: []\n      tags: []\n", declaration.id, declaration.enabled, templatePath, declaration.id)
+	}
+	if err := os.WriteFile(filepath.Join(projectsDir, "lanes.yaml"), []byte(registry.String()), 0o644); err != nil {
+		t.Fatalf("write lanes.yaml: %v", err)
+	}
+	return root
+}
+
+func reviewerModelLimits() map[string]int {
+	return map[string]int{"gemini-test": 1_000_000}
+}
+
+type modeRoutingProvider struct {
+	mu         sync.Mutex
+	prompts    []string
+	laneErrors map[string]error
+}
+
+func newModeRoutingProvider() *modeRoutingProvider {
+	return &modeRoutingProvider{laneErrors: make(map[string]error)}
+}
+
+func (p *modeRoutingProvider) Generate(_ context.Context, reviewPrompt string, _ ai.GenerateOptions) (string, error) {
+	p.mu.Lock()
+	p.prompts = append(p.prompts, reviewPrompt)
+	p.mu.Unlock()
+
+	for laneID, laneErr := range p.laneErrors {
+		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
+			return "", laneErr
+		}
+	}
+	for _, laneID := range []string{"spec-conformance", "standards", "code-diff", "normative-standards"} {
+		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
+			return fmt.Sprintf(`{"laneId":%q,"findings":[{"title":%q,"severity":"low","rationale":"lane completed"}]}`, laneID, "finding-"+laneID), nil
+		}
+	}
+	if reviewPrompt == "reflection" {
+		return "REVIEW VALIDATED", nil
+	}
+	return "## Code Review\n## Findings\n" + singleReviewSentinel + "\n## Verdict\nApproved", nil
+}
+
+func (*modeRoutingProvider) Name() string { return "mode-routing-fake" }
+
+func (p *modeRoutingProvider) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.prompts)
+}
+
+func actualNormativeEvictionError(t *testing.T) error {
+	t.Helper()
+	t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
+	// lane.Compose does not yet carry ComposeWithBudget's eviction result, so the
+	// reviewer Fanout hook injects the exact error produced by change A's seam.
+	_, err := prompt.ComposeWithBudget(prompt.BudgetComposeInput{
+		Budget:   1,
+		Sections: []prompt.BudgetSection{{Name: "binding-standard", Mode: prompt.SectionModeFull, TokenEst: 10}},
+		Framing:  prompt.BudgetFraming{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "normative section evicted") {
+		t.Fatalf("change A normative-eviction seam returned %v, want its strict-policy error", err)
+	}
+	return err
+}
+
+func normativeEvictionFanout(policyErr error) lane.FanoutResult {
+	return lane.FanoutResult{
+		LaneResults: []lane.LaneResult{
+			{LaneID: "spec-conformance", Findings: []lane.Finding{{Title: "sibling-spec-result", Severity: lane.SeverityLow, Rationale: "spec lane completed"}}},
+			{LaneID: "code-diff", Findings: []lane.Finding{{Title: "sibling-code-result", Severity: lane.SeverityLow, Rationale: "code lane completed"}}},
+		},
+		Failures: []lane.LaneFailure{{LaneID: "normative-standards", Kind: lane.FailureKindCompose, Reason: policyErr.Error()}},
+	}
+}
+
+type fakeNoteUpdate struct {
+	noteID int
+	body   string
+}
+
+type fakeGitLab struct {
+	notes       []string
+	listedNotes []gitlab.Note
+	currentUser gitlab.Author
+	currentErr  error
+	updateCalls []fakeNoteUpdate
+}
 
 func (*fakeGitLab) HealthCheck(context.Context) bool { return true }
+func (g *fakeGitLab) CurrentUser(context.Context) (gitlab.Author, error) {
+	return g.currentUser, g.currentErr
+}
 func (*fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.MergeRequest, error) {
 	return gitlab.MergeRequest{IID: 7, Title: "RAG test", SourceBranch: "feature", TargetBranch: "main"}, nil
 }
 func (*fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
 	return gitlab.MRChangesResponse{}, nil
 }
-func (*fakeGitLab) ListNotes(context.Context, string, string) ([]gitlab.Note, error) {
-	return nil, nil
+func (g *fakeGitLab) ListNotes(context.Context, string, string) ([]gitlab.Note, error) {
+	return append([]gitlab.Note(nil), g.listedNotes...), nil
 }
 func (g *fakeGitLab) PostNote(_ context.Context, _, _, body string) (gitlab.Note, error) {
 	g.notes = append(g.notes, body)
-	return gitlab.Note{Body: body}, nil
+	note := gitlab.Note{ID: 1000 + len(g.notes), Body: body, Author: g.currentUser}
+	g.listedNotes = append(g.listedNotes, note)
+	return note, nil
 }
-func (*fakeGitLab) UpdateNote(context.Context, string, string, int, string) (gitlab.Note, error) {
+func (g *fakeGitLab) UpdateNote(_ context.Context, _, _ string, noteID int, body string) (gitlab.Note, error) {
+	g.updateCalls = append(g.updateCalls, fakeNoteUpdate{noteID: noteID, body: body})
+	for index := range g.listedNotes {
+		if g.listedNotes[index].ID == noteID {
+			g.listedNotes[index].Body = body
+			return g.listedNotes[index], nil
+		}
+	}
 	return gitlab.Note{}, nil
 }
 func (g *fakeGitLab) lastNote(t *testing.T) string {
@@ -182,6 +528,25 @@ func (g *fakeGitLab) lastNote(t *testing.T) string {
 		t.Fatal("PostNote was not called")
 	}
 	return g.notes[len(g.notes)-1]
+}
+
+func (g *fakeGitLab) noteByID(noteID int) gitlab.Note {
+	for _, note := range g.listedNotes {
+		if note.ID == noteID {
+			return note
+		}
+	}
+	return gitlab.Note{}
+}
+
+func (g *fakeGitLab) markedNoteCountByAuthor(authorID int) int {
+	count := 0
+	for _, note := range g.listedNotes {
+		if note.Author.ID == authorID && strings.Contains(note.Body, ReviewNoteMarker) {
+			count++
+		}
+	}
+	return count
 }
 
 type fakeProvider struct{ prompts []string }

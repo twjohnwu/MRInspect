@@ -35,6 +35,14 @@ type ReviewPath struct{ config ReviewPathConfig }
 // NewReviewPath constructs the production RAG review adapter.
 func NewReviewPath(config ReviewPathConfig) *ReviewPath { return &ReviewPath{config: config} }
 
+// ProductionReviewDependencies are the review-only RAG adapters shared by the
+// single and multi-lane production paths.
+type ProductionReviewDependencies struct {
+	ReviewPath reviewer.RAGReviewPath
+	Retriever  rag.Retriever
+	FullLoader rag.FullLoader
+}
+
 // RetrieveForReview resolves a store, retrieves context, and composes its lane.
 func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (reviewer.ReviewRAGState, error) {
 	resolution, err := rag.ResolveStore(ctx, p.config.ResolverConfig)
@@ -81,11 +89,22 @@ func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (review
 // NewProductionReviewPath is the main.go-facing hook. The configuration is
 // intentionally explicit so main can assemble it without reviewer importing
 // composition-root dependencies.
-func NewProductionReviewPath(_ config.Config, reviewConfig ReviewPathConfig) reviewer.RAGReviewPath {
+func NewProductionReviewPath(cfg config.Config, reviewConfig ReviewPathConfig) reviewer.RAGReviewPath {
+	return NewProductionReviewDependencies(cfg, reviewConfig).ReviewPath
+}
+
+// NewProductionReviewDependencies constructs the production adapters used by
+// both reviewer modes. Construction stays lazy: store resolution and opening
+// happen only on the review path, never during process wiring.
+func NewProductionReviewDependencies(_ config.Config, reviewConfig ReviewPathConfig) ProductionReviewDependencies {
 	if reviewConfig.ResolverConfig.MaxBytes == 0 {
 		reviewConfig.ResolverConfig = rag.DefaultResolverConfig()
 	}
-	return NewReviewPath(reviewConfig)
+	return ProductionReviewDependencies{
+		ReviewPath: NewReviewPath(reviewConfig),
+		Retriever:  resolvingRetriever{config: reviewConfig},
+		FullLoader: resourceFullLoader{sets: reviewConfig.ResourceSets},
+	}
 }
 
 func degradedEntries(entries []rag.DegradedEntry) []string {

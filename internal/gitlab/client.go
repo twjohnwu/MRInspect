@@ -16,10 +16,10 @@ import (
 )
 
 type RetryConfig struct {
-	Attempts    int
-	DelayMs     int
-	MaxDelayMs  int
-	TimeoutMs   int
+	Attempts   int
+	DelayMs    int
+	MaxDelayMs int
+	TimeoutMs  int
 }
 
 type Client struct {
@@ -45,6 +45,15 @@ func NewClient(cfg config.Config, log *logger.Logger) *Client {
 		},
 		log: log,
 	}
+}
+
+// CurrentUser returns the user associated with the configured token.
+func (c *Client) CurrentUser(ctx context.Context) (Author, error) {
+	var author Author
+	if err := c.getJSON(ctx, "/user", &author); err != nil {
+		return Author{}, fmt.Errorf("CurrentUser: %w", err)
+	}
+	return author, nil
 }
 
 func (c *Client) GetMergeRequest(ctx context.Context, projectID, mrIID string) (MergeRequest, error) {

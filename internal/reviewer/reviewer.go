@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,11 +11,17 @@ import (
 	"mrinspect/internal/config"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/interfaces"
+	"mrinspect/internal/lane"
+	"mrinspect/internal/lane/hunk"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/resources"
 )
+
+// ReviewNoteMarker identifies review notes owned by MRInspect.
+const ReviewNoteMarker = "<!-- mrinspect:review -->"
 
 // ReviewRAGState is the reviewer-facing RAG result and footer provenance.
 type ReviewRAGState struct {
@@ -39,6 +46,21 @@ type RAGIndexer interface {
 	Index(ctx context.Context) error
 }
 
+// MultiLaneReviewPath is the injectable wiring required by the multi-lane review path.
+type MultiLaneReviewPath struct {
+	RepoRoot         string
+	ResourceRegistry resources.Registry
+	Retriever        rag.Retriever
+	FullLoader       rag.FullLoader
+	ModelLimits      map[string]int
+	Fanout           func(context.Context, lane.FanoutInput) (lane.FanoutResult, error)
+}
+
+type footerAggregation struct {
+	additionalDegraded int
+	laneEvictions      []string
+}
+
 // MRInspectReviewer orchestrates the full code review pipeline.
 type MRInspectReviewer struct {
 	cfg        config.Config
@@ -60,6 +82,7 @@ type MRInspectReviewer struct {
 		Indexer    RAGIndexer
 		State      ReviewRAGState
 	}
+	multi MultiLaneReviewPath
 }
 
 func New(
@@ -93,6 +116,13 @@ func New(
 func (r *MRInspectReviewer) SetRAGReviewPath(path RAGReviewPath) {
 	if r != nil {
 		r.rag.ReviewPath = path
+	}
+}
+
+// SetMultiLaneReviewPath installs multi-lane dependencies.
+func (r *MRInspectReviewer) SetMultiLaneReviewPath(path MultiLaneReviewPath) {
+	if r != nil {
+		r.multi = path
 	}
 }
 
@@ -141,25 +171,169 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	}
 
 	stage = "generateReview"
-	reviewContent, err := r.generateReview(ctx, codeDiff, mr)
+	reviewContent, footer, err := r.generateReviewForMode(ctx, codeDiff, mr)
 	if err != nil {
 		finalErr = err
 		r.postErrorComment(ctx, err, stage)
 		return
 	}
 
-	if r.cfg.SelfReflection {
-		reviewContent = r.selfReflect(ctx, reviewContent)
-	}
-
 	stage = "postReview"
-	if err := r.postReview(ctx, reviewContent); err != nil {
+	if err := r.postReviewWithFooter(ctx, reviewContent, r.ragFooterWithAggregation(footer)); err != nil {
 		finalErr = err
 		r.log.Error("failed to post review", "error", err)
 		return
 	}
 
 	r.log.Info("review posted successfully", "mr", r.mrIID, "project", r.projectID)
+}
+
+func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+	if os.Getenv("MRI_REVIEW_MODE") != "multi" {
+		content, err := r.generateReview(ctx, codeDiff, mr)
+		if err == nil && r.cfg.SelfReflection {
+			content = r.selfReflect(ctx, content)
+		}
+		return content, footerAggregation{}, err
+	}
+	return r.generateMultiReview(ctx, codeDiff, mr)
+}
+
+func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+	loadedProject, err := r.loadServiceProject()
+	if err != nil {
+		return "", footerAggregation{}, fmt.Errorf("multi-lane project load failed: %w", err)
+	}
+
+	registry, err := lane.Load(r.multi.RepoRoot, loadedProject.SystemDirectory)
+	if err != nil || len(registry.Lanes) == 0 {
+		reason := "lanes configuration missing"
+		if err != nil {
+			reason = fmt.Sprintf("lanes configuration could not be loaded: %v", err)
+		}
+		// A/S-64 forbids silently replacing a failed prompt composition with a
+		// legacy template. This is a separate, named configuration-level fallback.
+		return r.generateSingleDegradation(ctx, codeDiff, mr, reason)
+	}
+	if !hasEnabledLane(registry.Lanes) {
+		return r.generateSingleDegradation(ctx, codeDiff, mr, "no runnable lane; degraded to single review mode")
+	}
+
+	changesResponse, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
+	if err != nil {
+		return "", footerAggregation{}, fmt.Errorf("multi-lane changes fetch failed: %w", err)
+	}
+	r.retrieveReviewRAG(ctx, codeDiff)
+
+	input := lane.FanoutInput{
+		Lanes:            registry.Lanes,
+		Terms:            lane.Terms(changesResponse.Changes),
+		ResourceRegistry: r.multi.ResourceRegistry,
+		Retriever:        r.multi.Retriever,
+		FullLoader:       r.multi.FullLoader,
+		Project:          loadedProject,
+		Diff:             codeDiff,
+		MergeRequest:     mr,
+		Provider:         r.ai,
+		Attempts:         r.cfg.Validation.AIRetryAttempts,
+		GlobalModel:      r.cfg.Providers[r.cfg.AIProvider].Model,
+		ModelLimits:      r.multi.ModelLimits,
+	}
+	fanout := r.multi.Fanout
+	if fanout == nil {
+		fanout = lane.Fanout
+	}
+	result, err := fanout(ctx, input)
+	if err != nil {
+		return "", footerAggregation{}, fmt.Errorf("multi-lane fan-out failed: %w", err)
+	}
+
+	renderInput := r.multiRenderInput(registry.Lanes, result, changesResponse.Changes)
+	footer := aggregateLaneFooter(result.LaneResults)
+	if os.Getenv("MRI_RAG_ON_NORMATIVE_EVICTION") == "fail" {
+		if failure, ok := normativeEvictionFailure(result.Failures); ok {
+			renderInput.Findings = nil
+			renderInput.FailedLanes = []lane.LaneFailure{failure}
+			return lane.Render(renderInput), footer, nil
+		}
+	}
+
+	return lane.Render(renderInput), footer, nil
+}
+
+func (r *MRInspectReviewer) generateSingleDegradation(ctx context.Context, codeDiff string, mr gitlab.MergeRequest, reason string) (string, footerAggregation, error) {
+	content, err := r.generateReview(ctx, codeDiff, mr)
+	if err != nil {
+		return "", footerAggregation{}, err
+	}
+	if r.cfg.SelfReflection {
+		content = r.selfReflect(ctx, content)
+	}
+	return content + "\n\n> MRInspect degradation: " + reason, footerAggregation{}, nil
+}
+
+func hasEnabledLane(lanes []lane.Lane) bool {
+	for _, declaration := range lanes {
+		if declaration.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func normativeEvictionFailure(failures []lane.LaneFailure) (lane.LaneFailure, bool) {
+	for _, failure := range failures {
+		if strings.Contains(failure.Reason, "normative section evicted") {
+			return failure, true
+		}
+	}
+	return lane.LaneFailure{}, false
+}
+
+func (r *MRInspectReviewer) multiRenderInput(declarations []lane.Lane, result lane.FanoutResult, changes []gitlab.Change) lane.RenderInput {
+	laneOrder := make([]string, 0, len(declarations))
+	renderLanes := make([]lane.RenderLane, 0, len(declarations))
+	for _, declaration := range declarations {
+		laneOrder = append(laneOrder, declaration.ID)
+		sets, _ := r.multi.ResourceRegistry.Resolve(declaration.Resources.Sets, declaration.Resources.Tags)
+		setNames := make([]string, 0, len(sets))
+		for _, set := range sets {
+			setNames = append(setNames, set.Name)
+		}
+		renderLanes = append(renderLanes, lane.RenderLane{Declaration: declaration, ResolvedResourceSets: setNames})
+	}
+
+	// FanoutResult currently carries per-lane Degraded counts, but not the
+	// received chunks, per-lane evicted sections, or per-lane skipped-file
+	// counts. Keep those render/footer inputs empty instead of fabricating data.
+	return lane.RenderInput{
+		Findings:       lane.Merge(laneOrder, result.LaneResults),
+		Lanes:          renderLanes,
+		FailedLanes:    result.Failures,
+		ReceivedChunks: map[string][]rag.Chunk{},
+		Changes:        changes,
+		ChangedLines:   hunk.Build(changes),
+	}
+}
+
+func aggregateLaneFooter(results []lane.LaneResult) footerAggregation {
+	aggregation := footerAggregation{}
+	seenEvictions := make(map[string]struct{})
+	for _, result := range results {
+		aggregation.additionalDegraded += len(result.Degraded)
+		for _, degraded := range result.Degraded {
+			if !strings.Contains(degraded, "evicted section") {
+				continue
+			}
+			entry := fmt.Sprintf("evicted section [%s]: %s", result.LaneID, strings.Join(strings.Fields(degraded), " "))
+			if _, exists := seenEvictions[entry]; exists {
+				continue
+			}
+			seenEvictions[entry] = struct{}{}
+			aggregation.laneEvictions = append(aggregation.laneEvictions, entry)
+		}
+	}
+	return aggregation
 }
 
 func (r *MRInspectReviewer) validateSystem(ctx context.Context) error {
@@ -293,13 +467,37 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 }
 
 func (r *MRInspectReviewer) postReview(ctx context.Context, content string) error {
-	note := content + r.ragFooter()
-	safe := r.validator.SanitizeInput(note)
+	return r.postReviewWithFooter(ctx, content, r.ragFooter())
+}
+
+func (r *MRInspectReviewer) postReviewWithFooter(ctx context.Context, content, footer string) error {
+	// Preserve the existing content/footer sanitization byte-for-byte, then add
+	// the stable HTML marker so the sanitizer cannot escape it.
+	safe := ReviewNoteMarker + "\n" + r.validator.SanitizeInput(content+footer)
+	currentUser, currentErr := r.gitlab.CurrentUser(ctx)
+	if currentErr == nil {
+		if notes, listErr := r.gitlab.ListNotes(ctx, r.projectID, r.mrIID); listErr == nil {
+			for _, note := range notes {
+				if strings.Contains(note.Body, ReviewNoteMarker) && sameAuthor(note.Author, currentUser) {
+					if _, err := r.gitlab.UpdateNote(ctx, r.projectID, r.mrIID, note.ID, safe); err != nil {
+						return fmt.Errorf("postReview: %w", err)
+					}
+					return nil
+				}
+			}
+		}
+	}
+
 	_, err := r.gitlab.PostNote(ctx, r.projectID, r.mrIID, safe)
 	if err != nil {
 		return fmt.Errorf("postReview: %w", err)
 	}
 	return nil
+}
+
+func sameAuthor(left, right gitlab.Author) bool {
+	return left.ID != 0 && left.ID == right.ID ||
+		left.Username != "" && left.Username == right.Username
 }
 
 // retrieveReviewRAG never indexes. Retrieval failures degrade the review so a missing
@@ -317,12 +515,16 @@ func (r *MRInspectReviewer) retrieveReviewRAG(ctx context.Context, codeDiff stri
 }
 
 func (r *MRInspectReviewer) ragFooter() string {
+	return r.ragFooterWithAggregation(footerAggregation{})
+}
+
+func (r *MRInspectReviewer) ragFooterWithAggregation(aggregation footerAggregation) string {
 	state := r.rag.State
-	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 {
+	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 && aggregation.additionalDegraded == 0 {
 		return ""
 	}
 
-	degradedCount := len(state.Degraded) + len(state.Composition.Degraded)
+	degradedCount := len(state.Degraded) + len(state.Composition.Degraded) + aggregation.additionalDegraded
 	parts := []string{fmt.Sprintf("Degraded entries: %d", degradedCount), fmt.Sprintf("skipped files: %d", state.SkippedFiles)}
 	if state.StorePresent {
 		parts = append([]string{
@@ -343,6 +545,7 @@ func (r *MRInspectReviewer) ragFooter() string {
 	for _, evicted := range state.Composition.Evicted {
 		parts = append(parts, fmt.Sprintf("evicted section: %s", evicted.Name))
 	}
+	parts = append(parts, aggregation.laneEvictions...)
 	return "\n\n---\nRAG provenance: " + strings.Join(parts, "; ")
 }
 
