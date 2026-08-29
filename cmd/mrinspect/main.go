@@ -89,6 +89,12 @@ func main() {
 		diffFetcher = diff.NewFallbackDiffFetcher(localFetcher, apiFetcher, log)
 	}
 
+	modelLimits, err := prompt.ModelLimitsFromEnv()
+	if err != nil {
+		log.Error("model limits configuration error", "error", err)
+		os.Exit(1)
+	}
+
 	projectLoader := project.NewLoader(cfg.Projects)
 	promptComposer := prompt.NewComposer()
 	errHandler := mrerrors.NewHandler(cfg, log)
@@ -111,7 +117,7 @@ func main() {
 		ResourceRegistry: resourceRegistry,
 		Retriever:        productionRAG.Retriever,
 		FullLoader:       productionRAG.FullLoader,
-		ModelLimits:      prompt.DefaultModelLimits,
+		ModelLimits:      modelLimits,
 	})
 
 	r.Run(ctx)
