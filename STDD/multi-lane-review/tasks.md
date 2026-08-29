@@ -114,7 +114,7 @@ Verification command: `go test -race ./internal/lane/ -run TestFanout -count=1 -
 沿用既有的 `doWithRetry`（client.go:143-190）。同時擴充 `IGitLabClient` 與 `testfake`。
 Verification command: `go build ./internal/gitlab/ ./internal/interfaces/ && go test ./internal/gitlab/ -count=1`
 
-## T10 [ ] [MODIFY] `S-26` — single 模式逐位元組不變（`internal/prompt/composer.go`）
+## T10 [x] [MODIFY] `S-26` — single 模式逐位元組不變（`internal/prompt/composer.go`）
 
 Test file: `internal/prompt/composer_test.go`
 **先擷取 golden**：必須在本 change 任何實作動到 `internal/prompt/` 之前，自當前 HEAD
