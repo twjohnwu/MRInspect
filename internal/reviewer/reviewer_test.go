@@ -897,3 +897,32 @@ func installWarningLogRecorder(t *testing.T, r *MRInspectReviewer) func() string
 		return string(data)
 	}
 }
+
+// TestCleanResponse_EarliestMarkerWins guards against the marker-hijack bug:
+// cleanResponse must cut at the EARLIEST marker occurrence in the response,
+// not at the first marker in list-priority order.
+func TestCleanResponse_EarliestMarkerWins(t *testing.T) {
+	r := &MRInspectReviewer{}
+
+	t.Run("tail-quoted high-priority marker hijack", func(t *testing.T) {
+		response := "Some preamble text before the real heading.\n\n" +
+			"## Review\nThis is the real review body with actual findings.\n" +
+			"More real review content here.\n\n" +
+			"```diff\n+ ## Code Review\n+ some quoted diff line from the MR\n```\n"
+		got := r.cleanResponse(response)
+		if !strings.Contains(got, "This is the real review body with actual findings.") {
+			t.Fatalf("cleanResponse dropped the real review body; got: %q", got)
+		}
+		if strings.HasPrefix(got, "```diff") {
+			t.Fatalf("cleanResponse cut at the tail-quoted marker instead of the earliest real one; got: %q", got)
+		}
+	})
+
+	t.Run("earliest position beats list priority", func(t *testing.T) {
+		response := "noise\n### MR Info\nreal content\nmore noise\n## Code Review\nlater section"
+		got := r.cleanResponse(response)
+		if !strings.HasPrefix(got, "### MR Info") {
+			t.Fatalf("cleanResponse must cut at the earliest marker position (### MR Info), got: %q", got)
+		}
+	})
+}

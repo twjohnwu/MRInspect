@@ -137,10 +137,20 @@ export class MRReviewer {
 
   private cleanResponse(response: string): string {
     const markers = ['## Code Review', '# Code Review', '## Review', '### MR Info'];
+    // Cut at the EARLIEST marker occurrence across the whole list, not the
+    // first marker in list-priority order: if the reviewed diff itself
+    // quotes a higher-priority marker string near the tail, list-order
+    // selection would cut there and discard the entire real review, which
+    // is unrecoverable. An echoed marker BEFORE the real content still
+    // leaves echo garbage in the result, but that is accepted here because
+    // the validator still gates on required sections downstream; a
+    // stricter future guard could require the cut tail to actually
+    // contain those required sections.
+    let cutAt = -1;
     for (const marker of markers) {
       const idx = response.indexOf(marker);
-      if (idx >= 0) return response.slice(idx);
+      if (idx >= 0 && (cutAt === -1 || idx < cutAt)) cutAt = idx;
     }
-    return response;
+    return cutAt >= 0 ? response.slice(cutAt) : response;
   }
 }

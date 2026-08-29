@@ -622,10 +622,23 @@ func (r *MRInspectReviewer) loadServiceProject() (project.LoadedProject, error) 
 
 func (r *MRInspectReviewer) cleanResponse(response string) string {
 	markers := []string{"## Code Review", "# Code Review", "## Review", "### MR Info"}
+	// Cut at the EARLIEST marker occurrence across the whole list, not the
+	// first marker in list-priority order: if the reviewed diff itself
+	// quotes a higher-priority marker string near the tail, list-order
+	// selection would cut there and discard the entire real review, which
+	// is unrecoverable. An echoed marker BEFORE the real content still
+	// leaves echo garbage in the result, but that is accepted here because
+	// ValidateReviewContent still gates on required sections downstream;
+	// a stricter future guard could require the cut tail to actually
+	// contain those required sections.
+	cutAt := -1
 	for _, marker := range markers {
-		if idx := strings.Index(response, marker); idx >= 0 {
-			return response[idx:]
+		if idx := strings.Index(response, marker); idx >= 0 && (cutAt == -1 || idx < cutAt) {
+			cutAt = idx
 		}
+	}
+	if cutAt >= 0 {
+		return response[cutAt:]
 	}
 	return response
 }
