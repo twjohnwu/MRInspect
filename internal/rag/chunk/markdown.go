@@ -9,24 +9,40 @@ func Markdown(source string) ([]Chunk, error) {
 	var chunks []Chunk
 	var headings []string
 	sectionStart, sectionEnd := 0, 0
+	preambleEnd := 0
 	inFence := false
+	fenceMarker := byte(0)
 
 	for index, line := range lines {
 		lineNumber := index + 1
-		if isFence(line) {
-			inFence = !inFence
+		if marker := fenceMarkerFor(line); inFence {
+			if marker == fenceMarker {
+				inFence = false
+				fenceMarker = 0
+			}
+		} else if marker != 0 {
+			inFence = true
+			fenceMarker = marker
 		}
 
 		level, title, isHeading := atxHeading(line)
 		if isHeading && !inFence {
+			if preambleEnd != 0 {
+				chunks = appendSection(chunks, lines, 1, preambleEnd, "")
+				preambleEnd = 0
+			}
 			chunks = appendSection(chunks, lines, sectionStart, sectionEnd, breadcrumb(headings))
 			headings = replaceHeading(headings, level, title)
 			sectionStart, sectionEnd = lineNumber, lineNumber
 			continue
 		}
 
-		if sectionStart != 0 && strings.TrimSpace(line) != "" {
-			sectionEnd = lineNumber
+		if strings.TrimSpace(line) != "" {
+			if sectionStart == 0 {
+				preambleEnd = lineNumber
+			} else {
+				sectionEnd = lineNumber
+			}
 		}
 	}
 
@@ -46,9 +62,15 @@ func atxHeading(line string) (level int, title string, ok bool) {
 	return level, line[level+1:], true
 }
 
-func isFence(line string) bool {
+func fenceMarkerFor(line string) byte {
 	trimmed := strings.TrimSpace(line)
-	return strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
+	if strings.HasPrefix(trimmed, "```") {
+		return '`'
+	}
+	if strings.HasPrefix(trimmed, "~~~") {
+		return '~'
+	}
+	return 0
 }
 
 func replaceHeading(headings []string, level int, title string) []string {

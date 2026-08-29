@@ -257,7 +257,7 @@ Rejected options），檔名 denylist 因此是本 change **唯一**的密鑰防
 Test file: `internal/rag/intake/denylist_test.go`
 Verification command: `go test ./internal/rag/intake/ -run TestDenylist -count=1`
 
-## T25 [ ] [NEW] REQ-03 — markdown 分塊的兩個資料遺失情形
+## T25 [x] [NEW] REQ-03 — markdown 分塊的兩個資料遺失情形
 
 理由：無對應 `S-XX`——S-08 與 S-09 都被滿足，這兩個情形在 spec 的 68 個 scenario
 之外，由 T06 的驗證以獨立 fixture 探測發現。
@@ -279,7 +279,7 @@ S-09 只要求 ``` 這一種情形，故不算違反 spec，但規範文件裡�
 Test file: `internal/rag/chunk/markdown_preamble_test.go`
 Verification command: `go test ./internal/rag/chunk/ -run 'TestChunk_Preamble|TestChunk_NestedFence' -count=1`
 
-## T26 [ ] [NEW] REQ-03 — operation 邊界的常設回歸測試
+## T26 [x] [NEW] REQ-03 — operation 邊界的常設回歸測試
 
 理由：無對應 `S-XX`——S-10 的 fixture 之後沒有任何內容，因此兩個真實缺陷都通過了
 frozen 測試。兩者都在 GREEN 之後才被獨立探測發現：
