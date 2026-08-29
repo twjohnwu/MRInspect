@@ -63,7 +63,7 @@ Test file: `internal/lane/parse_test.go`
 `medium` 並計數；多圍籬取**最後一個**（型別優先會解析到重試回帶的舊錯誤）。
 Verification command: `go test ./internal/lane/ -run TestParse -count=1`
 
-## T07 [ ] [NEW] `S-17,S-18,S-19,S-21,S-44` — 合併
+## T07 [x] [NEW] `S-17,S-18,S-19,S-21,S-44` — 合併
 
 Test file: `internal/lane/merge_test.go`
 重點：`file`+`category` 精確分組後，組內與**代表**比行距 ≤3（不用行號桶——桶會讓
