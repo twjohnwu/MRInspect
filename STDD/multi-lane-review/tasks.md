@@ -179,3 +179,58 @@ flowchart LR
     T10 --> T11
     T11 --> T14
 ```
+
+## 修復批次（cirdan 出貨審查 14 項發現，全數經 eagle-sentinel 驗證 CONFIRMED）
+
+Spec 不動：T16–T18 是實作向既有 REQ-04/REQ-06/S-34 靠攏；其餘為 spec 未涵蓋的
+營運強化。逐項證據與修法細節見 plan 檔（2026-08-29 核准）。
+
+## T16 [ ] [MODIFY] 修復發現 A、B — JSON 輸出契約＋信封驗證＋laneId 比對
+
+Test file: internal/lane/parse_test.go（追加）、internal/lane/compose_test.go（追加）
+Verification command: `go test ./internal/lane/ -run 'TestParse_RejectsEnvelopeless|TestParse_RejectsLaneIDMismatch|TestCompose_PromptCarriesOutputContract' -count=1`
+
+## T17 [ ] [MODIFY] 修復發現 D — chunks 流經 fanout 進渲染
+
+Test file: internal/reviewer/reviewer_test.go（追加）
+Verification command: `go test ./internal/reviewer/ -run TestRun_CitationsVerifiedAgainstReceivedChunks -count=1`
+
+## T18 [ ] [MODIFY] 修復發現 C — budget/eviction 生產可達
+
+Test file: internal/lane/compose_test.go（追加）、internal/reviewer/reviewer_test.go（改既有 S-34 測試為實料驅動）
+Verification command: `go test ./internal/lane/ -run TestCompose_BudgetEviction -count=1 && go test ./internal/reviewer/ -run TestRun_NormativeEvictionFailIsNotSwallowed -count=1`
+
+## T19 [ ] [MODIFY] 修復發現 F1/F10 — 留言更新錯誤路徑記 log
+
+Test file: internal/reviewer/reviewer_test.go（追加）
+Verification command: `go test ./internal/reviewer/ -run TestPostReview_ListingErrorFallsBackWithLog -count=1`
+
+## T20 [ ] [MODIFY] 修復發現 F2 — unknown selectors 具名降級
+
+Test file: internal/lane/compose_test.go（追加）
+Verification command: `go test ./internal/lane/ -run TestCompose_UnknownSelectorIsNamedDegradation -count=1`
+
+## T21 [ ] [INFRA] 修復發現 F3 — per-system lane overlay，撤 docs tag
+
+理由：純設定檔改動（resources.yaml、lanes.yaml、兩個新 overlay 檔），無程式碼。
+Verification command: `go test ./internal/rag/resources/ ./internal/lane/ -count=1 && test -f projects/margherita-pizza/lanes.yaml && test -f projects/fried-chicken/lanes.yaml`
+
+## T22 [ ] [MODIFY] 修復發現 F5/F6 — FailureKindGenerate＋重試 prompt 截斷
+
+Test file: internal/lane/parse_test.go（追加）
+Verification command: `go test ./internal/lane/ -run 'TestParse_TransportErrorIsGenerateKind|TestParse_RetryPromptTruncatesPreviousOutput' -count=1`
+
+## T23 [ ] [MODIFY] 修復發現 F7/F8 — fanout SetLimit＋neutralize 跳脫反斜線
+
+Test file: internal/lane/fanout_test.go（追加）、internal/lane/render_test.go（追加）
+Verification command: `go test -race ./internal/lane/ -run 'TestFanout_ConcurrencyCapped|TestRender_NeutralizesBackslash' -count=1`
+
+## T24 [ ] [MODIFY] 修復發現 F4 — store 解析 memoize＋temp 清理
+
+Test file: internal/ragwire/lane_resources_test.go（新建）
+Verification command: `go test ./internal/ragwire/ -run TestResolvingRetriever -count=1 -race`
+
+## T25 [ ] [MODIFY] 修復發現 F9 — ListNotes 頁數上限
+
+Test file: internal/gitlab/client_test.go（追加）
+Verification command: `go test ./internal/gitlab/ -run TestListNotes_PageCap -count=1`
