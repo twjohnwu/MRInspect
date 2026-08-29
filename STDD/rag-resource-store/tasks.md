@@ -57,7 +57,7 @@ Test file: `internal/rag/resources/loader_test.go`
 保留原序位，新增 name 接在 canonical 尾端。
 Verification command: `go test ./internal/rag/resources/ -run 'TestLoad|TestResolve' -count=5`
 
-## T04 [ ] [NEW] `S-31,S-46` — CI 觸發路徑比對
+## T04 [x] [NEW] `S-31,S-46` — CI 觸發路徑比對
 
 Test file: `internal/rag/resources/citrigger_test.go`
 重點：以程式比對 `resources.yaml` 宣告的路徑集合與 `.gitlab-ci.yml` 的 `rules.changes`
