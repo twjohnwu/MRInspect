@@ -449,16 +449,18 @@ func reviewerModelLimits() map[string]int {
 }
 
 type modeRoutingProvider struct {
-	mu            sync.Mutex
-	prompts       []string
-	laneErrors    map[string]error
-	laneResponses map[string]string
+	mu             sync.Mutex
+	prompts        []string
+	laneErrors     map[string]error
+	laneResponses  map[string]string
+	laneResponders map[string]func(string) string
 }
 
 func newModeRoutingProvider() *modeRoutingProvider {
 	return &modeRoutingProvider{
-		laneErrors:    make(map[string]error),
-		laneResponses: make(map[string]string),
+		laneErrors:     make(map[string]error),
+		laneResponses:  make(map[string]string),
+		laneResponders: make(map[string]func(string) string),
 	}
 }
 
@@ -470,6 +472,11 @@ func (p *modeRoutingProvider) Generate(_ context.Context, reviewPrompt string, _
 	for laneID, laneErr := range p.laneErrors {
 		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
 			return "", laneErr
+		}
+	}
+	for laneID, respond := range p.laneResponders {
+		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
+			return respond(reviewPrompt), nil
 		}
 	}
 	for laneID, response := range p.laneResponses {
@@ -694,7 +701,20 @@ func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
 		}}},
 	}}
 	provider := newModeRoutingProvider()
-	provider.laneResponses["standards"] = `{"laneId":"standards","findings":[{"title":"known citation","severity":"low","rationale":"matches the received standard","citations":[{"sourceId":"std-chunk-7"}]},{"title":"unknown citation","severity":"low","rationale":"does not match a received standard","citations":[{"sourceId":"missing-source"}]}]}`
+	provider.laneResponders["standards"] = func(receivedPrompt string) string {
+		const headerPrefix = "[sourceId: "
+		headerAt := strings.Index(receivedPrompt, headerPrefix)
+		if headerAt < 0 {
+			return `{"laneId":"standards","findings":[{"title":"known citation","severity":"low","rationale":"source ID was absent from the prompt","citations":[{"sourceId":"prompt-had-no-source-id"}]},{"title":"unknown citation","severity":"low","rationale":"does not match a received standard","citations":[{"sourceId":"missing-source"}]}]}`
+		}
+		sourceIDStart := headerAt + len(headerPrefix)
+		sourceIDEnd := strings.Index(receivedPrompt[sourceIDStart:], " | source:")
+		if sourceIDEnd < 0 {
+			return `{"laneId":"standards","findings":[]}`
+		}
+		sourceID := receivedPrompt[sourceIDStart : sourceIDStart+sourceIDEnd]
+		return fmt.Sprintf(`{"laneId":"standards","findings":[{"title":"known citation","severity":"low","rationale":"matches the received standard","citations":[{"sourceId":%q}]},{"title":"unknown citation","severity":"low","rationale":"does not match a received standard","citations":[{"sourceId":"missing-source"}]}]}`, sourceID)
+	}
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
 	r.ai = provider
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{

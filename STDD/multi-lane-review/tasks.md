@@ -234,3 +234,13 @@ Verification command: `go test ./internal/ragwire/ -run TestResolvingRetriever -
 
 Test file: internal/gitlab/client_test.go（追加）
 Verification command: `go test ./internal/gitlab/ -run TestListNotes_PageCap -count=1`
+
+## T26 [x] [MODIFY] 修復複審 NEW-1 — sourceId 必須實際進 prompt，引用驗證才有意義
+
+Test file: internal/lane/compose_test.go（追加）、internal/reviewer/reviewer_test.go（改 T17 測試為不餵 ID 的實料驅動）
+Verification command: `go test ./internal/lane/ -run TestCompose_ChunkSourceIDsReachPrompt -count=1 && go test ./internal/reviewer/ -run TestRun_CitationsVerifiedAgainstReceivedChunks -count=1`
+
+## T27 [wip] [MODIFY] 修復複審 NEW-2/NEW-4/NEW-5 — budget 計入整體 prompt 開銷；併發 env 非法值記 log；框架估算給真 HeadingTemplate
+
+Test file: internal/lane/compose_test.go（追加）、internal/lane/fanout_test.go（追加）
+Verification command: `go test ./internal/lane/ -run 'TestCompose_BudgetCountsFullPromptOverhead|TestFanout_InvalidConcurrencyLogsFallback' -count=1`

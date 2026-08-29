@@ -52,6 +52,7 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 	if err != nil {
 		return ComposeResult{}, err
 	}
+	chunks = chunksWithSourceHeaders(chunks)
 	selectorDegraded := make([]string, 0, len(unknown)+len(degraded))
 	for _, selector := range unknown {
 		selectorDegraded = append(selectorDegraded, fmt.Sprintf("unknown resource selector: %s", selector))
@@ -72,6 +73,20 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 		Degraded: degraded,
 		Chunks:   composedChunks,
 	}, nil
+}
+
+func chunksWithSourceHeaders(chunks []rag.Chunk) []rag.Chunk {
+	withHeaders := make([]rag.Chunk, len(chunks))
+	for index, retrieved := range chunks {
+		source := retrieved.Source
+		if retrieved.StartLine > 0 {
+			source += fmt.Sprintf(":%d", retrieved.StartLine)
+		}
+		retrieved.Text = fmt.Sprintf("[sourceId: %s | source: %s]\n%s", retrieved.ID, source, retrieved.Text)
+		retrieved.TokenEst = chunk.TokenEst(retrieved.Text)
+		withHeaders[index] = retrieved
+	}
+	return withHeaders
 }
 
 func composeLanePrompt(

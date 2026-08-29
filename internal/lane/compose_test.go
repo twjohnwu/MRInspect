@@ -449,3 +449,69 @@ func TestCompose_UnknownSelectorIsNamedDegradation(t *testing.T) {
 		}
 	}
 }
+
+func TestCompose_ChunkSourceIDsReachPrompt(t *testing.T) {
+	registry := loadComposeResourceRegistry(t, `  - name: cited-guides
+    mode: retrieval
+    paths: []
+`)
+	retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+		Result: rag.Result{Chunks: []rag.Chunk{
+			{ID: "chunk-42", Source: "docs/x.md", StartLine: 7, Text: "BODY-SENTINEL"},
+			{ID: "chunk-zero", Source: "docs/zero.md", Text: "ZERO-LINE-SENTINEL"},
+		}},
+	}}
+
+	for _, test := range []struct {
+		name   string
+		budget int
+	}{
+		{name: "unbudgeted"},
+		{name: "budgeted", budget: 100_000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			declaration := Lane{ID: "cited-lane", Intent: "review cited material", Resources: Resources{Sets: []string{"cited-guides"}}}
+			input := composeTestInput(t, declaration, []string{"citations"}, registry, "CITATION-DIFF")
+			input.Retriever = retriever
+			input.Budget = test.budget
+
+			result, err := Compose(context.Background(), input)
+			if err != nil {
+				t.Fatalf("Compose: %v", err)
+			}
+
+			for _, want := range []struct {
+				header string
+				body   string
+			}{
+				{header: "[sourceId: chunk-42 | source: docs/x.md:7]", body: "BODY-SENTINEL"},
+				{header: "[sourceId: chunk-zero | source: docs/zero.md]", body: "ZERO-LINE-SENTINEL"},
+			} {
+				headerAt := strings.Index(result.Prompt, want.header)
+				if headerAt < 0 {
+					t.Fatalf("prompt missing source header %q", want.header)
+				}
+				bodyAt := strings.Index(result.Prompt, want.body)
+				if bodyAt < 0 || headerAt >= bodyAt {
+					t.Fatalf("source header %q is not before body %q", want.header, want.body)
+				}
+				openAt := strings.LastIndex(result.Prompt[:headerAt], "<<<RESOURCE:")
+				if openAt < 0 {
+					t.Fatalf("source header %q has no preceding resource boundary", want.header)
+				}
+				openEnd := strings.Index(result.Prompt[openAt:], ">>>")
+				if openEnd < 0 {
+					t.Fatalf("source header %q has no complete resource opening marker", want.header)
+				}
+				nonce := strings.TrimSuffix(strings.TrimPrefix(result.Prompt[openAt:openAt+openEnd+3], "<<<RESOURCE:"), ">>>")
+				closeAt := strings.Index(result.Prompt[headerAt:], "<<<END:"+nonce+">>>")
+				if nonce == "" || closeAt < 0 || headerAt+closeAt <= bodyAt {
+					t.Fatalf("source header %q and body %q are not enclosed by one matching nonce block", want.header, want.body)
+				}
+			}
+			if strings.Contains(result.Prompt, "source: docs/zero.md:0") {
+				t.Error("StartLine == 0 source header unexpectedly contains :0")
+			}
+		})
+	}
+}
