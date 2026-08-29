@@ -144,7 +144,7 @@ Test file: `internal/prompt/budget_test.go`
 移除順序在五次執行間一致；框架開銷逐字精確計入。
 Verification command: `go test -race ./internal/prompt/ -run TestBudget -count=5`
 
-## T14 [ ] [MODIFY] `S-27,S-34,S-35,S-52,S-55,S-65` — composer（`internal/prompt/composer.go`）
+## T14 [x] [MODIFY] `S-27,S-34,S-35,S-52,S-55,S-65` — composer（`internal/prompt/composer.go`）
 
 Test file: `internal/prompt/composer_test.go`
 **先做 S-27 的 golden**：必須在本 change 任何實作落地**之前**自當前 HEAD 擷取並提交到

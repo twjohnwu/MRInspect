@@ -41,3 +41,22 @@ type Retriever interface {
 	Retrieve(context.Context, Query) (Result, error)
 	Close() error
 }
+
+// FullDoc is one normative resource loaded as its original bytes (REQ-13).
+type FullDoc struct {
+	Source      string
+	ResourceSet string
+	Bytes       []byte
+	TokenEst    int
+}
+
+// FullResult reports full documents and named loading degradations (REQ-13).
+type FullResult struct {
+	Docs     []FullDoc
+	Degraded []string
+}
+
+// FullLoader loads full-mode resources independently of Retriever (REQ-13).
+type FullLoader interface {
+	LoadFull(context.Context, []string) (FullResult, error)
+}
