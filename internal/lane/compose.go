@@ -47,11 +47,16 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 		return ComposeResult{}, fmt.Errorf("Compose: read lane template %q: %w", input.Lane.Template, err)
 	}
 
-	sets := resolveResourceSets(input)
+	sets, unknown := resolveResourceSets(input)
 	chunks, fullSetRefs, degraded, err := collectResources(ctx, input, sets)
 	if err != nil {
 		return ComposeResult{}, err
 	}
+	selectorDegraded := make([]string, 0, len(unknown)+len(degraded))
+	for _, selector := range unknown {
+		selectorDegraded = append(selectorDegraded, fmt.Sprintf("unknown resource selector: %s", selector))
+	}
+	degraded = append(selectorDegraded, degraded...)
 
 	composed, composedChunks, err := composeLanePrompt(ctx, input, chunks, fullSetRefs, &degraded)
 	if err != nil {
@@ -207,12 +212,11 @@ func survivingResources(fullDocs []rag.FullDoc, chunks []rag.Chunk, kept []bool)
 	return keptDocs, keptChunks
 }
 
-func resolveResourceSets(input ComposeInput) []resources.Set {
+func resolveResourceSets(input ComposeInput) ([]resources.Set, []string) {
 	if len(input.Lane.Resources.Sets) == 0 && len(input.Lane.Resources.Tags) == 0 {
-		return nil
+		return nil, nil
 	}
-	sets, _ := input.ResourceRegistry.Resolve(input.Lane.Resources.Sets, input.Lane.Resources.Tags)
-	return sets
+	return input.ResourceRegistry.Resolve(input.Lane.Resources.Sets, input.Lane.Resources.Tags)
 }
 
 func collectResources(ctx context.Context, input ComposeInput, sets []resources.Set) ([]rag.Chunk, []string, []string, error) {

@@ -61,6 +61,11 @@ type footerAggregation struct {
 	laneEvictions      []string
 }
 
+type namedLaneDegradation struct {
+	laneID  string
+	message string
+}
+
 // MRInspectReviewer orchestrates the full code review pipeline.
 type MRInspectReviewer struct {
 	cfg        config.Config
@@ -248,8 +253,9 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		return "", footerAggregation{}, fmt.Errorf("multi-lane fan-out failed: %w", err)
 	}
 
-	renderInput := r.multiRenderInput(registry.Lanes, result, changesResponse.Changes)
+	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changesResponse.Changes)
 	footer := aggregateLaneFooter(result.LaneResults)
+	footer = mergeLaneDegradations(footer, result.LaneResults, selectorDegraded)
 	if os.Getenv("MRI_RAG_ON_NORMATIVE_EVICTION") == "fail" {
 		if failure, ok := normativeEvictionFailure(result.Failures); ok {
 			renderInput.Findings = nil
@@ -291,14 +297,26 @@ func normativeEvictionFailure(failures []lane.LaneFailure) (lane.LaneFailure, bo
 }
 
 func (r *MRInspectReviewer) multiRenderInput(declarations []lane.Lane, result lane.FanoutResult, changes []gitlab.Change) lane.RenderInput {
+	renderInput, _ := r.multiRenderInputWithDegradations(declarations, result, changes)
+	return renderInput
+}
+
+func (r *MRInspectReviewer) multiRenderInputWithDegradations(declarations []lane.Lane, result lane.FanoutResult, changes []gitlab.Change) (lane.RenderInput, []namedLaneDegradation) {
 	laneOrder := make([]string, 0, len(declarations))
 	renderLanes := make([]lane.RenderLane, 0, len(declarations))
+	var selectorDegraded []namedLaneDegradation
 	for _, declaration := range declarations {
 		laneOrder = append(laneOrder, declaration.ID)
-		sets, _ := r.multi.ResourceRegistry.Resolve(declaration.Resources.Sets, declaration.Resources.Tags)
+		sets, unknown := r.multi.ResourceRegistry.Resolve(declaration.Resources.Sets, declaration.Resources.Tags)
 		setNames := make([]string, 0, len(sets))
 		for _, set := range sets {
 			setNames = append(setNames, set.Name)
+		}
+		for _, selector := range unknown {
+			selectorDegraded = append(selectorDegraded, namedLaneDegradation{
+				laneID:  declaration.ID,
+				message: fmt.Sprintf("unknown resource selector: %s", selector),
+			})
 		}
 		renderLanes = append(renderLanes, lane.RenderLane{Declaration: declaration, ResolvedResourceSets: setNames})
 	}
@@ -315,7 +333,7 @@ func (r *MRInspectReviewer) multiRenderInput(declarations []lane.Lane, result la
 		ReceivedChunks: receivedChunks,
 		Changes:        changes,
 		ChangedLines:   hunk.Build(changes),
-	}
+	}, selectorDegraded
 }
 
 func aggregateLaneFooter(results []lane.LaneResult) footerAggregation {
@@ -334,6 +352,23 @@ func aggregateLaneFooter(results []lane.LaneResult) footerAggregation {
 			seenEvictions[entry] = struct{}{}
 			aggregation.laneEvictions = append(aggregation.laneEvictions, entry)
 		}
+	}
+	return aggregation
+}
+
+func mergeLaneDegradations(aggregation footerAggregation, results []lane.LaneResult, additional []namedLaneDegradation) footerAggregation {
+	existing := make(map[namedLaneDegradation]int)
+	for _, result := range results {
+		for _, degraded := range result.Degraded {
+			existing[namedLaneDegradation{laneID: result.LaneID, message: degraded}]++
+		}
+	}
+	for _, degraded := range additional {
+		if existing[degraded] > 0 {
+			existing[degraded]--
+			continue
+		}
+		aggregation.additionalDegraded++
 	}
 	return aggregation
 }

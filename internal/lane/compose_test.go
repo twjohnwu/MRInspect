@@ -415,3 +415,37 @@ func TestCompose_BudgetEviction(t *testing.T) {
 		}
 	})
 }
+
+func TestCompose_UnknownSelectorIsNamedDegradation(t *testing.T) {
+	registry := loadComposeResourceRegistry(t, `  - name: existing-guides
+    tags: [known]
+    mode: retrieval
+    paths: []
+`)
+	lane := Lane{
+		ID:        "unknown-selectors",
+		Intent:    "review available material",
+		Resources: Resources{Sets: []string{"existing-guides", "missing-set"}, Tags: []string{"missing-tag"}},
+	}
+	retriever := &testfake.FakeRetriever{}
+	input := composeTestInput(t, lane, []string{"shared", "terms"}, registry, "UNKNOWN-SELECTOR-DIFF")
+	input.Retriever = retriever
+
+	result, err := Compose(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if retriever.RetrieveCallCount() != 1 {
+		t.Fatalf("Retrieve call count = %d, want exactly 1", retriever.RetrieveCallCount())
+	}
+	if len(result.Degraded) != 2 {
+		t.Errorf("Degraded = %v, want exactly one entry per unknown selector", result.Degraded)
+	}
+	for _, selector := range []string{"missing-set", "missing-tag"} {
+		if !slices.ContainsFunc(result.Degraded, func(entry string) bool {
+			return strings.Contains(entry, "unknown resource selector") && strings.Contains(entry, selector)
+		}) {
+			t.Errorf("Degraded = %v, want unknown resource selector naming %q", result.Degraded, selector)
+		}
+	}
+}

@@ -205,7 +205,7 @@ Verification command: `go test ./internal/lane/ -run TestCompose_BudgetEviction 
 Test file: internal/reviewer/reviewer_test.go（追加）
 Verification command: `go test ./internal/reviewer/ -run TestPostReview_ListingErrorFallsBackWithLog -count=1`
 
-## T20 [ ] [MODIFY] 修復發現 F2 — unknown selectors 具名降級
+## T20 [x] [MODIFY] 修復發現 F2 — unknown selectors 具名降級
 
 Test file: internal/lane/compose_test.go（追加）
 Verification command: `go test ./internal/lane/ -run TestCompose_UnknownSelectorIsNamedDegradation -count=1`
