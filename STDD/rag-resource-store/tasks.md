@@ -173,7 +173,7 @@ Test file: `internal/ragcmd/index_test.go`
 裸 `mrinspect` 行為完全不變；四種 exit code 兩兩可區分；`--dry-run` 不寫任何檔案。
 Verification command: `go test ./internal/ragcmd/ -run 'TestDispatch|TestIndex' -count=1`
 
-## T17 [ ] [MODIFY] `S-19` — index 不需 review 憑證（真實二進位，`cmd/mrinspect/main.go`）
+## T17 [x] [MODIFY] `S-19` — index 不需 review 憑證（真實二進位，`cmd/mrinspect/main.go`）
 
 Test file: `cmd/mrinspect/main_integration_test.go`（`-tags integration`）
 重點：必須執行 `go build` 產出的**二進位**，不得只呼叫套件函式——套件內測試觀察不到
