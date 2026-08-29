@@ -71,7 +71,7 @@ Test file: `internal/lane/merge_test.go`
 （`./` 前綴、`a/`/`b/` 前綴）後才比對，大小寫不折疊；六鍵全序使五次輸出逐位元組相同。
 Verification command: `go test -race ./internal/lane/ -run TestMerge -count=5`
 
-## T13 [INFRA] `internal/lane/hunk/` — unified diff 新側行區間
+## T13 [x] [INFRA] `internal/lane/hunk/` — unified diff 新側行區間
 
 理由：無 scenario 直接對應（S-39 使用其結果）——`internal/gitlab/types.go:21-32` 的
 `Change` 只有一整串未解析的 `Diff` 字串，沒有 hunk 或行範圍欄位，而 S-39 要求
