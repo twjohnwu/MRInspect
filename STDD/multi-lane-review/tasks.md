@@ -14,7 +14,7 @@ RED → Verify RED → GREEN → Verify GREEN → REFACTOR（SOLID + DRY）→ S
 與本 change 自己的 `S-NN` 區隔。coverage 檢查只計本 change 的 `S-NN`，
 不得把 `A/S-NN` 誤計為本 change 的 scenario。
 
-## T01 [INFRA] 把 `golang.org/x/sync` 提升為直接依賴
+## T01 [x] [INFRA] 把 `golang.org/x/sync` 提升為直接依賴
 
 理由：無 scenario 對應——`go.mod:43` 目前標記 `// indirect` 且無任何 `.go` 匯入，
 T09 的 `errgroup` 需要它先成為直接依賴才能編譯。
