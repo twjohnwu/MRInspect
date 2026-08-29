@@ -38,7 +38,7 @@ Test file: `internal/lane/registry_test.go`
 overlay 覆蓋既有 id 保留原序位、新增 id 接在 canonical 尾端。
 Verification command: `go test ./internal/lane/ -run TestLoad -count=5`
 
-## T04 [ ] [NEW] `S-36` — Terms 自 diff 萃取
+## T04 [x] [NEW] `S-36` — Terms 自 diff 萃取
 
 Test file: `internal/lane/terms_test.go`
 重點：路徑衍生詞與識別字衍生詞都要有；camelCase／snake_case 拆子詞；
