@@ -17,8 +17,18 @@ mrinspect/
 │   ├── config/       # Config struct, env var loading
 │   ├── diff/         # LocalDiffFetcher, APIDiffFetcher, FallbackDiffFetcher, ConvertChangesToDiff
 │   ├── gitlab/       # GitLab HTTP client (implements IGitLabClient)
+│   ├── lane/         # Ordered lane registry, composition, fan-out, merge, and rendering
+│   │   └── hunk/     # Changed-line lookup for rendered findings
 │   ├── project/      # YAML project loader (implements IProjectLoader)
 │   ├── prompt/       # Prompt composer + legacy templates
+│   ├── rag/          # Store source resolution and retrieval contracts
+│   │   ├── chunk/    # Markdown/structured chunking and token estimation
+│   │   ├── intake/   # Resource walking and denylist filtering
+│   │   ├── resources/# Resource-set loading, selectors, and CI coverage checks
+│   │   └── sqlite/   # SQLite indexing, storage, and retrieval backend
+│   ├── ragcmd/       # `mrinspect index` parsing, checks, and exit-code policy
+│   ├── ragwire/      # Production adapters from RAG stores to review lanes
+│   ├── testfake/     # Shared Go fakes for reviewer and RAG tests
 │   ├── validator/    # Input validation, env var access (implements IReviewValidator)
 │   ├── errors/       # Error categorization, MR comment generation
 │   └── logger/       # JSON logging + metrics collection
@@ -38,8 +48,11 @@ mrinspect/
 ├── tests/            # Jest tests
 ├── projects/         # Review projects (shared by both runners)
 │   ├── registry.yaml # service-name → system-dir mapping
+│   ├── resources.yaml# Named RAG resource sets
+│   ├── lanes.yaml    # Canonical ordered review lanes
+│   ├── _lanes/       # Static lane prompt preambles
 │   ├── _shared/      # docs injected into every review prompt
-│   └── <system>/     # system.yaml + .md docs per system
+│   └── <system>/     # system.yaml + .md docs + optional lanes.yaml overlay
 ├── templates/        # GitLab CI reusable template
 ├── Dockerfile        # Multi-stage Go build
 ├── Makefile          # Go build targets
@@ -93,7 +106,7 @@ npx tsx review.ts       # run reviewer directly
 
 ## CI Job Names
 
-Defined in `templates/ai-review-template.yaml`:
+Reusable review jobs are defined in `templates/ai-review-template.yaml`; the repository pipeline also defines its RAG index job in `.gitlab-ci.yml`:
 
 | Job | What it runs |
 |---|---|
@@ -101,6 +114,7 @@ Defined in `templates/ai-review-template.yaml`:
 | `.mrinspect-ts-review` | TypeScript runner (`node:22`, `npx tsx review.ts`) |
 | `.superpowers-review` | Claude Code CLI + superpowers plugin |
 | `.mrinspect-full` | All three layers in parallel |
+| `index` | Builds `rag-index/mrinspect-rag.sqlite` on schedules, pushes to `main` that change `_shared` or either sample-system resource directory, or manual runs; publishes it for 21 days |
 
 Callers use `extends: .mrinspect-go-review` (or `-ts-review`, `-full`, etc.).
 
@@ -110,9 +124,12 @@ Callers use `extends: .mrinspect-go-review` (or `-ts-review`, `-full`, etc.).
 
 1. `projects/registry.yaml` maps service names → system directory names
 2. `projects/<system>/system.yaml` describes the system (name, frameworks, service type overrides)
-3. `projects/<system>/*.md` are review standards injected into the AI prompt
-4. `projects/_shared/*.md` are injected into every review regardless of system
-5. Falls back to built-in legacy templates if no project matches
+3. `projects/resources.yaml` declares ordered, named sets with tags and required `retrieval` or `full` modes; lanes resolve them by set name and/or tag
+4. `projects/lanes.yaml` declares ordered lanes with `id`, `enabled`, `template`, `intent`, and resource selectors; empty selectors make a diff-only lane
+5. `projects/_lanes/*.tmpl.md` are static lane prompt preambles
+6. `projects/<system>/lanes.yaml` overlays canonical lanes by ID: replacements keep position and new IDs append
+7. Multi mode names configuration degradations when lane files are missing, invalid, or have no enabled lane; lane prompt failures remain named lane failures rather than silently switching templates
+8. Single-review project documents still come from `projects/<system>/*.md` and `projects/_shared/*.md`; multi-lane documents enter only through selected resource sets
 
 Both runners use the same `projects/` directory. In CI the Go binary bakes projects into the Docker image; the TypeScript runner reads them from the working directory (`PROJECTS_DIR` defaults to `./projects`).
 
@@ -127,8 +144,16 @@ Both runners use the same `projects/` directory. In CI the Go binary bakes proje
 | `AI_PROVIDER` | `gemini` | `gemini` \| `anthropic` \| `openai` |
 | `MRI_SERVICE_NAME` | `unknown` | Must match a key in `projects/registry.yaml` |
 | `MRI_SERVICE_TYPE` | `backend` | `backend` \| `frontend` \| `ai` \| `iac` |
+| `MRI_REVIEW_MODE` | `single` | Go runner: `single` \| `multi`; `multi` runs configured lane fan-out |
+| `MRI_LANE_CONCURRENCY` | `4` | Positive integer; invalid values are logged and defaulted to `4` |
 | `IS_SELF_REFLECTION` | `false` | Set `true` for a second AI validation pass |
 | `PROJECTS_DIR` | `./projects` | Override projects directory path |
+| `MRI_RAG_STORE` | _(unset)_ | Explicit SQLite path for the Go `path` source; put `path` first in the source chain for precedence |
+| `MRI_RAG_SOURCE` | `package,artifact,baked` | Comma-separated Go store source chain, tried in order |
+| `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package version; set explicitly to pin the store |
+| `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | `warn` \| `fail` policy for evicted full-mode normative sections |
+| `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | Positive float multiplied by the selected model's prompt limit |
+| `MRI_MODEL_LIMITS` | _(unset)_ | Go runner: `model:tokens,model:tokens` entries merged over the built-in defaults; malformed entries fail startup |
 | `CI_PROJECT_ID` | _(auto by GitLab)_ | Project ID for local MR mode |
 | `CI_MERGE_REQUEST_IID` | _(auto by GitLab)_ | MR IID for local MR mode |
 

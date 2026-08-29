@@ -249,3 +249,28 @@ Verification command: `go test ./internal/lane/ -run 'TestCompose_BudgetCountsFu
 
 Test file: internal/lane/merge_test.go（追加）、internal/lane/render_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestMerge_CitationsKeepProvenance|TestRender_CitationVerifiedOnlyAgainstProvidingLane' -count=1`
+
+## T29 [x] [MODIFY] 修復終審 blocker — logger metrics 加鎖（fan-out 併發 data race）
+
+Test file: internal/logger/logger_test.go（新建或追加）
+Verification command: `go test -race ./internal/logger/ -count=1 && grep -q 'race' Makefile`
+
+## T30 [x] [MODIFY] 修復終審 important — 同 lane 發現不互併（防吃掉發現）
+
+Test file: internal/lane/merge_test.go（追加）
+Verification command: `go test ./internal/lane/ -run TestMerge_SameLaneFindingsStaySeparate -count=1`
+
+## T31 [x] [MODIFY] 修復終審 important — ModelLimits 可由環境擴充（MRI_MODEL_LIMITS）
+
+Test file: internal/prompt/model_limits_test.go（新建）
+Verification command: `go test ./internal/prompt/ -run TestModelLimits -count=1`
+
+## T32 [x] [MODIFY] 修復終審 blocker — TopK 未設時給預設值（出廠設定檢索 no-op）
+
+Test file: internal/lane/registry_test.go（追加）、internal/lane/compose_test.go（追加）
+Verification command: `go test ./internal/lane/ -run 'TestLoad_DefaultTopK|TestCompose_ZeroTopKNeverReachesRetriever' -count=1`
+
+## T33 [x] [MODIFY] 修復終審 important — Scope 反映實際進 prompt 的資源，不是宣告值
+
+Test file: internal/reviewer/reviewer_test.go（追加）
+Verification command: `go test ./internal/reviewer/ -run TestRun_ScopeReflectsActualContribution -count=1`

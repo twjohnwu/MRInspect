@@ -37,3 +37,17 @@ specific decision is later reversed.
 ---
 
 <!-- Append entries below, starting from #1. -->
+
+## 1. 跨系統資源選取：tag 廣播 → per-system lane overlay
+
+1. **最初想法**：per-system 文件集（margherita-pizza-docs 等）都掛共用 `docs` tag，canonical `spec-conformance` lane 以 `tags: [docs]` 一網打盡。
+2. **為什麼錯**：`Resolve` 依 tag 匹配時沒有系統範圍——審 A 系統的 MR 會檢索到 B 系統的 spec 並據以審查（出貨審查發現 F3，經獨立驗證確認）。
+3. **現在做法**：撤掉 per-system set 的 `docs` tag；每個系統以 `projects/<system>/lanes.yaml` overlay 把 `spec-conformance` 釘到自己的 set。canonical 的 `tags: [docs]` 保留給未來真正跨系統共用的文件。
+4. **學到什麼**：以 tag 做跨集合選取時，tag 的語意邊界必須和資料的隔離邊界一致；新增系統的正確擴充點是「加一個 overlay 檔」而非「往共用 tag 塞」。
+
+## 2. 引用驗證：從「有比對就好」到「來源可及且出處限定」
+
+1. **最初想法**：lane 回傳的 `citations[].sourceId` 與該次檢索到的 chunk ID 比對，match 就渲染為已驗證座標。
+2. **為什麼錯**：兩個獨立漏洞——(a) chunk ID（sqlite rowid）從未出現在 prompt 裡，模型不可能誠實引用，但隨口捏一個數字反而可能 match 成「已驗證」；(b) 跨 lane 合併把 citations 串接且不留出處，A lane 可以捏 B lane 收到的 ID 騙過驗證。修復前的空 map 讓一切顯示 unverified（無害但無用）；接通 chunks 後這兩條路徑變成主動的假背書。
+3. **現在做法**：檢索 chunk 注入 prompt 時帶 `[sourceId: … | source: …:line]` 表頭，契約明令只能引用表頭所示 id；合併時每筆 citation 記錄提供者 lane，渲染只對「該 lane 實際收到的 chunks」驗證。
+4. **學到什麼**：「驗證」機制要成立，被驗證方必須先拿得到正確答案的素材，且驗證範圍必須等於資料的信任邊界——兩者缺一，驗證徽章比沒有徽章更危險。
