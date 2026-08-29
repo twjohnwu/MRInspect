@@ -11,6 +11,7 @@ import (
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/project"
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/chunk"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/testfake"
 )
@@ -306,4 +307,111 @@ func TestCompose_PromptCarriesOutputContract(t *testing.T) {
 
 	// The internal/prompt golden test guards the single-mode path; this contract
 	// assertion deliberately enters through lane Compose only.
+}
+
+func TestCompose_BudgetEviction(t *testing.T) {
+	t.Run("non-normative sections evict under tiny budget", func(t *testing.T) {
+		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "warn")
+		registry := loadComposeResourceRegistry(t, `  - name: oversized-reference
+    mode: retrieval
+    paths: []
+`)
+		const diff = "BUDGET-EVICTION-DIFF-MUST-REMAIN"
+		largeChunk := strings.Repeat("OVERSIZED-RETRIEVAL-CONTENT-", 4_000)
+		retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+			Result: rag.Result{Chunks: []rag.Chunk{{
+				ID:          "oversized-reference",
+				Text:        largeChunk,
+				Source:      "oversized-reference",
+				ResourceSet: "oversized-reference",
+				TokenEst:    chunk.TokenEst(largeChunk),
+			}}},
+		}}
+		declaration := Lane{ID: "budgeted-retrieval", Intent: "review retrieved material", Resources: Resources{Sets: []string{"oversized-reference"}}}
+		input := composeTestInput(t, declaration, []string{"budget"}, registry, diff)
+		input.Retriever = retriever
+		input.Budget = 4_000
+
+		result, err := Compose(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Compose: %v", err)
+		}
+		if !slices.ContainsFunc(result.Degraded, func(entry string) bool {
+			return strings.Contains(entry, "evicted section") && strings.Contains(entry, "oversized-reference")
+		}) {
+			t.Errorf("Degraded = %v, want named oversized-reference eviction", result.Degraded)
+		}
+		if strings.Contains(result.Prompt, largeChunk) {
+			t.Error("prompt contains retrieval chunk that should have been wholly evicted")
+		}
+		if !strings.Contains(result.Prompt, diff) {
+			t.Errorf("prompt lost non-evictable diff %q", diff)
+		}
+	})
+
+	t.Run("normative eviction is a hard error", func(t *testing.T) {
+		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
+		registry := loadComposeResourceRegistry(t, `  - name: binding-standards
+    mode: full
+    paths: []
+`)
+		largeDoc := strings.Repeat("OVERSIZED-BINDING-STANDARD-", 4_000)
+		fullLoader := &testfake.FakeFullLoader{DefaultResponse: testfake.FullLoaderResponse{
+			Result: rag.FullResult{Docs: []rag.FullDoc{{
+				Source:      "binding-standards",
+				ResourceSet: "binding-standards",
+				Bytes:       []byte(largeDoc),
+				TokenEst:    chunk.TokenEst(largeDoc),
+			}}},
+		}}
+		declaration := Lane{ID: "budgeted-normative", Intent: "review binding standards", Resources: Resources{Sets: []string{"binding-standards"}}}
+		input := composeTestInput(t, declaration, []string{"budget"}, registry, "NORMATIVE-EVICTION-DIFF")
+		input.FullLoader = fullLoader
+		input.Budget = 4_000
+
+		_, err := Compose(context.Background(), input)
+		if err == nil || !strings.Contains(err.Error(), "normative section evicted") {
+			t.Fatalf("Compose error = %v, want normative section evicted", err)
+		}
+	})
+
+	t.Run("zero budget disables budgeting", func(t *testing.T) {
+		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
+		registry := loadComposeResourceRegistry(t, `  - name: zero-budget-full
+    mode: full
+    paths: []
+  - name: zero-budget-retrieval
+    mode: retrieval
+    paths: []
+`)
+		const (
+			diff          = "ZERO-BUDGET-DIFF"
+			fullText      = "ZERO-BUDGET-FULL-CONTENT"
+			retrievalText = "ZERO-BUDGET-RETRIEVAL-CONTENT"
+		)
+		retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+			Result: rag.Result{Chunks: []rag.Chunk{{ID: "zero-budget-retrieval", Text: retrievalText, Source: "zero-budget-retrieval", ResourceSet: "zero-budget-retrieval", TokenEst: chunk.TokenEst(retrievalText)}}},
+		}}
+		fullLoader := &testfake.FakeFullLoader{DefaultResponse: testfake.FullLoaderResponse{
+			Result: rag.FullResult{Docs: []rag.FullDoc{{Source: "zero-budget-full", ResourceSet: "zero-budget-full", Bytes: []byte(fullText), TokenEst: chunk.TokenEst(fullText)}}},
+		}}
+		declaration := Lane{ID: "unbudgeted", Intent: "preserve legacy composition", Resources: Resources{Sets: []string{"zero-budget-full", "zero-budget-retrieval"}}}
+		input := composeTestInput(t, declaration, []string{"budget"}, registry, diff)
+		input.Retriever = retriever
+		input.FullLoader = fullLoader
+		input.Budget = 0
+
+		result, err := Compose(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Compose: %v", err)
+		}
+		for _, want := range []string{diff, fullText, retrievalText} {
+			if !strings.Contains(result.Prompt, want) {
+				t.Errorf("zero-budget prompt missing %q", want)
+			}
+		}
+		if slices.ContainsFunc(result.Degraded, func(entry string) bool { return strings.Contains(entry, "evicted section") }) {
+			t.Errorf("zero-budget composition unexpectedly reported eviction: %v", result.Degraded)
+		}
+	})
 }

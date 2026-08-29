@@ -15,7 +15,6 @@ import (
 	"mrinspect/internal/config"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
-	"mrinspect/internal/lane"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
@@ -280,32 +279,61 @@ func TestRun_NormativeEvictionFailIsNotSwallowed(t *testing.T) {
 		{id: "normative-standards", enabled: true},
 		{id: "code-diff", enabled: true},
 	})
-	policyErr := actualNormativeEvictionError(t)
+	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
+	lanesYAML, err := os.ReadFile(lanesPath)
+	if err != nil {
+		t.Fatalf("read lanes fixture: %v", err)
+	}
+	lanesYAML = []byte(strings.Replace(string(lanesYAML),
+		"id: normative-standards\n    enabled: true\n",
+		"id: normative-standards\n    enabled: true\n    model: normative-tiny\n", 1))
+	lanesYAML = []byte(strings.Replace(string(lanesYAML),
+		"intent: review normative-standards\n    resources:\n      sets: []\n",
+		"intent: review normative-standards\n    resources:\n      sets: [binding-standards]\n", 1))
+	if err := os.WriteFile(lanesPath, lanesYAML, 0o644); err != nil {
+		t.Fatalf("write normative lane fixture: %v", err)
+	}
+	resourcesYAML := []byte("sets:\n  - name: binding-standards\n    mode: full\n    paths: []\n")
+	if err := os.WriteFile(filepath.Join(root, "projects", "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("write resources fixture: %v", err)
+	}
+	resourceRegistry, err := resources.Load(root, "")
+	if err != nil {
+		t.Fatalf("load resources fixture: %v", err)
+	}
+	const policyError = "prompt composition rejected: normative section evicted"
 
 	for _, policy := range []string{"fail", "warn"} {
 		t.Run(policy, func(t *testing.T) {
 			t.Setenv("MRI_REVIEW_MODE", "multi")
 			t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", policy)
+			t.Setenv("MRI_PROMPT_BUDGET_FACTOR", "1")
 			r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
-			r.ai = newModeRoutingProvider()
-			fanoutCalls := 0
+			provider := newModeRoutingProvider()
+			provider.laneResponses["spec-conformance"] = `{"laneId":"spec-conformance","findings":[{"title":"sibling-spec-result","severity":"low","rationale":"spec lane completed"}]}`
+			provider.laneResponses["normative-standards"] = `{"laneId":"normative-standards","findings":[{"title":"normative-standards-result","severity":"low","rationale":"normative lane completed"}]}`
+			provider.laneResponses["code-diff"] = `{"laneId":"code-diff","findings":[{"title":"sibling-code-result","severity":"low","rationale":"code lane completed"}]}`
+			r.ai = provider
+			largeDoc := strings.Repeat("OVERSIZED-BINDING-STANDARD-", 4_000)
+			fullLoader := &testfake.FakeFullLoader{DefaultResponse: testfake.FullLoaderResponse{
+				Result: rag.FullResult{Docs: []rag.FullDoc{{
+					Source:      "binding-standards",
+					ResourceSet: "binding-standards",
+					Bytes:       []byte(largeDoc),
+				}}},
+			}}
 			r.SetMultiLaneReviewPath(MultiLaneReviewPath{
-				RepoRoot:    root,
-				ModelLimits: reviewerModelLimits(),
-				Fanout: func(context.Context, lane.FanoutInput) (lane.FanoutResult, error) {
-					fanoutCalls++
-					return normativeEvictionFanout(policyErr), nil
-				},
+				RepoRoot:         root,
+				ResourceRegistry: resourceRegistry,
+				FullLoader:       fullLoader,
+				ModelLimits:      map[string]int{"gemini-test": 1_000_000, "normative-tiny": 4_000},
 			})
 
 			r.Run(context.Background())
 
 			note := gl.lastNote(t)
-			if fanoutCalls != 1 {
-				t.Errorf("multi fanout call count = %d, want 1", fanoutCalls)
-			}
 			if policy == "fail" {
-				if !strings.Contains(note, policyErr.Error()) || !strings.Contains(strings.ToLower(note), "normative") {
+				if !strings.Contains(note, policyError) || !strings.Contains(strings.ToLower(note), "normative") {
 					t.Errorf("strict normative eviction did not visibly fail the whole review: %q", note)
 				}
 				if strings.Contains(note, "sibling-spec-result") || strings.Contains(note, "sibling-code-result") {
@@ -313,10 +341,13 @@ func TestRun_NormativeEvictionFailIsNotSwallowed(t *testing.T) {
 				}
 				return
 			}
-			for _, want := range []string{"sibling-spec-result", "sibling-code-result", "normative-standards", policyErr.Error(), "Incomplete"} {
+			for _, want := range []string{"sibling-spec-result", "sibling-code-result", "normative-standards-result", "binding-standards", "evicted section"} {
 				if !strings.Contains(note, want) {
 					t.Errorf("warn-mode review missing %q: %q", want, note)
 				}
+			}
+			if strings.Contains(note, "Incomplete") {
+				t.Errorf("warn-mode normative eviction incorrectly failed the lane: %q", note)
 			}
 		})
 	}
@@ -463,32 +494,6 @@ func (p *modeRoutingProvider) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.prompts)
-}
-
-func actualNormativeEvictionError(t *testing.T) error {
-	t.Helper()
-	t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
-	// lane.Compose does not yet carry ComposeWithBudget's eviction result, so the
-	// reviewer Fanout hook injects the exact error produced by change A's seam.
-	_, err := prompt.ComposeWithBudget(prompt.BudgetComposeInput{
-		Budget:   1,
-		Sections: []prompt.BudgetSection{{Name: "binding-standard", Mode: prompt.SectionModeFull, TokenEst: 10}},
-		Framing:  prompt.BudgetFraming{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "normative section evicted") {
-		t.Fatalf("change A normative-eviction seam returned %v, want its strict-policy error", err)
-	}
-	return err
-}
-
-func normativeEvictionFanout(policyErr error) lane.FanoutResult {
-	return lane.FanoutResult{
-		LaneResults: []lane.LaneResult{
-			{LaneID: "spec-conformance", Findings: []lane.Finding{{Title: "sibling-spec-result", Severity: lane.SeverityLow, Rationale: "spec lane completed"}}},
-			{LaneID: "code-diff", Findings: []lane.Finding{{Title: "sibling-code-result", Severity: lane.SeverityLow, Rationale: "code lane completed"}}},
-		},
-		Failures: []lane.LaneFailure{{LaneID: "normative-standards", Kind: lane.FailureKindCompose, Reason: policyErr.Error()}},
-	}
 }
 
 type fakeNoteUpdate struct {

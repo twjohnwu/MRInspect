@@ -195,7 +195,7 @@ Verification command: `go test ./internal/lane/ -run 'TestParse_RejectsEnvelopel
 Test file: internal/reviewer/reviewer_test.go（追加）
 Verification command: `go test ./internal/reviewer/ -run TestRun_CitationsVerifiedAgainstReceivedChunks -count=1`
 
-## T18 [ ] [MODIFY] 修復發現 C — budget/eviction 生產可達
+## T18 [x] [MODIFY] 修復發現 C — budget/eviction 生產可達
 
 Test file: internal/lane/compose_test.go（追加）、internal/reviewer/reviewer_test.go（改既有 S-34 測試為實料驅動）
 Verification command: `go test ./internal/lane/ -run TestCompose_BudgetEviction -count=1 && go test ./internal/reviewer/ -run TestRun_NormativeEvictionFailIsNotSwallowed -count=1`

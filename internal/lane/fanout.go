@@ -69,7 +69,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 		group.Go(func() error {
 			results[index] = executeLaneWithOptions(
 				ctx,
-				composeInput(input, declaration),
+				composeInput(input, declaration, lane.budget),
 				input.Provider,
 				input.Attempts,
 				ai.GenerateOptions{Model: lane.model},
@@ -103,10 +103,11 @@ func preflightLanes(input FanoutInput) ([]preparedLane, error) {
 	return prepared, nil
 }
 
-func composeInput(input FanoutInput, declaration Lane) ComposeInput {
+func composeInput(input FanoutInput, declaration Lane, budget int) ComposeInput {
 	return ComposeInput{
 		Lane:             declaration,
 		Terms:            input.Terms,
+		Budget:           budget,
 		ResourceRegistry: input.ResourceRegistry,
 		Retriever:        input.Retriever,
 		FullLoader:       input.FullLoader,
