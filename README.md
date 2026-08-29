@@ -1,5 +1,7 @@
 # MRInspect
 
+![CI](https://github.com/twjohnwu/MRInspect/actions/workflows/ci.yml/badge.svg)
+
 [繁體中文版](README.tw.md)
 
 AI-powered merge request code review for GitLab, powered by Claude, Gemini, or OpenAI. MRInspect runs as a non-blocking CI/CD job: it reads your code diff, loads a team-specific review project, and posts a structured review comment directly to the MR — no human reviewer required for the first pass.

@@ -1,5 +1,7 @@
 # MRInspect
 
+![CI](https://github.com/twjohnwu/MRInspect/actions/workflows/ci.yml/badge.svg)
+
 [English](README.md)
 
 給 GitLab 用的 AI merge request 程式碼審查工具，可搭配 Claude、Gemini 或 OpenAI。MRInspect 以不阻擋流程的 CI/CD job 執行：讀取你的程式碼 diff，載入該團隊專屬的 review project，然後把結構化的審查留言直接貼到 MR——第一輪審查不需要人類 reviewer。
