@@ -84,7 +84,7 @@ Test file: `internal/lane/hunk/hunk_test.go`（本 task 自帶測試，不依賴
 通過，成為一條恆真的驗證指令。
 Verification command: `go test ./internal/lane/hunk/ -count=1 && go test ./internal/lane/hunk/ -run TestHunk -count=1 | grep -qv 'no test files'`
 
-## T08 [ ] [NEW] `S-22,S-23,S-24,S-25,S-38,S-39` — 渲染
+## T08 [x] [NEW] `S-22,S-23,S-24,S-25,S-38,S-39` — 渲染
 
 Test file: `internal/lane/render_test.go`
 依賴 T13。重點：保留 Findings 表格與三個小節且通過既有 `ValidateReviewContent`
