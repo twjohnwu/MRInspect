@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -57,6 +58,7 @@ type ReviewSummary struct {
 
 type Logger struct {
 	slog        *slog.Logger
+	metricsMu   sync.Mutex
 	metrics     Metrics
 	metricsFile string
 }
@@ -91,12 +93,16 @@ func (l *Logger) Debug(msg string, args ...any) {
 }
 
 func (l *Logger) StartReview(mrID, projectID int) {
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
 	l.metrics.StartTimeMs = time.Now().UnixMilli()
 	l.metrics.MrID = mrID
 	l.metrics.ProjectID = projectID
 }
 
 func (l *Logger) LogStep(step string, durationMs *int64, meta map[string]any) {
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
 	l.metrics.Steps = append(l.metrics.Steps, StepMetric{
 		Step:       step,
 		DurationMs: durationMs,
@@ -116,10 +122,14 @@ func (l *Logger) LogAPICall(service, endpoint string, durationMs int64, success 
 	if err != nil {
 		m.Error = err.Error()
 	}
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
 	l.metrics.APICalls = append(l.metrics.APICalls, m)
 }
 
 func (l *Logger) LogError(errType, stage, category string, err error) {
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
 	l.metrics.Errors = append(l.metrics.Errors, ErrorMetric{
 		Type:      errType,
 		Stage:     stage,
@@ -130,6 +140,9 @@ func (l *Logger) LogError(errType, stage, category string, err error) {
 }
 
 func (l *Logger) CompleteReview(success bool, finalErr error) ReviewSummary {
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
+
 	now := time.Now().UnixMilli()
 	l.metrics.EndTimeMs = now
 	l.metrics.Success = success
@@ -157,11 +170,15 @@ func (l *Logger) CompleteReview(success bool, finalErr error) ReviewSummary {
 }
 
 func (l *Logger) SaveMetrics() error {
+	l.metricsMu.Lock()
+	metrics := l.metrics
+	l.metricsMu.Unlock()
+
 	var history []Metrics
 	if data, err := os.ReadFile(l.metricsFile); err == nil {
 		_ = json.Unmarshal(data, &history)
 	}
-	history = append(history, l.metrics)
+	history = append(history, metrics)
 	if len(history) > 100 {
 		history = history[len(history)-100:]
 	}

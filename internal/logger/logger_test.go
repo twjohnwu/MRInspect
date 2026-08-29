@@ -2,10 +2,12 @@ package logger
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -47,6 +49,38 @@ func TestFormatDurationViaSummary(t *testing.T) {
 	// Duration is well under 1 minute; should not contain "m" as a minute marker.
 	if strings.Contains(summary.TotalDuration, "m") && !strings.Contains(summary.TotalDuration, "ms") {
 		t.Errorf("short duration should not contain minute unit, got %q", summary.TotalDuration)
+	}
+}
+
+func TestLogger_ConcurrentMetricsAreRaceFree(t *testing.T) {
+	l := newTestLogger(t)
+	l.StartReview(1, 1)
+
+	const goroutines = 50
+	const callsPerGoroutine = 3
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < callsPerGoroutine; j++ {
+				l.LogAPICall("gitlab", "/mr", int64(i+j), true, nil)
+				l.LogError("api", "review", "transient", errors.New("boom"))
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	summary := l.CompleteReview(true, nil)
+
+	wantAPICalls := goroutines * callsPerGoroutine
+	if summary.APICalls.Total != wantAPICalls {
+		t.Errorf("APICalls.Total: want %d, got %d", wantAPICalls, summary.APICalls.Total)
+	}
+	wantErrors := goroutines * callsPerGoroutine
+	if summary.Errors != wantErrors {
+		t.Errorf("Errors: want %d, got %d", wantErrors, summary.Errors)
 	}
 }
 
