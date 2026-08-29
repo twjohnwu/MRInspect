@@ -36,6 +36,20 @@ type PostNoteResponse struct {
 	Delay time.Duration
 }
 
+// ListNotesResponse is one programmed result from FakeGitLabClient.ListNotes.
+type ListNotesResponse struct {
+	Notes []gitlab.Note
+	Err   error
+	Delay time.Duration
+}
+
+// UpdateNoteResponse is one programmed result from FakeGitLabClient.UpdateNote.
+type UpdateNoteResponse struct {
+	Note  gitlab.Note
+	Err   error
+	Delay time.Duration
+}
+
 // HealthCheckCall records the context of one HealthCheck call.
 type HealthCheckCall struct {
 	Context context.Context
@@ -63,6 +77,22 @@ type PostNoteCall struct {
 	Body      string
 }
 
+// ListNotesCall records the arguments of one ListNotes call.
+type ListNotesCall struct {
+	Context   context.Context
+	ProjectID string
+	MRIID     string
+}
+
+// UpdateNoteCall records the arguments of one UpdateNote call.
+type UpdateNoteCall struct {
+	Context   context.Context
+	ProjectID string
+	MRIID     string
+	NoteID    int
+	Body      string
+}
+
 // FakeGitLabClient is a programmable, concurrency-safe IGitLabClient test double.
 // Each operation has an independent response queue and configurable default.
 // Configure exported fields before use; use enqueue methods while calls are in flight.
@@ -73,18 +103,26 @@ type FakeGitLabClient struct {
 	DefaultMergeRequestResponse MergeRequestResponse
 	MRChangesResponses          []MRChangesResponse
 	DefaultMRChangesResponse    MRChangesResponse
+	ListNotesResponses          []ListNotesResponse
+	DefaultListNotesResponse    ListNotesResponse
 	PostNoteResponses           []PostNoteResponse
 	DefaultPostNoteResponse     PostNoteResponse
+	UpdateNoteResponses         []UpdateNoteResponse
+	DefaultUpdateNoteResponse   UpdateNoteResponse
 
 	mu                sync.Mutex
 	healthCheckIndex  int
 	mergeRequestIndex int
 	mrChangesIndex    int
+	listNotesIndex    int
 	postNoteIndex     int
+	updateNoteIndex   int
 	healthCheckCalls  []HealthCheckCall
 	mergeRequestCalls []MergeRequestCall
 	mrChangesCalls    []MRChangesCall
+	listNotesCalls    []ListNotesCall
 	postNoteCalls     []PostNoteCall
+	updateNoteCalls   []UpdateNoteCall
 }
 
 // HealthCheck records its context and returns the next programmed response.
@@ -139,6 +177,25 @@ func (f *FakeGitLabClient) GetMRChanges(ctx context.Context, projectID, mrIID st
 	return cloneMRChanges(response.Changes), response.Err
 }
 
+// ListNotes records its arguments and returns the next programmed response.
+func (f *FakeGitLabClient) ListNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error) {
+	f.mu.Lock()
+	f.listNotesCalls = append(f.listNotesCalls, ListNotesCall{
+		Context: ctx, ProjectID: projectID, MRIID: mrIID,
+	})
+	response := f.DefaultListNotesResponse
+	if f.listNotesIndex < len(f.ListNotesResponses) {
+		response = f.ListNotesResponses[f.listNotesIndex]
+		f.listNotesIndex++
+	}
+	f.mu.Unlock()
+
+	if err := waitContext(ctx, response.Delay); err != nil {
+		return nil, err
+	}
+	return append([]gitlab.Note(nil), response.Notes...), response.Err
+}
+
 // PostNote records its arguments and returns the next programmed response.
 func (f *FakeGitLabClient) PostNote(ctx context.Context, projectID, mrIID, body string) (gitlab.Note, error) {
 	f.mu.Lock()
@@ -149,6 +206,25 @@ func (f *FakeGitLabClient) PostNote(ctx context.Context, projectID, mrIID, body 
 	if f.postNoteIndex < len(f.PostNoteResponses) {
 		response = f.PostNoteResponses[f.postNoteIndex]
 		f.postNoteIndex++
+	}
+	f.mu.Unlock()
+
+	if err := waitContext(ctx, response.Delay); err != nil {
+		return gitlab.Note{}, err
+	}
+	return response.Note, response.Err
+}
+
+// UpdateNote records its arguments and returns the next programmed response.
+func (f *FakeGitLabClient) UpdateNote(ctx context.Context, projectID, mrIID string, noteID int, body string) (gitlab.Note, error) {
+	f.mu.Lock()
+	f.updateNoteCalls = append(f.updateNoteCalls, UpdateNoteCall{
+		Context: ctx, ProjectID: projectID, MRIID: mrIID, NoteID: noteID, Body: body,
+	})
+	response := f.DefaultUpdateNoteResponse
+	if f.updateNoteIndex < len(f.UpdateNoteResponses) {
+		response = f.UpdateNoteResponses[f.updateNoteIndex]
+		f.updateNoteIndex++
 	}
 	f.mu.Unlock()
 
@@ -179,11 +255,25 @@ func (f *FakeGitLabClient) EnqueueMRChangesResponses(responses ...MRChangesRespo
 	f.MRChangesResponses = append(f.MRChangesResponses, responses...)
 }
 
+// EnqueueListNotesResponses appends responses to the ListNotes response queue.
+func (f *FakeGitLabClient) EnqueueListNotesResponses(responses ...ListNotesResponse) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ListNotesResponses = append(f.ListNotesResponses, responses...)
+}
+
 // EnqueuePostNoteResponses appends responses to the PostNote response queue.
 func (f *FakeGitLabClient) EnqueuePostNoteResponses(responses ...PostNoteResponse) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.PostNoteResponses = append(f.PostNoteResponses, responses...)
+}
+
+// EnqueueUpdateNoteResponses appends responses to the UpdateNote response queue.
+func (f *FakeGitLabClient) EnqueueUpdateNoteResponses(responses ...UpdateNoteResponse) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.UpdateNoteResponses = append(f.UpdateNoteResponses, responses...)
 }
 
 // HealthCheckCallCount returns the number of HealthCheck calls.
@@ -228,6 +318,20 @@ func (f *FakeGitLabClient) GetMRChangesCalls() []MRChangesCall {
 	return append([]MRChangesCall(nil), f.mrChangesCalls...)
 }
 
+// ListNotesCallCount returns the number of ListNotes calls.
+func (f *FakeGitLabClient) ListNotesCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.listNotesCalls)
+}
+
+// ListNotesCalls returns a snapshot of recorded ListNotes calls.
+func (f *FakeGitLabClient) ListNotesCalls() []ListNotesCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]ListNotesCall(nil), f.listNotesCalls...)
+}
+
 // PostNoteCallCount returns the number of PostNote calls.
 func (f *FakeGitLabClient) PostNoteCallCount() int {
 	f.mu.Lock()
@@ -240,6 +344,20 @@ func (f *FakeGitLabClient) PostNoteCalls() []PostNoteCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]PostNoteCall(nil), f.postNoteCalls...)
+}
+
+// UpdateNoteCallCount returns the number of UpdateNote calls.
+func (f *FakeGitLabClient) UpdateNoteCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.updateNoteCalls)
+}
+
+// UpdateNoteCalls returns a snapshot of recorded UpdateNote calls.
+func (f *FakeGitLabClient) UpdateNoteCalls() []UpdateNoteCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]UpdateNoteCall(nil), f.updateNoteCalls...)
 }
 
 func cloneMRChanges(changes gitlab.MRChangesResponse) gitlab.MRChangesResponse {

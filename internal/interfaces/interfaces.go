@@ -14,7 +14,9 @@ type IGitLabClient interface {
 	HealthCheck(ctx context.Context) bool
 	GetMergeRequest(ctx context.Context, projectID, mrIID string) (gitlab.MergeRequest, error)
 	GetMRChanges(ctx context.Context, projectID, mrIID string) (gitlab.MRChangesResponse, error)
+	ListNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error)
 	PostNote(ctx context.Context, projectID, mrIID, body string) (gitlab.Note, error)
+	UpdateNote(ctx context.Context, projectID, mrIID string, noteID int, body string) (gitlab.Note, error)
 }
 
 // IDiffFetcher abstracts diff retrieval; implementations decide how to use the branch args.

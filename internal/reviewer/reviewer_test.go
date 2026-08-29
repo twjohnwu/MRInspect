@@ -166,9 +166,15 @@ func (*fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.Merg
 func (*fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
 	return gitlab.MRChangesResponse{}, nil
 }
+func (*fakeGitLab) ListNotes(context.Context, string, string) ([]gitlab.Note, error) {
+	return nil, nil
+}
 func (g *fakeGitLab) PostNote(_ context.Context, _, _, body string) (gitlab.Note, error) {
 	g.notes = append(g.notes, body)
 	return gitlab.Note{Body: body}, nil
+}
+func (*fakeGitLab) UpdateNote(context.Context, string, string, int, string) (gitlab.Note, error) {
+	return gitlab.Note{}, nil
 }
 func (g *fakeGitLab) lastNote(t *testing.T) string {
 	t.Helper()

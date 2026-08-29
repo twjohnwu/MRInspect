@@ -105,7 +105,7 @@ change A 的組裝硬失敗——diff 超預算逐 lane 隔離，model 不在上
 使用 `errgroup.Group` 但**不用** `WithContext`（首個錯誤取消其餘與部分失敗政策相反）。
 Verification command: `go test -race ./internal/lane/ -run TestFanout -count=1 -timeout 60s`
 
-## T12 [INFRA] GitLab client 增加 `ListNotes` 與 `UpdateNote`
+## T12 [x] [INFRA] GitLab client 增加 `ListNotes` 與 `UpdateNote`
 
 理由：無 scenario 直接對應（S-41 使用其結果）——`internal/gitlab/client.go` 目前只有
 `GetMergeRequest`(:49)／`GetMRChanges`(:58)／`PostNote`(:67)／`HealthCheck`(:77)，

@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"time"
 
 	"mrinspect/internal/config"
@@ -74,6 +75,59 @@ func (c *Client) PostNote(ctx context.Context, projectID, mrIID, body string) (N
 	return note, nil
 }
 
+func (c *Client) ListNotes(ctx context.Context, projectID, mrIID string) ([]Note, error) {
+	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes", projectID, mrIID)
+	var notes []Note
+	nextPage := ""
+
+	for {
+		requestPath := path + "?per_page=100"
+		if nextPage != "" {
+			requestPath += "&page=" + url.QueryEscape(nextPage)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+requestPath, nil)
+		if err != nil {
+			return nil, fmt.Errorf("ListNotes: %w", err)
+		}
+		req.Header.Set("PRIVATE-TOKEN", c.token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.doWithRetry(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("ListNotes: %w", err)
+		}
+		data, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("ListNotes: %w", readErr)
+		}
+		if resp.StatusCode >= 400 {
+			return nil, fmt.Errorf("ListNotes: gitlab API error %d: %s", resp.StatusCode, string(data))
+		}
+
+		var page []Note
+		if err := json.Unmarshal(data, &page); err != nil {
+			return nil, fmt.Errorf("ListNotes: %w", err)
+		}
+		notes = append(notes, page...)
+		nextPage = resp.Header.Get("X-Next-Page")
+		if nextPage == "" {
+			return notes, nil
+		}
+	}
+}
+
+func (c *Client) UpdateNote(ctx context.Context, projectID, mrIID string, noteID int, body string) (Note, error) {
+	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes/%d", projectID, mrIID, noteID)
+	payload := map[string]string{"body": body}
+	var note Note
+	if err := c.putJSON(ctx, path, payload, &note); err != nil {
+		return Note{}, fmt.Errorf("UpdateNote: %w", err)
+	}
+	return note, nil
+}
+
 func (c *Client) HealthCheck(ctx context.Context) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+"/version", nil)
 	if err != nil {
@@ -113,11 +167,19 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, payload, out any) error {
+	return c.writeJSON(ctx, http.MethodPost, path, payload, out)
+}
+
+func (c *Client) putJSON(ctx context.Context, path string, payload, out any) error {
+	return c.writeJSON(ctx, http.MethodPut, path, payload, out)
+}
+
+func (c *Client) writeJSON(ctx context.Context, method, path string, payload, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, c.apiBase+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -158,7 +220,7 @@ func (c *Client) doWithRetry(ctx context.Context, req *http.Request) (*http.Resp
 			case <-time.After(delay):
 			}
 
-			// Re-create the body reader for POST retries
+			// Re-create the body reader for request retries.
 			if req.GetBody != nil {
 				req.Body, _ = req.GetBody()
 			}

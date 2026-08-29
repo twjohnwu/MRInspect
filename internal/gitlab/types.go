@@ -32,6 +32,7 @@ type MRChangesResponse struct {
 }
 
 type Note struct {
-	ID   int    `json:"id"`
-	Body string `json:"body"`
+	ID     int    `json:"id"`
+	Body   string `json:"body"`
+	Author Author `json:"author"`
 }
