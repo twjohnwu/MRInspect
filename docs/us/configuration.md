@@ -51,7 +51,9 @@ Set these in your CI/CD secrets store before use:
 | `MRI_RAG_SOURCE` | `package,artifact,baked` | Go runner comma-separated store source chain, tried in order |
 | `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package version; set an explicit version to pin the RAG store |
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | Go runner policy when a full-mode normative section is evicted: `warn` \| `fail` |
-| `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | Positive float multiplied by the selected model's prompt limit |
+| `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | Positive float multiplied by the selected model's prompt limit. The 0.8 default also absorbs the estimator's measured ~11% systematic undercount. |
+| `MRI_DIFF_PROMPT_SHARE` | `0.85` | Fraction of the effective model's prompt budget the diff may occupy; oversized diffs drop whole files (non-reviewable patterns first, then largest-first; hunks are never truncated) with drops disclosed in the prompt and the review footer. Invalid values fall back to the default. Measured incident data showed a model omitting required sections when the diff exceeded ~93% of the prompt; ~85% restored format compliance — the cap scales with the model's budget rather than a fixed KB value. |
+| `MRI_REVIEW_DUMP_DISABLED` | _(unset)_ | Set to the exact string `true` to disable the failure-only prompt/response dumps logged when review validation fails. Any other value keeps dumps enabled. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the Anthropic model |
 | `GEMINI_MODEL` | `gemini-2.5-pro` | Override the Gemini model |
 | `OPENAI_MODEL` | `gpt-5.6` | Override the OpenAI model |

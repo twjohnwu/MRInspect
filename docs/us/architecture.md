@@ -54,7 +54,8 @@ The default path validates configuration, pulls the MR and its diff, then resolv
 ```mermaid
 flowchart TD
     A["Validate system config"] --> B["Fetch MR details + diff"]
-    B --> C["Resolve RAG store<br/>(package / artifact / baked chain)"]
+    B --> B2["Reduce oversized diff<br/>(drop whole files, disclose drops)"]
+    B2 --> C["Resolve RAG store<br/>(package / artifact / baked chain)"]
     C --> D["Compose review prompt<br/>(project docs + diff + MR metadata)"]
     D --> E["AI provider call<br/>(retry on validation failure)"]
     E --> F{"IS_SELF_REFLECTION"}

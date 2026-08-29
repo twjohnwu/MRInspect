@@ -51,3 +51,10 @@ specific decision is later reversed.
 2. **為什麼錯**：兩個獨立漏洞——(a) chunk ID（sqlite rowid）從未出現在 prompt 裡，模型不可能誠實引用，但隨口捏一個數字反而可能 match 成「已驗證」；(b) 跨 lane 合併把 citations 串接且不留出處，A lane 可以捏 B lane 收到的 ID 騙過驗證。修復前的空 map 讓一切顯示 unverified（無害但無用）；接通 chunks 後這兩條路徑變成主動的假背書。
 3. **現在做法**：檢索 chunk 注入 prompt 時帶 `[sourceId: … | source: …:line]` 表頭，契約明令只能引用表頭所示 id；合併時每筆 citation 記錄提供者 lane，渲染只對「該 lane 實際收到的 chunks」驗證。
 4. **學到什麼**：「驗證」機制要成立，被驗證方必須先拿得到正確答案的素材，且驗證範圍必須等於資料的信任邊界——兩者缺一，驗證徽章比沒有徽章更危險。
+
+## 3. 超大 diff：整趟拒絕 → 檔案級誠實縮減
+
+1. **最初想法**：diff 超過 `MaxDiffSizeKB` 就整趟拒絕審查（validator 硬閘），要嘛全審、要嘛不審。
+2. **為什麼錯**：實測事故資料（一次 126 檔／~1MB diff 的 review）顯示兩件事——超大輸入下模型會**省略**必要區段而非截斷（diff 佔 prompt >93% 時三次 attempt 同型失敗，降到 ~85% 即恢復）；而整趟拒絕讓大型重構 MR 完全得不到審查。截斷 hunk 也不可行：模型會對不存在的程式碼提 finding。
+3. **現在做法**：`internal/diffbudget` 檔案級剔除——先剔不可人審檔（lockfile／snapshot／generated 等 pattern 清單，config 可覆寫），再按檔案大小由大到小整檔剔除到符合 model-aware 預算（`MRI_DIFF_PROMPT_SHARE` × 模型 prompt 預算）；剔除清單在 prompt 與貼出的 review footer 雙處揭露；`MaxDiffSizeKB` 降為縮減後仍放不下的最終 backstop。
+4. **學到什麼**：退化門檻跟格式遵循有關、跟 context 上限無關——1M context 的模型一樣會在高佔比輸入下漏節，所以上限要按「佔 prompt 比例」縮放，不能釘固定 KB；「誠實的部分審查＋明示未審清單」勝過「全有或全無」。
