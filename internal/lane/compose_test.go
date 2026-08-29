@@ -257,3 +257,53 @@ func TestCompose_RetrievedContentReachesPrompt(t *testing.T) {
 		t.Errorf("lane L2 prompt unexpectedly contains L1 resource sentinel %q", sentinel)
 	}
 }
+
+// TestCompose_PromptCarriesOutputContract verifies REQ-04: lane composition
+// carries one stable structured-output contract into initial and retry prompts.
+func TestCompose_PromptCarriesOutputContract(t *testing.T) {
+	lane := Lane{ID: "contract-lane", Intent: "verify the lane output contract"}
+	input := composeTestInput(t, lane, nil, resources.Registry{}, "OUTPUT-CONTRACT-DIFF")
+	composed, err := Compose(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+
+	if LaneOutputContract == "" {
+		t.Error("LaneOutputContract is empty, want a stable lane JSON output contract")
+	}
+	if LaneOutputContract == "" || !strings.Contains(composed.Prompt, LaneOutputContract) {
+		t.Error("composed lane prompt does not contain the non-empty LaneOutputContract")
+	}
+	for _, token := range []string{"laneId", "findings", "title", "severity", "rationale"} {
+		if !strings.Contains(LaneOutputContract, token) {
+			t.Errorf("LaneOutputContract does not name required literal token %q", token)
+		}
+		if !strings.Contains(composed.Prompt, token) {
+			t.Errorf("composed lane prompt does not name required literal token %q", token)
+		}
+	}
+	contractInstruction := strings.ToLower(LaneOutputContract)
+	namesOne := strings.Contains(contractInstruction, "single") || strings.Contains(contractInstruction, "one")
+	if !namesOne || !strings.Contains(contractInstruction, "json") || !strings.Contains(contractInstruction, "block") {
+		t.Error("LaneOutputContract does not instruct the model to return a single JSON block")
+	}
+
+	provider := &testfake.FakeProvider{Responses: []testfake.ProviderResponse{
+		{Output: "FIRST-CONTRACT-ATTEMPT-IS-GARBAGE"},
+		{Output: `{"laneId":"contract-lane","findings":[]}`},
+	}}
+	got := ExecuteLane(context.Background(), input, provider, 2)
+	if got.Failure != nil {
+		t.Fatalf("ExecuteLane failure = %#v, want retry success", got.Failure)
+	}
+	calls := provider.GenerateCalls()
+	if len(calls) != 2 {
+		t.Fatalf("Generate call count = %d, want exactly 2", len(calls))
+	}
+	if LaneOutputContract == "" || !strings.Contains(calls[1].Prompt, LaneOutputContract) {
+		t.Error("retry prompt does not contain the same non-empty LaneOutputContract")
+	}
+
+	// The internal/prompt golden test guards the single-mode path; this contract
+	// assertion deliberately enters through lane Compose only.
+}

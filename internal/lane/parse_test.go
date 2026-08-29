@@ -375,3 +375,109 @@ func TestParse_TakesLastFence(t *testing.T) {
 		t.Errorf("Findings incorrectly came from the earlier json fence: %#v", got.Findings)
 	}
 }
+
+// TestParse_RejectsEnvelopelessJSON verifies REQ-04: a syntactically valid
+// object is not a successful lane response unless both envelope keys exist.
+func TestParse_RejectsEnvelopelessJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		missingKeys []string
+	}{
+		{
+			name:        "embedded object has no lane envelope",
+			raw:         `prose {"note":1} prose`,
+			missingKeys: []string{"laneId", "findings"},
+		},
+		{
+			name:        "missing findings",
+			raw:         `{"laneId":"x"}`,
+			missingKeys: []string{"findings"},
+		},
+		{
+			name:        "missing laneId",
+			raw:         `{"findings":[]}`,
+			missingKeys: []string{"laneId"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse(test.raw, parseTestLimits())
+			if err == nil {
+				t.Fatal("Parse error = nil, want missing lane envelope key failure")
+			}
+			var failure *ParseFailure
+			if !errors.As(err, &failure) {
+				t.Fatalf("Parse error type = %T, want *ParseFailure: %v", err, err)
+			}
+			for _, key := range test.missingKeys {
+				if strings.Contains(failure.Reason, key) {
+					return
+				}
+			}
+			t.Errorf("ParseFailure.Reason = %q, want it to name one of missing keys %v", failure.Reason, test.missingKeys)
+		})
+	}
+
+	t.Run("minimal valid envelope", func(t *testing.T) {
+		got, err := Parse(`{"laneId":"x","findings":[]}`, parseTestLimits())
+		if err != nil {
+			t.Fatalf("Parse minimal valid envelope: %v", err)
+		}
+		if got.LaneID != "x" {
+			t.Errorf("LaneID = %q, want x", got.LaneID)
+		}
+		if len(got.Findings) != 0 {
+			t.Errorf("finding count = %d, want 0", len(got.Findings))
+		}
+	})
+}
+
+// TestParse_RejectsLaneIDMismatch verifies REQ-04: the model laneId is only
+// compared with the dispatched registry lane ID and cannot replace it.
+func TestParse_RejectsLaneIDMismatch(t *testing.T) {
+	const declaredLaneID = "declared-lane"
+	lane := Lane{ID: declaredLaneID, Intent: "verify response lane identity"}
+
+	t.Run("mismatch is a parse failure", func(t *testing.T) {
+		const modelLaneID = "different-model-lane"
+		input := composeTestInput(t, lane, nil, resources.Registry{}, "LANE-ID-MISMATCH-DIFF")
+		provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+			Output: `{"laneId":"` + modelLaneID + `","findings":[]}`,
+		}}
+
+		got := ExecuteLane(context.Background(), input, provider, 1)
+		if got.Failure == nil {
+			t.Fatal("Failure = nil, want laneId mismatch parse failure")
+		}
+		if got.Failure.Kind != FailureKindParse {
+			t.Errorf("failure Kind = %q, want %q", got.Failure.Kind, FailureKindParse)
+		}
+		reason := strings.ToLower(got.Failure.Reason)
+		if !strings.Contains(reason, "laneid") {
+			t.Errorf("failure Reason = %q, want it to name the laneId mismatch", got.Failure.Reason)
+		}
+		if !strings.Contains(got.Failure.Reason, declaredLaneID) || !strings.Contains(got.Failure.Reason, modelLaneID) {
+			t.Errorf("failure Reason = %q, want declared laneId %q and model laneId %q", got.Failure.Reason, declaredLaneID, modelLaneID)
+		}
+	})
+
+	t.Run("matching laneId succeeds", func(t *testing.T) {
+		input := composeTestInput(t, lane, nil, resources.Registry{}, "LANE-ID-MATCH-DIFF")
+		provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+			Output: `{"laneId":"` + declaredLaneID + `","findings":[]}`,
+		}}
+
+		got := ExecuteLane(context.Background(), input, provider, 1)
+		if got.Failure != nil {
+			t.Fatalf("ExecuteLane failure = %#v, want success", got.Failure)
+		}
+		if got.LaneID != declaredLaneID {
+			t.Errorf("LaneID = %q, want dispatched lane ID %q", got.LaneID, declaredLaneID)
+		}
+		if len(got.Findings) != 0 {
+			t.Errorf("finding count = %d, want 0", len(got.Findings))
+		}
+	})
+}

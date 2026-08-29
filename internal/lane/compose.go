@@ -68,7 +68,10 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 
 	degraded = append(degraded, composed.Degraded...)
 	return ComposeResult{
-		Prompt:   strings.TrimRight(string(preamble), "\r\n") + "\n\n" + composed.Prompt,
+		Prompt: strings.TrimRight(string(preamble), "\r\n") + "\n\n" +
+			strings.TrimRight(composed.Prompt, "\r\n") +
+			"\n\nCurrent lane ID: " + input.Lane.ID +
+			"\n\n" + LaneOutputContract,
 		Degraded: degraded,
 	}, nil
 }

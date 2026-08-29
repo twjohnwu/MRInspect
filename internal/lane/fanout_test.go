@@ -27,6 +27,8 @@ type fanoutPromptProvider struct {
 	mu       sync.Mutex
 	outcomes map[string]fanoutProviderOutcome
 	calls    []testfake.ProviderCall
+	arrived  chan<- struct{}
+	release  <-chan struct{}
 }
 
 func newFanoutPromptProvider(lanes []Lane) *fanoutPromptProvider {
@@ -41,6 +43,21 @@ func (p *fanoutPromptProvider) Generate(ctx context.Context, prompt string, opts
 	p.mu.Lock()
 	p.calls = append(p.calls, testfake.ProviderCall{Context: ctx, Prompt: prompt, Options: opts})
 	p.mu.Unlock()
+
+	if p.arrived != nil {
+		select {
+		case p.arrived <- struct{}{}:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	if p.release != nil {
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 
 	for marker, outcome := range p.outcomes {
 		if !strings.Contains(prompt, marker) {
@@ -160,10 +177,9 @@ func TestFanout_AllLanesInFlightConcurrently(t *testing.T) {
 	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseAll()
 
-	provider := &testfake.FakeProvider{
-		DefaultResponse: testfake.ProviderResponse{Output: `{"laneId":"barrier","findings":[{"title":"barrier finding","severity":"low","rationale":"all calls arrived"}]}`},
-		Barrier:         &testfake.ProviderBarrier{Arrived: arrived, Release: release},
-	}
+	provider := newFanoutPromptProvider(lanes)
+	provider.arrived = arrived
+	provider.release = release
 	input := fanoutTestInput(t, lanes, provider, "S08-CONCURRENT-DIFF")
 	type outcome struct {
 		result FanoutResult

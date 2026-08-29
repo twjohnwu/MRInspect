@@ -185,7 +185,7 @@ flowchart LR
 Spec 不動：T16–T18 是實作向既有 REQ-04/REQ-06/S-34 靠攏；其餘為 spec 未涵蓋的
 營運強化。逐項證據與修法細節見 plan 檔（2026-08-29 核准）。
 
-## T16 [ ] [MODIFY] 修復發現 A、B — JSON 輸出契約＋信封驗證＋laneId 比對
+## T16 [x] [MODIFY] 修復發現 A、B — JSON 輸出契約＋信封驗證＋laneId 比對
 
 Test file: internal/lane/parse_test.go（追加）、internal/lane/compose_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestParse_RejectsEnvelopeless|TestParse_RejectsLaneIDMismatch|TestCompose_PromptCarriesOutputContract' -count=1`

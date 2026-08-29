@@ -145,6 +145,25 @@ func Parse(raw string, limits ParseLimits) (ParsedLane, error) {
 		return ParsedLane{}, err
 	}
 
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(candidate), &envelope); err != nil {
+		return ParsedLane{}, newParseFailure("", "parse lane response: decode JSON envelope: %v", err)
+	}
+	missingKeys := make([]string, 0, 2)
+	if _, ok := envelope["laneId"]; !ok {
+		missingKeys = append(missingKeys, "laneId")
+	}
+	if _, ok := envelope["findings"]; !ok {
+		missingKeys = append(missingKeys, "findings")
+	}
+	if len(missingKeys) > 0 {
+		return ParsedLane{}, newParseFailure(
+			"",
+			"parse lane response: missing required envelope key(s): %s",
+			strings.Join(missingKeys, ", "),
+		)
+	}
+
 	var decoded rawLane
 	if err := json.Unmarshal([]byte(candidate), &decoded); err != nil {
 		return ParsedLane{}, newParseFailure("", "parse lane response: decode JSON: %v", err)
@@ -193,6 +212,14 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 		}
 
 		parsed, parseErr := Parse(output, defaultParseLimits())
+		if parseErr == nil && parsed.LaneID != input.Lane.ID {
+			parseErr = newParseFailure(
+				"",
+				"parse lane response: laneId mismatch: expected %q, got %q",
+				input.Lane.ID,
+				parsed.LaneID,
+			)
+		}
 		if parseErr == nil {
 			return LaneResult{
 				LaneID:     input.Lane.ID,
@@ -434,8 +461,8 @@ func truncateFields(values []string, name string, maxChars int, stats *ParseStat
 func buildRetryPrompt(original, previousOutput string, previousErr error) string {
 	return original + fmt.Sprintf(
 		"\n\n---\nPrevious attempt was rejected because its lane response could not be parsed: %s\n"+
-			"Previous output:\n%s\nPlease return one valid JSON object matching the lane response contract.\n",
-		previousErr.Error(), previousOutput,
+			"Previous output:\n%s\nPlease follow this lane response contract:\n%s\n",
+		previousErr.Error(), previousOutput, LaneOutputContract,
 	)
 }
 
