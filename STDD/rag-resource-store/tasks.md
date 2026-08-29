@@ -303,7 +303,7 @@ block scalar、以及檔尾無換行的最後一個 operation。
 Test file: `internal/rag/chunk/structured_boundary_test.go`
 Verification command: `go test ./internal/rag/chunk/ -run TestStructured_Boundary -count=1`
 
-## T27 [ ] [NEW] REQ-02／REQ-12 — production 組裝（發現於 T21 執行期）
+## T27 [x] [NEW] REQ-02／REQ-12 — production 組裝（發現於 T21 執行期）
 
 理由：無對應 `S-XX`——元件層 68 個 scenario 全數以注入的 seam 驗證，沒有任何
 scenario 斷言 production 的組裝存在。現況：`reviewer.rag.ReviewPath` 在 production

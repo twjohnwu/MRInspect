@@ -16,7 +16,10 @@ import (
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
+	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/ragcmd"
+	"mrinspect/internal/ragwire"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/validator"
 )
@@ -64,6 +67,15 @@ func main() {
 	}
 
 	v := validator.New(cfg)
+	rag.RegisterBuiltinSources(rag.BuiltinSourcesConfig{GitLab: rag.GitLabSourceConfig{
+		APIBase: cfg.GitLabAPIBase, Token: cfg.GitLabToken, ProjectID: v.GetProjectID(),
+		PackageName: "rag-index", ArtifactRef: v.GetTargetBranch(), ArtifactJob: "rag-index",
+		StoreName: "mrinspect-rag.sqlite",
+	}})
+	resourceRegistry, err := resources.Load(".", "")
+	if err != nil {
+		log.Warn("failed to load RAG resource sets", "error", err)
+	}
 	gitlabClient := gitlab.NewClient(cfg, log)
 
 	localFetcher := diff.NewLocalDiffFetcher(log)
@@ -82,6 +94,11 @@ func main() {
 
 	r := reviewer.New(cfg, gitlabClient, aiProvider, diffFetcher,
 		projectLoader, promptComposer, v, errHandler, log)
+	r.SetRAGReviewPath(ragwire.NewProductionReviewPath(cfg, ragwire.ReviewPathConfig{
+		ResolverConfig: rag.DefaultResolverConfig(),
+		ResourceSets:   resourceRegistry.Sets,
+		Composer:       promptComposer,
+	}))
 
 	r.Run(ctx)
 }

@@ -34,6 +34,10 @@ type StoreCandidate struct {
 	PublisherProjectID string
 	BuiltAt            string
 	Version            string
+	// Local identifies candidates supplied by REQ-12's path and baked names.
+	// Those files are not published stores, so publisher allowlisting does not
+	// apply to them.
+	Local bool
 }
 
 // DegradedEntry records one named REQ-12 source failure without stopping review.
@@ -160,6 +164,12 @@ func ResolveStore(ctx context.Context, config ResolverConfig) (StoreResolution, 
 			return resolution, fmt.Errorf("resolve store: total timeout: %w", err)
 		}
 		candidate, err := resolveCandidate(totalCtx, named.source, request, config.SourceTimeout)
+		if named.name == "path" || named.name == "baked" {
+			// Source names, rather than the candidate's publisher field, establish
+			// local provenance. This also keeps test fixtures registered under the
+			// REQ-12 local names on the same path as production sources.
+			candidate.Local = true
+		}
 		if err == nil {
 			err = validateCandidate(totalCtx, candidate, config)
 		}
@@ -276,7 +286,7 @@ func validateCandidate(ctx context.Context, candidate StoreCandidate, config Res
 	if !strings.EqualFold(fmt.Sprintf("%x", sum), candidate.SHA256) {
 		return errors.New("candidate digest verification failed")
 	}
-	if !publisherAllowed(candidate.PublisherProjectID, config.AllowedPublishers) {
+	if !candidate.Local && !publisherAllowed(candidate.PublisherProjectID, config.AllowedPublishers) {
 		return fmt.Errorf("publisher project %q is not allowed", candidate.PublisherProjectID)
 	}
 	if err := config.StoreOpener.OpenAndValidate(ctx, candidate.Path); err != nil {

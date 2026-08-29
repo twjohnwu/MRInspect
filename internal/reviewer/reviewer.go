@@ -88,6 +88,14 @@ func New(
 	}
 }
 
+// SetRAGReviewPath installs the optional, review-only RAG retrieval path.
+// A nil path disables retrieval, preserving the default review behavior.
+func (r *MRInspectReviewer) SetRAGReviewPath(path RAGReviewPath) {
+	if r != nil {
+		r.rag.ReviewPath = path
+	}
+}
+
 // Run executes the full review pipeline. It always returns; the process exits 0
 // so it never blocks the GitLab pipeline (allow_failure: true semantics).
 func (r *MRInspectReviewer) Run(ctx context.Context) {
