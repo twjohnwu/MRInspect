@@ -738,6 +738,97 @@ func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
 	}
 }
 
+// setRefRetriever is a rag.Retriever test double that dispatches its
+// programmed response by rag.Query.SetRef, so different lanes (which
+// declare different resource sets) can be given different retrieval
+// outcomes within one concurrent fanout run.
+type setRefRetriever struct {
+	responses map[string]rag.Result
+}
+
+func (r *setRefRetriever) Name() string { return "set-ref-fake" }
+
+func (r *setRefRetriever) Retrieve(_ context.Context, query rag.Query) (rag.Result, error) {
+	return r.responses[query.SetRef], nil
+}
+
+func (r *setRefRetriever) Close() error { return nil }
+
+// TestRun_ScopeReflectsActualContribution verifies the Scope section
+// annotates each lane's actual retrieval contribution instead of only
+// listing its declared resource sets: a lane that received a chunk shows
+// how many, and a lane that declared a retrieval set but received nothing
+// is named as such rather than implied to have been consulted.
+func TestRun_ScopeReflectsActualContribution(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{
+		{id: "standards", enabled: true},
+		{id: "spec-conformance", enabled: true},
+	})
+
+	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
+	lanesYAML, err := os.ReadFile(lanesPath)
+	if err != nil {
+		t.Fatalf("read lanes fixture: %v", err)
+	}
+	rewritten := strings.Replace(
+		string(lanesYAML),
+		"intent: review standards\n    resources:\n      sets: []",
+		"intent: review standards\n    resources:\n      sets: [official-standards]",
+		1,
+	)
+	rewritten = strings.Replace(
+		rewritten,
+		"intent: review spec-conformance\n    resources:\n      sets: []",
+		"intent: review spec-conformance\n    resources:\n      sets: [product-specs]",
+		1,
+	)
+	if err := os.WriteFile(lanesPath, []byte(rewritten), 0o644); err != nil {
+		t.Fatalf("write lanes fixture resources: %v", err)
+	}
+
+	resourcesYAML := []byte("sets:\n  - name: official-standards\n    mode: retrieval\n    paths: []\n  - name: product-specs\n    mode: retrieval\n    paths: []\n")
+	if err := os.WriteFile(filepath.Join(root, "projects", "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("write resources fixture: %v", err)
+	}
+	resourceRegistry, err := resources.Load(root, "")
+	if err != nil {
+		t.Fatalf("load resources fixture: %v", err)
+	}
+
+	retriever := &setRefRetriever{responses: map[string]rag.Result{
+		"official-standards": {Chunks: []rag.Chunk{{ID: "std-1", Source: "standards/rule.md", StartLine: 5}}},
+		"product-specs":      {},
+	}}
+
+	provider := newModeRoutingProvider()
+	provider.laneResponders["standards"] = func(string) string {
+		return `{"laneId":"standards","findings":[]}`
+	}
+	provider.laneResponders["spec-conformance"] = func(string) string {
+		return `{"laneId":"spec-conformance","findings":[]}`
+	}
+
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.ai = provider
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+		RepoRoot:         root,
+		ResourceRegistry: resourceRegistry,
+		Retriever:        retriever,
+		ModelLimits:      reviewerModelLimits(),
+	})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if !strings.Contains(note, "1 chunk retrieved") {
+		t.Errorf("posted note does not report standards lane's retrieved chunk count: %q", note)
+	}
+	if !strings.Contains(note, "no content retrieved") {
+		t.Errorf("posted note does not name the spec-conformance lane as having retrieved no content: %q", note)
+	}
+}
+
 func TestPostReview_ListingErrorFallsBackWithLog(t *testing.T) {
 	tests := []struct {
 		name      string

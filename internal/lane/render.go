@@ -57,7 +57,8 @@ func renderScope(output *strings.Builder, input RenderInput) {
 		if resourceSets == "" {
 			resourceSets = "none"
 		}
-		fmt.Fprintf(output, "- **%s** — Resource sets: %s\n", laneID, resourceSets)
+		contribution := retrievalContribution(renderLane, input.ReceivedChunks)
+		fmt.Fprintf(output, "- **%s** — Resource sets: %s%s\n", laneID, resourceSets, contribution)
 	}
 	if len(input.Lanes) == 0 {
 		output.WriteString("- No runnable lanes.\n")
@@ -72,6 +73,29 @@ func renderScope(output *strings.Builder, input RenderInput) {
 		)
 	}
 	output.WriteByte('\n')
+}
+
+// retrievalContribution reports how many chunks a lane actually received
+// from retrieval, so the Scope section reflects real grounding rather than
+// just the resource sets a lane was configured to consult. A lane that
+// declared no resource sets (e.g. code-diff, which never retrieves) is left
+// unannotated. This only reflects RAG-retrieval-mode contribution:
+// full-mode docs loaded via a rag.FullLoader never populate
+// RenderInput.ReceivedChunks, so a full-mode-only lane could misreport as
+// "no content retrieved" here — known limitation, not addressed by this
+// annotation.
+func retrievalContribution(renderLane RenderLane, received map[string][]rag.Chunk) string {
+	if len(renderLane.ResolvedResourceSets) == 0 {
+		return ""
+	}
+	switch chunkCount := len(received[renderLane.Declaration.ID]); {
+	case chunkCount == 0:
+		return " (no content retrieved)"
+	case chunkCount == 1:
+		return " (1 chunk retrieved)"
+	default:
+		return fmt.Sprintf(" (%d chunks retrieved)", chunkCount)
+	}
 }
 
 func renderFindingsTable(output *strings.Builder, input RenderInput) {
