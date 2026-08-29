@@ -53,7 +53,7 @@
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | full 模式的 normative 段落被裁掉時，Go runner 的處理方式：`warn` \| `fail` |
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數。預設值 0.8 也吸收了估算器實測約 11% 的系統性低估。 |
 | `MRI_DIFF_PROMPT_SHARE` | `0.85` | 有效模型 prompt 預算中 diff 可佔用的比例；超額的 diff 會整檔剔除（先剔不可人審 pattern，再依大小由大到小剔除；hunk 永不截斷），剔除清單會同時揭露於 prompt 與 review footer。無效值會退回預設值。實測事故資料顯示 diff 佔 prompt 超過約 93% 時，模型會省略必要區段；降到約 85% 即恢復格式遵循——上限依模型預算比例縮放，而非固定 KB 值。 |
-| `MRI_REVIEW_DUMP_DISABLED` | _(未設定)_ | 設為精確字串 `true` 可關閉 review 驗證失敗時記錄的 failure-only prompt/response dump。其他任何值都會保持 dump 開啟。 |
+| `MRI_REVIEW_DUMP_DISABLED` | _(未設定)_ | 設為精確字串 `true` 可關閉 review 驗證失敗時記錄的 failure-only prompt/response dump。其他任何值都會保持 dump 開啟。注意：驗證失敗時完整組好的 prompt（含被審的 diff）會寫入 CI job log——diff 可能含敏感值的 repo 請設為 true。 |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | 覆寫 Anthropic 模型 |
 | `GEMINI_MODEL` | `gemini-2.5-pro` | 覆寫 Gemini 模型 |
 | `OPENAI_MODEL` | `gpt-5.6` | 覆寫 OpenAI 模型 |
