@@ -12,8 +12,10 @@ import (
 // leave headroom below the providers' advertised maximum context windows.
 var DefaultModelLimits = map[string]int{
 	"claude-3-5-sonnet-20241022": 180_000,
+	"claude-sonnet-5":            1_000_000,
 	"gemini-2.5-pro":             1_000_000,
 	"gpt-5":                      360_000,
+	"gpt-5.6":                    1_000_000,
 }
 
 // modelLimitsEnvVar names the operator override that extends or overrides

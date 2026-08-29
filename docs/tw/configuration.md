@@ -10,9 +10,9 @@
 
 | Provider | `AI_PROVIDER` 值 | 預設模型 | 金鑰變數 |
 |---|---|---|---|
-| Google Gemini | `gemini` _(預設)_ | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
-| Anthropic Claude | `anthropic` | `claude-3-5-sonnet-20241022` | `AI_PROVIDER_KEY` |
-| OpenAI | `openai` | `gpt-5` | `AI_PROVIDER_KEY` |
+| Google Gemini | `gemini` | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
+| Anthropic Claude | `anthropic` | `claude-sonnet-5` | `AI_PROVIDER_KEY` |
+| OpenAI | `openai` _(預設)_ | `gpt-5.6` | `AI_PROVIDER_KEY` |
 
 > **注意：** superpowers 層一律使用 Anthropic（Claude Code CLI 的要求）。不管 mrinspect runner 用哪個 provider，都要設定 `ANTHROPIC_API_KEY`。
 
@@ -37,7 +37,7 @@
 
 | 變數 | 預設值 | 說明 |
 |---|---|---|
-| `AI_PROVIDER` | `gemini` | AI provider：`anthropic` \| `gemini` \| `openai` |
+| `AI_PROVIDER` | `openai` | AI provider：`anthropic` \| `gemini` \| `openai` |
 | `AI_PROVIDER_KEY` | _(必填)_ | 選定 provider 的 API 金鑰 |
 | `GITLAB_TOKEN` | _(必填)_ | GitLab API token |
 | `GITLAB_API_BASE` | `https://gitlab.com/api/v4` | GitLab API base URL（自架時要設） |
@@ -52,9 +52,9 @@
 | `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package 版本；設定明確版本可釘住 RAG store |
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | full 模式的 normative 段落被裁掉時，Go runner 的處理方式：`warn` \| `fail` |
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數 |
-| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | 覆寫 Anthropic 模型 |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5` | 覆寫 Anthropic 模型 |
 | `GEMINI_MODEL` | `gemini-2.5-pro` | 覆寫 Gemini 模型 |
-| `OPENAI_MODEL` | `gpt-5` | 覆寫 OpenAI 模型 |
+| `OPENAI_MODEL` | `gpt-5.6` | 覆寫 OpenAI 模型 |
 | `ANTHROPIC_MAX_TOKENS` | `4000` | Anthropic 的最大輸出 token 數 |
 | `GEMINI_MAX_TOKENS` | `8000` | Gemini 的最大輸出 token 數 |
 | `OPENAI_MAX_TOKENS` | `4000` | OpenAI 的最大輸出 token 數 |

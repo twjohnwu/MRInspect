@@ -22,7 +22,7 @@ export function loadConfig(): Config {
   const gitlabToken = process.env.GITLAB_TOKEN;
   if (!gitlabToken) throw new Error('GITLAB_TOKEN environment variable is required');
 
-  const rawProvider = env('AI_PROVIDER', 'gemini').toLowerCase() as AIProviderName;
+  const rawProvider = env('AI_PROVIDER', 'openai').toLowerCase() as AIProviderName;
   if (!VALID_PROVIDERS.includes(rawProvider)) {
     throw new Error(`Unsupported AI_PROVIDER "${rawProvider}": must be one of [${VALID_PROVIDERS.join(', ')}]`);
   }
@@ -54,7 +54,7 @@ export function loadConfig(): Config {
 
     providers: {
       anthropic: {
-        model:       env('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022'),
+        model:       env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
         maxTokens:   envInt('ANTHROPIC_MAX_TOKENS', 4000),
         temperature: 0.1,
       },
@@ -64,7 +64,7 @@ export function loadConfig(): Config {
         temperature: 0.1,
       },
       openai: {
-        model:       env('OPENAI_MODEL', 'gpt-5'),
+        model:       env('OPENAI_MODEL', 'gpt-5.6'),
         maxTokens:   envInt('OPENAI_MAX_TOKENS', 4000),
         temperature: 0.1,
       },

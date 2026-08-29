@@ -10,9 +10,9 @@ Both runners support three AI backends. Select one via `AI_PROVIDER`:
 
 | Provider | `AI_PROVIDER` value | Default model | Key variable |
 |---|---|---|---|
-| Google Gemini | `gemini` _(default)_ | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
-| Anthropic Claude | `anthropic` | `claude-3-5-sonnet-20241022` | `AI_PROVIDER_KEY` |
-| OpenAI | `openai` | `gpt-5` | `AI_PROVIDER_KEY` |
+| Google Gemini | `gemini` | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
+| Anthropic Claude | `anthropic` | `claude-sonnet-5` | `AI_PROVIDER_KEY` |
+| OpenAI | `openai` _(default)_ | `gpt-5.6` | `AI_PROVIDER_KEY` |
 
 > **Note:** The superpowers layer always uses Anthropic (Claude Code CLI requirement). Set `ANTHROPIC_API_KEY` regardless of which provider the mrinspect runner uses.
 
@@ -37,7 +37,7 @@ Set these in your CI/CD secrets store before use:
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `gemini` | AI provider: `anthropic` \| `gemini` \| `openai` |
+| `AI_PROVIDER` | `openai` | AI provider: `anthropic` \| `gemini` \| `openai` |
 | `AI_PROVIDER_KEY` | _(required)_ | API key for the selected provider |
 | `GITLAB_TOKEN` | _(required)_ | GitLab API token |
 | `GITLAB_API_BASE` | `https://gitlab.com/api/v4` | GitLab API base URL (set for self-hosted) |
@@ -52,9 +52,9 @@ Set these in your CI/CD secrets store before use:
 | `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package version; set an explicit version to pin the RAG store |
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | Go runner policy when a full-mode normative section is evicted: `warn` \| `fail` |
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | Positive float multiplied by the selected model's prompt limit |
-| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Override the Anthropic model |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the Anthropic model |
 | `GEMINI_MODEL` | `gemini-2.5-pro` | Override the Gemini model |
-| `OPENAI_MODEL` | `gpt-5` | Override the OpenAI model |
+| `OPENAI_MODEL` | `gpt-5.6` | Override the OpenAI model |
 | `ANTHROPIC_MAX_TOKENS` | `4000` | Max output tokens for Anthropic |
 | `GEMINI_MAX_TOKENS` | `8000` | Max output tokens for Gemini |
 | `OPENAI_MAX_TOKENS` | `4000` | Max output tokens for OpenAI |

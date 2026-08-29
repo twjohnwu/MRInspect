@@ -24,7 +24,7 @@ mrinspect (Go)    mrinspect (TypeScript)   superpowers layer
 ```
 
 **Layer 1a — mrinspect Go binary**
-Resolves the service name to a system project (`projects/registry.yaml`), loads the matching YAML + Markdown review standards, and composes a context-aware prompt. Calls the configured AI provider (Gemini by default) with retry and exponential backoff. Optionally runs a self-reflection second pass where the AI validates its own review against the project standards. Posts one structured MR comment. Follows SOLID principles — all collaborators are wired via interfaces in `internal/interfaces/`; `cmd/mrinspect/main.go` is the composition root.
+Resolves the service name to a system project (`projects/registry.yaml`), loads the matching YAML + Markdown review standards, and composes a context-aware prompt. Calls the configured AI provider (OpenAI by default) with retry and exponential backoff. Optionally runs a self-reflection second pass where the AI validates its own review against the project standards. Posts one structured MR comment. Follows SOLID principles — all collaborators are wired via interfaces in `internal/interfaces/`; `cmd/mrinspect/main.go` is the composition root.
 
 **Layer 1b — mrinspect TypeScript runner**
 Same project loading, prompt composition, AI provider, and self-reflection logic as the Go binary — implemented in TypeScript following SOLID principles. Runs via `npx tsx review.ts` with no compile step required. Uses `node:22` in CI (no pre-built Docker image needed). Ideal when you prefer a no-build setup or want to extend the reviewer in TypeScript.

@@ -86,7 +86,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("GITLAB_TOKEN environment variable is required")
 	}
 
-	provider := AIProvider(strings.ToLower(getEnv("AI_PROVIDER", "gemini")))
+	provider := AIProvider(strings.ToLower(getEnv("AI_PROVIDER", "openai")))
 	if provider != ProviderAnthropic && provider != ProviderGemini && provider != ProviderOpenAI {
 		return Config{}, fmt.Errorf("unsupported AI_PROVIDER %q: must be anthropic, gemini, or openai", provider)
 	}
@@ -101,7 +101,7 @@ func Load() (Config, error) {
 
 		Providers: map[AIProvider]ProviderConfig{
 			ProviderAnthropic: {
-				Model:       getEnv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+				Model:       getEnv("ANTHROPIC_MODEL", "claude-sonnet-5"),
 				MaxTokens:   getEnvInt("ANTHROPIC_MAX_TOKENS", 4000),
 				Temperature: 0.1,
 			},
@@ -111,7 +111,7 @@ func Load() (Config, error) {
 				Temperature: 0.1,
 			},
 			ProviderOpenAI: {
-				Model:       getEnv("OPENAI_MODEL", "gpt-5"),
+				Model:       getEnv("OPENAI_MODEL", "gpt-5.6"),
 				MaxTokens:   getEnvInt("OPENAI_MAX_TOKENS", 4000),
 				Temperature: 0.1,
 			},

@@ -51,10 +51,10 @@ describe('loadConfig', () => {
     });
   });
 
-  test('defaults to gemini provider', () => {
+  test('defaults to openai provider', () => {
     withEnv(REQUIRED, () => {
       const cfg = loadConfig();
-      expect(cfg.aiProvider).toBe('gemini');
+      expect(cfg.aiProvider).toBe('openai');
     });
   });
 
@@ -82,9 +82,9 @@ describe('loadConfig', () => {
   test('default model values are correct', () => {
     withEnv(REQUIRED, () => {
       const cfg = loadConfig();
-      expect(cfg.providers.anthropic.model).toBe('claude-3-5-sonnet-20241022');
+      expect(cfg.providers.anthropic.model).toBe('claude-sonnet-5');
       expect(cfg.providers.gemini.model).toBe('gemini-2.5-pro');
-      expect(cfg.providers.openai.model).toBe('gpt-5');
+      expect(cfg.providers.openai.model).toBe('gpt-5.6');
     });
   });
 

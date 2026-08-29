@@ -24,7 +24,7 @@ mrinspect (Go)    mrinspect (TypeScript)   superpowers layer
 ```
 
 **第 1a 層 — mrinspect Go 執行檔**
-把服務名稱解析成對應的 system project（`projects/registry.yaml`），載入相符的 YAML 與 Markdown 審查標準，組出帶有情境的 prompt。接著呼叫設定好的 AI provider（預設為 Gemini），並帶重試與指數退避。可選擇再跑一次 self-reflection，讓 AI 依專案標準檢查自己的審查結果。最後貼出一則結構化的 MR 留言。整體遵循 SOLID 原則——所有協作元件都透過 `internal/interfaces/` 的介面接起來，`cmd/mrinspect/main.go` 是 composition root。
+把服務名稱解析成對應的 system project（`projects/registry.yaml`），載入相符的 YAML 與 Markdown 審查標準，組出帶有情境的 prompt。接著呼叫設定好的 AI provider（預設為 OpenAI），並帶重試與指數退避。可選擇再跑一次 self-reflection，讓 AI 依專案標準檢查自己的審查結果。最後貼出一則結構化的 MR 留言。整體遵循 SOLID 原則——所有協作元件都透過 `internal/interfaces/` 的介面接起來，`cmd/mrinspect/main.go` 是 composition root。
 
 **第 1b 層 — mrinspect TypeScript runner**
 專案載入、prompt 組裝、AI provider 與 self-reflection 的邏輯都和 Go 執行檔相同，以 TypeScript 依 SOLID 原則實作。用 `npx tsx review.ts` 執行，不需要編譯步驟。CI 上使用 `node:22`（不需要預先建好的 Docker image）。如果你偏好免建置的環境，或想用 TypeScript 擴充 reviewer，這一層最適合。

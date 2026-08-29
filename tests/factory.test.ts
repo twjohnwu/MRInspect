@@ -18,9 +18,9 @@ function makeConfig(aiProvider: Config['aiProvider'] = 'anthropic'): Config {
       maxRetryDelayMs: 1000,
     },
     providers: {
-      anthropic: { model: 'claude-3-5-sonnet-20241022', maxTokens: 4000, temperature: 0.1 },
-      gemini:    { model: 'gemini-2.5-pro',             maxTokens: 8000, temperature: 0.1 },
-      openai:    { model: 'gpt-5',                      maxTokens: 4000, temperature: 0.1 },
+      anthropic: { model: 'claude-sonnet-5', maxTokens: 4000, temperature: 0.1 },
+      gemini:    { model: 'gemini-2.5-pro',   maxTokens: 8000, temperature: 0.1 },
+      openai:    { model: 'gpt-5.6',          maxTokens: 4000, temperature: 0.1 },
     },
     projects: {
       directory:    '../projects',

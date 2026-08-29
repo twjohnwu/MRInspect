@@ -46,7 +46,7 @@
 # REQUIRED CI/CD VARIABLES (set in GitLab → Settings → CI/CD → Variables)
 #
 #   AI_PROVIDER_KEY    API key for the AI provider selected in AI_PROVIDER
-#                      (Gemini key by default; Anthropic or OpenAI key for other providers)
+#                      (OpenAI key by default; Anthropic or Gemini key for other providers)
 #   ANTHROPIC_API_KEY  Anthropic key — required by Claude Code / superpowers layer
 #   GITLAB_TOKEN       GitLab personal/project access token with api + write_repository scope
 #

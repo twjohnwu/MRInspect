@@ -141,7 +141,7 @@ Both runners use the same `projects/` directory. In CI the Go binary bakes proje
 |---|---|---|
 | `AI_PROVIDER_KEY` | _(required)_ | API key for Gemini / Anthropic / OpenAI |
 | `GITLAB_TOKEN` | _(required)_ | GitLab token with `api` + `write_repository` |
-| `AI_PROVIDER` | `gemini` | `gemini` \| `anthropic` \| `openai` |
+| `AI_PROVIDER` | `openai` | `gemini` \| `anthropic` \| `openai` |
 | `MRI_SERVICE_NAME` | `unknown` | Must match a key in `projects/registry.yaml` |
 | `MRI_SERVICE_TYPE` | `backend` | `backend` \| `frontend` \| `ai` \| `iac` |
 | `MRI_REVIEW_MODE` | `single` | Go runner: `single` \| `multi`; `multi` runs configured lane fan-out |

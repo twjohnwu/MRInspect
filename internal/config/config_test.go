@@ -52,8 +52,8 @@ func TestLoad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if cfg.AIProvider != ProviderGemini {
-			t.Errorf("AIProvider: want %q, got %q", ProviderGemini, cfg.AIProvider)
+		if cfg.AIProvider != ProviderOpenAI {
+			t.Errorf("AIProvider: want %q, got %q", ProviderOpenAI, cfg.AIProvider)
 		}
 		if cfg.API.RetryAttempts != 3 {
 			t.Errorf("API.RetryAttempts: want 3, got %d", cfg.API.RetryAttempts)
