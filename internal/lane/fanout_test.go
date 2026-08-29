@@ -397,3 +397,75 @@ func TestFanout_ComposeHardFailureIsolated(t *testing.T) {
 }
 
 var _ ai.Provider = (*fanoutPromptProvider)(nil)
+
+func TestFanout_ConcurrencyCapped(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		env  string
+		cap  int
+	}{
+		{name: "configured cap", env: "2", cap: 2},
+		{name: "invalid value uses default", env: "abc", cap: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("MRI_LANE_CONCURRENCY", test.env)
+			lanes := fanoutTestLanes(
+				"lane-one", "lane-two", "lane-three", "lane-four",
+				"lane-five", "lane-six", "lane-seven", "lane-eight",
+			)
+			arrived := make(chan struct{}, len(lanes))
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+			defer releaseAll()
+
+			provider := newFanoutPromptProvider(lanes)
+			provider.arrived = arrived
+			provider.release = release
+			input := fanoutTestInput(t, lanes, provider, "CONCURRENCY-CAP-DIFF")
+			type outcome struct {
+				result FanoutResult
+				err    error
+			}
+			done := make(chan outcome, 1)
+			go func() {
+				result, err := Fanout(context.Background(), input)
+				done <- outcome{result: result, err: err}
+			}()
+
+			deadline := time.NewTimer(2 * time.Second)
+			defer deadline.Stop()
+			for call := 1; call <= test.cap; call++ {
+				select {
+				case <-arrived:
+				case <-deadline.C:
+					t.Fatalf("only %d/%d Generate calls reached the configured barrier", call-1, test.cap)
+				}
+			}
+
+			grace := time.NewTimer(200 * time.Millisecond)
+			select {
+			case <-arrived:
+				grace.Stop()
+				t.Fatalf("more than %d Generate calls arrived before any release", test.cap)
+			case <-grace.C:
+			}
+
+			releaseAll()
+			select {
+			case got := <-done:
+				if got.err != nil {
+					t.Errorf("Fanout error = %v, want nil", got.err)
+				}
+				if len(got.result.LaneResults) != len(lanes) {
+					t.Errorf("LaneResults count = %d, want %d", len(got.result.LaneResults), len(lanes))
+				}
+				if len(got.result.Failures) != 0 {
+					t.Errorf("Failures = %#v, want none", got.result.Failures)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("Fanout did not complete after the provider barrier was released")
+			}
+		})
+	}
+}

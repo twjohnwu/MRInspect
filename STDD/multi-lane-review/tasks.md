@@ -220,7 +220,7 @@ Verification command: `go test ./internal/rag/resources/ ./internal/lane/ -count
 Test file: internal/lane/parse_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestParse_TransportErrorIsGenerateKind|TestParse_RetryPromptTruncatesPreviousOutput' -count=1`
 
-## T23 [ ] [MODIFY] 修復發現 F7/F8 — fanout SetLimit＋neutralize 跳脫反斜線
+## T23 [x] [MODIFY] 修復發現 F7/F8 — fanout SetLimit＋neutralize 跳脫反斜線
 
 Test file: internal/lane/fanout_test.go（追加）、internal/lane/render_test.go（追加）
 Verification command: `go test -race ./internal/lane/ -run 'TestFanout_ConcurrencyCapped|TestRender_NeutralizesBackslash' -count=1`

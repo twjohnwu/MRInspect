@@ -15,6 +15,9 @@ func neutralize(value string) string {
 			for index < len(value) && (value[index] == '\r' || value[index] == '\n') {
 				index++
 			}
+		case '\\':
+			result.WriteString(`\\`)
+			index++
 		case '|':
 			result.WriteString(`\|`)
 			index++

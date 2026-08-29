@@ -351,3 +351,28 @@ func TestRender_ValidatesFileAgainstDiff(t *testing.T) {
 		}
 	}
 }
+
+func TestRender_NeutralizesBackslash(t *testing.T) {
+	findings := []MergedFinding{
+		renderTestFinding("backslash-title-a\\|b", SeverityHigh, "code-diff"),
+		renderTestFinding("control-title-a|b", SeverityHigh, "code-diff"),
+	}
+	rows, ok := renderTestFindingRows(Render(renderTestInput(findings)))
+	if !ok {
+		t.Fatal("rendered review does not contain the Findings table")
+	}
+	backslashRow, found := renderTestRowWithTitle(rows, "backslash-title")
+	if !found {
+		t.Fatal("backslash finding is missing from the Findings table")
+	}
+	controlRow, found := renderTestRowWithTitle(rows, "control-title")
+	if !found {
+		t.Fatal("control finding is missing from the Findings table")
+	}
+	if !strings.Contains(backslashRow, `backslash-title-a\\\|b`) {
+		t.Errorf("backslash and pipe are not independently escaped: %q", backslashRow)
+	}
+	if got, want := strings.Count(backslashRow, "|"), strings.Count(controlRow, "|"); got != want {
+		t.Errorf("backslash row has %d raw pipe delimiters, want control row count %d", got, want)
+	}
+}

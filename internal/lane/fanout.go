@@ -3,6 +3,8 @@ package lane
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 
 	"golang.org/x/sync/errgroup"
 	"mrinspect/internal/ai"
@@ -52,6 +54,11 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 	diffTokenEst := chunk.TokenEst(input.Diff)
 	results := make([]LaneResult, len(input.Lanes))
 	var group errgroup.Group
+	concurrency := 4
+	if configured, parseErr := strconv.Atoi(os.Getenv("MRI_LANE_CONCURRENCY")); parseErr == nil && configured > 0 {
+		concurrency = configured
+	}
+	group.SetLimit(concurrency)
 	for index, declaration := range input.Lanes {
 		lane := prepared[index]
 		if !lane.enabled {
