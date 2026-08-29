@@ -13,7 +13,31 @@ import (
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
+	"mrinspect/internal/rag"
 )
+
+// ReviewRAGState is the reviewer-facing RAG result and footer provenance.
+type ReviewRAGState struct {
+	StorePresent         bool
+	Store                rag.StoreResolution
+	ResourcesSHA256      string
+	PackageVersionPinned bool
+	Chunks               []rag.Chunk
+	SkippedFiles         int
+	Degraded             []string
+	Composition          prompt.ComposeResult
+}
+
+// RAGReviewPath supplies retrieval data to the review path. Its API has no indexing
+// operation, so the reviewer cannot request store construction through this seam.
+type RAGReviewPath interface {
+	RetrieveForReview(ctx context.Context, diff string) (ReviewRAGState, error)
+}
+
+// RAGIndexer is an explicit tripwire for tests proving the review path does not index.
+type RAGIndexer interface {
+	Index(ctx context.Context) error
+}
 
 // MRInspectReviewer orchestrates the full code review pipeline.
 type MRInspectReviewer struct {
@@ -29,6 +53,13 @@ type MRInspectReviewer struct {
 
 	projectID string
 	mrIID     string
+
+	// rag keeps the review-only retrieval dependency and the result used in the note footer.
+	rag struct {
+		ReviewPath RAGReviewPath
+		Indexer    RAGIndexer
+		State      ReviewRAGState
+	}
 }
 
 func New(
@@ -173,6 +204,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (string, error) {
 
 func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, error) {
 	start := time.Now()
+	r.retrieveReviewRAG(ctx, codeDiff)
 
 	var reviewPrompt string
 	loadedProject, projectErr := r.loadServiceProject()
@@ -180,8 +212,7 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 		var err error
 		reviewPrompt, err = r.prompt.ComposeReviewPrompt(loadedProject, codeDiff, mr)
 		if err != nil {
-			r.log.Warn("project prompt composition failed, using legacy template", "error", err)
-			projectErr = err
+			return "", fmt.Errorf("prompt composition failed: %w", err)
 		}
 	}
 	if projectErr != nil {
@@ -254,12 +285,64 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 }
 
 func (r *MRInspectReviewer) postReview(ctx context.Context, content string) error {
-	safe := r.validator.SanitizeInput(content)
+	note := content + r.ragFooter()
+	safe := r.validator.SanitizeInput(note)
 	_, err := r.gitlab.PostNote(ctx, r.projectID, r.mrIID, safe)
 	if err != nil {
 		return fmt.Errorf("postReview: %w", err)
 	}
 	return nil
+}
+
+// retrieveReviewRAG never indexes. Retrieval failures degrade the review so a missing
+// store cannot block it (REQ-07).
+func (r *MRInspectReviewer) retrieveReviewRAG(ctx context.Context, codeDiff string) {
+	if r.rag.ReviewPath == nil {
+		return
+	}
+
+	state, err := r.rag.ReviewPath.RetrieveForReview(ctx, codeDiff)
+	if err != nil {
+		state.Degraded = append(state.Degraded, fmt.Sprintf("RAG retrieval failed: %v", err))
+	}
+	r.rag.State = state
+}
+
+func (r *MRInspectReviewer) ragFooter() string {
+	state := r.rag.State
+	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 {
+		return ""
+	}
+
+	degradedCount := len(state.Degraded) + len(state.Composition.Degraded)
+	parts := []string{fmt.Sprintf("Degraded entries: %d", degradedCount), fmt.Sprintf("skipped files: %d", state.SkippedFiles)}
+	if state.StorePresent {
+		parts = append([]string{
+			fmt.Sprintf("store built_at: %s", state.Store.BuiltAt),
+			fmt.Sprintf("resources_sha256: %s", shortSHA(state.ResourcesSHA256)),
+		}, parts...)
+		if !state.PackageVersionPinned {
+			version := state.Store.Version
+			if version == "" {
+				version = "unknown"
+			}
+			parts = append(parts, fmt.Sprintf("store version: %s (unpinned)", version))
+		}
+	} else {
+		parts = append([]string{"store: absent"}, parts...)
+	}
+
+	for _, evicted := range state.Composition.Evicted {
+		parts = append(parts, fmt.Sprintf("evicted section: %s", evicted.Name))
+	}
+	return "\n\n---\nRAG provenance: " + strings.Join(parts, "; ")
+}
+
+func shortSHA(value string) string {
+	if len(value) <= 8 {
+		return value
+	}
+	return value[:8]
 }
 
 func (r *MRInspectReviewer) postErrorComment(ctx context.Context, err error, stage string) {

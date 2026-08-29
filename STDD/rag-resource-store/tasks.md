@@ -154,7 +154,7 @@ Test file: `internal/prompt/composer_test.go`
 並標示為規範。
 Verification command: `go test ./internal/prompt/ -run TestCompose -count=1 && ! grep -rnE '"math/rand(/v2)?"' ./internal ./cmd`
 
-## T15 [ ] [MODIFY] `S-33,S-45,S-62,S-64,S-68` — reviewer（`internal/reviewer/reviewer.go`）
+## T15 [x] [MODIFY] `S-33,S-45,S-62,S-64,S-68` — reviewer（`internal/reviewer/reviewer.go`）
 
 Test file: `internal/reviewer/reviewer_test.go`
 **跨 change 相依**：change B 的 T11 也對同一個檔案宣告新建。兩者只有先執行的那一個
