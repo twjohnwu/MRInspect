@@ -181,5 +181,8 @@ func (i sqliteIndexer) SupportsIndexing() bool {
 
 func (sqliteIndexer) Index(ctx context.Context, output string, sets []resources.Set) (IndexStats, error) {
 	stats, err := sqlite.Index(ctx, sqlite.IndexOptions{OutputPath: output, Sets: sets})
-	return IndexStats{FilesFailed: len(stats.Failures)}, err
+	return IndexStats{
+		FilesIndexed: stats.FilesIndexed,
+		FilesFailed:  len(stats.Failures),
+	}, err
 }

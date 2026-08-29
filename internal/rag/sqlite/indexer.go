@@ -26,7 +26,9 @@ type IndexOptions struct {
 
 // IndexStats reports the work completed by Index.
 type IndexStats struct {
-	Embeddings   int
+	Embeddings int
+	// FilesIndexed counts documents indexed by this rebuild (REQ-03 / T28).
+	FilesIndexed int
 	FilesSkipped int
 	Failures     []chunk.Failure
 }
@@ -125,7 +127,11 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, stats *In
 }
 
 func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, stats *IndexStats) (int, error) {
-	result, err := intake.Walk(intake.WalkOptions{Paths: set.Paths})
+	result, err := intake.Walk(intake.WalkOptions{
+		Paths:   set.Paths,
+		Include: set.Include,
+		Exclude: set.Exclude,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("Index: walk set %q: %w", set.Name, err)
 	}
@@ -148,6 +154,7 @@ func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, 
 		if err != nil {
 			return 0, err
 		}
+		stats.FilesIndexed++
 		if set.Mode == resources.ModeFull {
 			continue
 		}

@@ -14,6 +14,10 @@ type Set struct {
 	Tags  []string
 	Mode  string
 	Paths []string
+	// Include constrains indexed files to matching patterns (REQ-03 / T28).
+	Include []string
+	// Exclude removes matching files from indexing (REQ-03 / T28).
+	Exclude []string
 }
 
 // RejectedPath names one declared path that was refused during resolution

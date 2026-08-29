@@ -14,10 +14,12 @@ type fileRegistry struct {
 }
 
 type fileSet struct {
-	Name  string   `yaml:"name"`
-	Tags  []string `yaml:"tags"`
-	Mode  string   `yaml:"mode"`
-	Paths []string `yaml:"paths"`
+	Name    string   `yaml:"name"`
+	Tags    []string `yaml:"tags"`
+	Mode    string   `yaml:"mode"`
+	Paths   []string `yaml:"paths"`
+	Include []string `yaml:"include"`
+	Exclude []string `yaml:"exclude"`
 }
 
 // Load reads projects/resources.yaml (canonical) under repoRoot, merges the
@@ -125,7 +127,13 @@ func mergeSets(canonical, overlay []fileSet) []fileSet {
 func resolveSets(repoRoot string, declarations []fileSet) Registry {
 	registry := Registry{Sets: make([]Set, 0, len(declarations))}
 	for _, declaration := range declarations {
-		set := Set{Name: declaration.Name, Tags: declaration.Tags, Mode: declaration.Mode}
+		set := Set{
+			Name:    declaration.Name,
+			Tags:    declaration.Tags,
+			Mode:    declaration.Mode,
+			Include: declaration.Include,
+			Exclude: declaration.Exclude,
+		}
 		for _, declaredPath := range declaration.Paths {
 			resolved, reason := resolvePath(repoRoot, declaredPath)
 			if reason != "" {

@@ -174,3 +174,58 @@ func TestIndex_FullModeSetsAreNotChunked(t *testing.T) {
 		t.Errorf("Retrieve(%q) error = nil, want an error because full sets must use FullLoader", set.Name)
 	}
 }
+
+// TestIndex_AppliesIncludeExclude verifies REQ-03 / T28: each resource set's
+// include and exclude patterns determine which files become documents.
+func TestIndex_AppliesIncludeExclude(t *testing.T) {
+	t.Run("include selects markdown only", func(t *testing.T) {
+		set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n")
+		if err := os.WriteFile(filepath.Join(set.Paths[0], "config.yaml"), []byte("name: config\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile config.yaml: %v", err)
+		}
+		set.Include = []string{"*.md"}
+
+		output := filepath.Join(t.TempDir(), "store.sqlite")
+		if _, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: []resources.Set{set}}); err != nil {
+			t.Fatalf("Index: %v", err)
+		}
+		store, err := Open(output)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer store.Close()
+		if got := countRows(t, store.db, `SELECT count(*) FROM documents`); got != 1 {
+			t.Errorf("documents = %d, want 1 (.md only)", got)
+		}
+		if got := countRows(t, store.db, `SELECT count(*) FROM documents WHERE rel_path = 'guide.md'`); got != 1 {
+			t.Errorf("guide.md documents = %d, want 1", got)
+		}
+	})
+
+	t.Run("exclude drops matching markdown", func(t *testing.T) {
+		set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n")
+		if err := os.WriteFile(filepath.Join(set.Paths[0], "skip.md"), []byte("# Skip\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile skip.md: %v", err)
+		}
+		set.Exclude = []string{"skip*"}
+
+		output := filepath.Join(t.TempDir(), "store.sqlite")
+		if _, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: []resources.Set{set}}); err != nil {
+			t.Fatalf("Index: %v", err)
+		}
+		store, err := Open(output)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer store.Close()
+		if got := countRows(t, store.db, `SELECT count(*) FROM documents`); got != 1 {
+			t.Errorf("documents = %d, want 1 (guide.md only)", got)
+		}
+		if got := countRows(t, store.db, `SELECT count(*) FROM documents WHERE rel_path = 'guide.md'`); got != 1 {
+			t.Errorf("guide.md documents = %d, want 1", got)
+		}
+		if got := countRows(t, store.db, `SELECT count(*) FROM documents WHERE rel_path = 'skip.md'`); got != 0 {
+			t.Errorf("skip.md documents = %d, want 0", got)
+		}
+	})
+}

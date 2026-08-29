@@ -176,3 +176,32 @@ func runIndexForTest(t *testing.T, opts Options) (exitCode int, stats IndexStats
 	}()
 	return RunIndex(context.Background(), opts)
 }
+
+// TestIndex_ReportsRealFileCount verifies REQ-03 / T28: a real index reports
+// the number of indexed files both to callers and in printed statistics.
+func TestIndex_ReportsRealFileCount(t *testing.T) {
+	set := fixtureSet(t, "guide.md", "# Guide\n\nindex this resource\n")
+	if err := os.WriteFile(filepath.Join(set.Paths[0], "reference.md"), []byte("# Reference\n\nindex this too\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile reference.md: %v", err)
+	}
+	var printed bytes.Buffer
+
+	exitCode, stats, err := runIndexForTest(t, Options{
+		OutputPath: filepath.Join(t.TempDir(), "store.sqlite"),
+		Output:     &printed,
+		Loader:     staticLoader{sets: []resources.Set{set}},
+		Indexer:    sqliteIndexer{},
+	})
+	if err != nil {
+		t.Fatalf("RunIndex: %v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("RunIndex exit code = %d, want 0", exitCode)
+	}
+	if stats.FilesIndexed != 2 {
+		t.Errorf("IndexStats.FilesIndexed = %d, want 2", stats.FilesIndexed)
+	}
+	if !strings.Contains(printed.String(), "files indexed=2") {
+		t.Errorf("printed statistics = %q, want files indexed=2", printed.String())
+	}
+}

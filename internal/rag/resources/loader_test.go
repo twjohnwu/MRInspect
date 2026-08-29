@@ -401,3 +401,37 @@ sets:
 		}
 	})
 }
+
+// TestLoad_ParsesIncludeExclude verifies REQ-03 / T28: include and exclude
+// declarations retain their order, while a set without either remains valid.
+func TestLoad_ParsesIncludeExclude(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeYAML(t, canonicalPath(repoRoot), `
+sets:
+  - name: filtered
+    mode: retrieval
+    paths: [./docs]
+    include: ["*.md", "docs/*.md"]
+    exclude: ["skip*", "drafts/*"]
+  - name: unfiltered
+    mode: full
+    paths: [./standards]
+`)
+
+	reg, err := Load(repoRoot, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(reg.Sets) != 2 {
+		t.Fatalf("Sets: want 2, got %d (%+v)", len(reg.Sets), reg.Sets)
+	}
+	if !sameStrings(reg.Sets[0].Include, []string{"*.md", "docs/*.md"}) {
+		t.Errorf("filtered.Include: want [*.md docs/*.md], got %v", reg.Sets[0].Include)
+	}
+	if !sameStrings(reg.Sets[0].Exclude, []string{"skip*", "drafts/*"}) {
+		t.Errorf("filtered.Exclude: want [skip* drafts/*], got %v", reg.Sets[0].Exclude)
+	}
+	if len(reg.Sets[1].Include) != 0 || len(reg.Sets[1].Exclude) != 0 {
+		t.Errorf("unfiltered filters: want empty/nil slices, got Include=%v Exclude=%v", reg.Sets[1].Include, reg.Sets[1].Exclude)
+	}
+}

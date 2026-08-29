@@ -318,7 +318,7 @@ production ReviewPath 組裝。以整合測試驗證：真實二進位在 `MRI_R
 真 store 時，留言 footer 揭露 provenance。
 Verification command: `go test -tags integration ./cmd/mrinspect/ -run TestBinary_ReviewUsesBakedStore -count=1`
 
-## T28 [ ] [NEW] REQ-03 — include/exclude 從未接線＋FilesIndexed 恆為 0（發現於 T21 執行期）
+## T28 [x] [NEW] REQ-03 — include/exclude 從未接線＋FilesIndexed 恆為 0（發現於 T21 執行期）
 
 理由：無對應 `S-XX`——REQ-03 正文說索引「套用 include/exclude」，但 68 個 scenario
 沒有一個斷言它。實況兩項：
