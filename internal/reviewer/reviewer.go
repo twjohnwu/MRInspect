@@ -19,6 +19,7 @@ import (
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/chunk"
 	"mrinspect/internal/rag/resources"
 )
 
@@ -259,6 +260,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 	if err != nil {
 		return "", footerAggregation{}, fmt.Errorf("multi-lane fan-out failed: %w", err)
 	}
+	r.logMultiLanePromptBreakdowns(result.LaneResults)
 
 	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changes)
 	footer := aggregateLaneFooter(result.LaneResults)
@@ -486,6 +488,123 @@ func (r *MRInspectReviewer) reduceDiff(changes []gitlab.Change) ([]gitlab.Change
 	})
 }
 
+// diffReductionMarker is diffbudget.Trailer's stable disclosure marker; it
+// lets the breakdown logging split the trailer back out of a diff string
+// without needing the original dropped-file list threaded through.
+const diffReductionMarker = "<!-- mrinspect:diff-reduction -->"
+
+// splitDiffTrailer separates a diffbudget.Trailer disclosure block (if any)
+// from the diff text it was appended to, so the breakdown table can report
+// them as distinct sections instead of double-counting the trailer as diff
+// content.
+func splitDiffTrailer(codeDiff string) (diffText, trailerText string) {
+	if idx := strings.Index(codeDiff, "\n\n"+diffReductionMarker); idx >= 0 {
+		return codeDiff[:idx], codeDiff[idx:]
+	}
+	return codeDiff, ""
+}
+
+// resolvedPromptBudget mirrors reduceDiff's model-limit lookup (merged env
+// config and multi-lane overrides) without its warn-on-failure logging, so
+// breakdown logging can silently omit the budget field for a model with no
+// registered budget entry instead of duplicating a warning already emitted
+// by reduceDiff earlier in the same run.
+func (r *MRInspectReviewer) resolvedPromptBudget() (int, bool) {
+	limits, err := prompt.ModelLimitsFromEnv()
+	if err != nil {
+		limits = prompt.DefaultModelLimits
+	}
+	merged := make(map[string]int, len(limits)+len(r.multi.ModelLimits))
+	for model, tokens := range limits {
+		merged[model] = tokens
+	}
+	for model, tokens := range r.multi.ModelLimits {
+		merged[model] = tokens
+	}
+	budget, err := prompt.PromptBudgetForModel(r.cfg.Providers[r.cfg.AIProvider].Model, merged)
+	if err != nil {
+		return 0, false
+	}
+	return budget, true
+}
+
+// logPromptBreakdown emits the always-on prompt-composition breakdown table
+// as one multi-line Info log (incident-proven observability: a per-section
+// token share, e.g. "diff = 93.6%", was what located a prior failure's root
+// cause). It is deliberately independent of MRI_REVIEW_DUMP_DISABLED.
+func (r *MRInspectReviewer) logPromptBreakdown(label string, sections []Section, laneID string, withBudget bool) {
+	table := BuildPromptBreakdown(sections)
+	total := 0
+	for _, section := range sections {
+		total += section.TokenEst
+	}
+	args := []any{"est", total}
+	if withBudget {
+		if budget, ok := r.resolvedPromptBudget(); ok {
+			args = append(args, "budget", budget)
+		}
+	}
+	if laneID != "" {
+		args = append(args, "lane", laneID)
+	}
+	r.log.Info(label+"\n"+table, args...)
+}
+
+// logSinglePromptBreakdown logs the single-mode breakdown after the review
+// prompt is composed: the base prompt (metadata+instructions), the reduced
+// diff, and the diffbudget disclosure trailer when one is present.
+func (r *MRInspectReviewer) logSinglePromptBreakdown(reviewPrompt, codeDiff string) {
+	diffText, trailerText := splitDiffTrailer(codeDiff)
+	totalTokens := chunk.TokenEst(reviewPrompt)
+	diffTokens := chunk.TokenEst(diffText)
+	trailerTokens := chunk.TokenEst(trailerText)
+	baseTokens := totalTokens - diffTokens - trailerTokens
+	if baseTokens < 0 {
+		baseTokens = 0
+	}
+
+	sections := []Section{
+		{Name: "base prompt (metadata+instructions)", TokenEst: baseTokens},
+		{Name: "diff", TokenEst: diffTokens},
+	}
+	if trailerText != "" {
+		sections = append(sections, Section{Name: "diffbudget trailer", TokenEst: trailerTokens})
+	}
+	r.logPromptBreakdown("Prompt composition breakdown", sections, "", true)
+}
+
+// logMultiLanePromptBreakdowns logs one breakdown table per lane that
+// completed composition (a lane present only as a LaneFailure never
+// composed a prompt, so it has nothing to log).
+func (r *MRInspectReviewer) logMultiLanePromptBreakdowns(results []lane.LaneResult) {
+	for _, result := range results {
+		if len(result.Breakdown) == 0 {
+			continue
+		}
+		sections := make([]Section, len(result.Breakdown))
+		for i, section := range result.Breakdown {
+			sections[i] = Section{Name: section.Name, TokenEst: section.TokenEst}
+		}
+		r.logPromptBreakdown("Prompt composition breakdown", sections, result.LaneID, false)
+	}
+}
+
+// logSelfReflectPromptBreakdown logs a small breakdown before the
+// self-reflection AI call: the original review and the surrounding
+// reflection instructions.
+func (r *MRInspectReviewer) logSelfReflectPromptBreakdown(review, reflectPrompt string) {
+	reviewTokens := chunk.TokenEst(review)
+	instructionTokens := chunk.TokenEst(reflectPrompt) - reviewTokens
+	if instructionTokens < 0 {
+		instructionTokens = 0
+	}
+	sections := []Section{
+		{Name: "original review", TokenEst: reviewTokens},
+		{Name: "reflection instructions", TokenEst: instructionTokens},
+	}
+	r.logPromptBreakdown("Self-reflection prompt breakdown", sections, "", false)
+}
+
 func dropPaths(dropped []diffbudget.DroppedFile) []string {
 	paths := make([]string, 0, len(dropped))
 	for _, d := range dropped {
@@ -512,6 +631,7 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 		tmplFn := prompt.SelectTemplate(r.cfg.Service.Type, r.cfg)
 		reviewPrompt = tmplFn(codeDiff, mr, r.cfg.Service, r.cfg.AIProvider)
 	}
+	r.logSinglePromptBreakdown(reviewPrompt, codeDiff)
 
 	var reviewContent string
 	var lastErr error
@@ -565,6 +685,7 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 		return review
 	}
 	reflectPrompt := r.prompt.ComposeSelfReflectionPrompt(loadedProject, review)
+	r.logSelfReflectPromptBreakdown(review, reflectPrompt)
 	result, err := r.callAI(ctx, reflectPrompt)
 	if err != nil {
 		r.log.Warn("self-reflection failed", "error", err)

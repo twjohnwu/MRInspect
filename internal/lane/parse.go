@@ -104,6 +104,7 @@ type LaneResult struct {
 	ParseStats ParseStats
 	Degraded   []string
 	Chunks     []rag.Chunk
+	Breakdown  []Section
 	Failure    *LaneFailure
 }
 
@@ -233,6 +234,7 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 				ParseStats: parsed.Stats,
 				Degraded:   composed.Degraded,
 				Chunks:     composed.Chunks,
+				Breakdown:  composed.Breakdown,
 			}
 		}
 

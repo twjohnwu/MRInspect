@@ -2,11 +2,14 @@ package reviewer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1244,5 +1247,196 @@ func TestRun_UnderCapDropsNothingInFooter(t *testing.T) {
 	note := gl.lastNote(t)
 	if strings.Contains(note, "_Dropped for diff size budget:") {
 		t.Errorf("under-cap review unexpectedly disclosed dropped files: %q", note)
+	}
+}
+
+// installInfoLogRecorder is installWarningLogRecorder's INFO-level twin: the
+// prompt-composition breakdown is logged at Info, not Warn, so these tests
+// need a lower-level sink than the existing WARN recorder provides.
+func installInfoLogRecorder(t *testing.T, r *MRInspectReviewer) func() string {
+	t.Helper()
+	sink, err := os.CreateTemp(t.TempDir(), "reviewer-info-*.jsonl")
+	if err != nil {
+		t.Fatalf("create info log sink: %v", err)
+	}
+	t.Cleanup(func() { _ = sink.Close() })
+
+	stdout := os.Stdout
+	os.Stdout = sink
+	r.log = logger.New(slog.LevelInfo, filepath.Join(t.TempDir(), "metrics.json"))
+	os.Stdout = stdout
+
+	return func() string {
+		t.Helper()
+		if err := sink.Sync(); err != nil {
+			t.Fatalf("sync info log sink: %v", err)
+		}
+		data, err := os.ReadFile(sink.Name())
+		if err != nil {
+			t.Fatalf("read info log sink: %v", err)
+		}
+		return string(data)
+	}
+}
+
+// breakdownLogRecord is the subset of one JSON log line needed by the
+// prompt-breakdown tests below.
+type breakdownLogRecord struct {
+	Msg  string `json:"msg"`
+	Lane string `json:"lane"`
+}
+
+// breakdownRecords decodes every JSON log line whose msg contains label.
+func breakdownRecords(t *testing.T, logs, label string) []breakdownLogRecord {
+	t.Helper()
+	var records []breakdownLogRecord
+	for _, line := range strings.Split(logs, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, label) {
+			continue
+		}
+		var record breakdownLogRecord
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("decode log line %q: %v", line, err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+// sumBreakdownPercentages sums every row percentage in a breakdown table
+// message EXCEPT the "**total**" row, which restates the same 100%.
+func sumBreakdownPercentages(t *testing.T, table string) float64 {
+	t.Helper()
+	re := regexp.MustCompile(`\| ([0-9]+\.[0-9])% \|`)
+	sum := 0.0
+	for _, line := range strings.Split(table, "\n") {
+		if strings.Contains(line, "**total**") {
+			continue
+		}
+		match := re.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		value, err := strconv.ParseFloat(match[1], 64)
+		if err != nil {
+			t.Fatalf("parse breakdown percentage %q: %v", match[1], err)
+		}
+		sum += value
+	}
+	return sum
+}
+
+// TestPromptBreakdown_SingleMode verifies the always-on, incident-proven
+// prompt-composition breakdown is logged once the single-mode review prompt
+// is composed: a diff row, a total row, and percentages that sum to ~100.
+func TestPromptBreakdown_SingleMode(t *testing.T) {
+	r, _ := newReviewerFixture(t, fakeComposer{prompt: "BASE-PROMPT-METADATA-AND-INSTRUCTIONS"})
+	readLogs := installInfoLogRecorder(t, r)
+
+	const diffText = "diff --git a/service.go b/service.go\n+added line\n"
+	if _, err := r.generateReview(context.Background(), diffText, gitlab.MergeRequest{}); err != nil {
+		t.Fatalf("generateReview: %v", err)
+	}
+
+	records := breakdownRecords(t, readLogs(), "Prompt composition breakdown")
+	if len(records) != 1 {
+		t.Fatalf("prompt composition breakdown log count = %d, want exactly 1: logs=%s", len(records), readLogs())
+	}
+	table := records[0].Msg
+	if !strings.Contains(table, "| diff |") {
+		t.Errorf("breakdown table has no diff row: %q", table)
+	}
+	if !strings.Contains(table, "| **total** |") {
+		t.Errorf("breakdown table has no total row: %q", table)
+	}
+	if sum := sumBreakdownPercentages(t, table); sum < 99.0 || sum > 101.0 {
+		t.Errorf("breakdown percentages sum to %.2f, want ~100: %q", sum, table)
+	}
+}
+
+// TestPromptBreakdown_MultiPerLane verifies one breakdown table is logged
+// per enabled lane, naming its lane ID in the log fields and aggregating a
+// retrieval resource set's chunks into a single named row.
+func TestPromptBreakdown_MultiPerLane(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
+
+	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
+	lanesYAML, err := os.ReadFile(lanesPath)
+	if err != nil {
+		t.Fatalf("read lanes fixture: %v", err)
+	}
+	lanesYAML = []byte(strings.Replace(string(lanesYAML), "sets: []", "sets: [official-standards]", 1))
+	if err := os.WriteFile(lanesPath, lanesYAML, 0o644); err != nil {
+		t.Fatalf("write lanes fixture resources: %v", err)
+	}
+
+	resourcesYAML := []byte("sets:\n  - name: official-standards\n    mode: retrieval\n    paths: []\n")
+	if err := os.WriteFile(filepath.Join(root, "projects", "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("write resources fixture: %v", err)
+	}
+	resourceRegistry, err := resources.Load(root, "")
+	if err != nil {
+		t.Fatalf("load resources fixture: %v", err)
+	}
+
+	retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+		Result: rag.Result{Chunks: []rag.Chunk{
+			{ID: "std-1", Source: "standards/one.md", ResourceSet: "official-standards", Text: "standard one content"},
+			{ID: "std-2", Source: "standards/two.md", ResourceSet: "official-standards", Text: "standard two content"},
+		}},
+	}}
+	provider := newModeRoutingProvider()
+	provider.laneResponders["standards"] = func(string) string {
+		return `{"laneId":"standards","findings":[]}`
+	}
+	r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.ai = provider
+	readLogs := installInfoLogRecorder(t, r)
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+		RepoRoot:         root,
+		ResourceRegistry: resourceRegistry,
+		Retriever:        retriever,
+		ModelLimits:      reviewerModelLimits(),
+	})
+
+	r.Run(context.Background())
+
+	records := breakdownRecords(t, readLogs(), "Prompt composition breakdown")
+	if len(records) != 1 {
+		t.Fatalf("prompt composition breakdown log count = %d, want exactly 1 (one enabled lane): logs=%s", len(records), readLogs())
+	}
+	if records[0].Lane != "standards" {
+		t.Errorf("breakdown log lane field = %q, want %q", records[0].Lane, "standards")
+	}
+	if !strings.Contains(records[0].Msg, "official-standards") {
+		t.Errorf("lane breakdown missing aggregated resource set row %q: %q", "official-standards", records[0].Msg)
+	}
+	if !strings.Contains(records[0].Msg, "| diff |") {
+		t.Errorf("lane breakdown missing diff row: %q", records[0].Msg)
+	}
+}
+
+// TestPromptBreakdown_SelfReflect verifies a small breakdown is logged
+// before the self-reflection AI call.
+func TestPromptBreakdown_SelfReflect(t *testing.T) {
+	r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.SelfReflection = true
+	provider := newModeRoutingProvider()
+	r.ai = provider
+	readLogs := installInfoLogRecorder(t, r)
+
+	r.Run(context.Background())
+
+	records := breakdownRecords(t, readLogs(), "Self-reflection prompt breakdown")
+	if len(records) != 1 {
+		t.Fatalf("self-reflection breakdown log count = %d, want exactly 1: logs=%s", len(records), readLogs())
+	}
+	if !strings.Contains(records[0].Msg, "original review") {
+		t.Errorf("self-reflection breakdown missing original review row: %q", records[0].Msg)
+	}
+	if !strings.Contains(records[0].Msg, "reflection instructions") {
+		t.Errorf("self-reflection breakdown missing reflection instructions row: %q", records[0].Msg)
 	}
 }

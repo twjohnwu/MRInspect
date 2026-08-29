@@ -33,11 +33,20 @@ type ComposeInput struct {
 	MergeRequest     gitlab.MergeRequest
 }
 
+// Section is one named, token-estimated component of a composed lane
+// prompt, used for the always-on per-run prompt-composition breakdown log
+// (CI observability: it names which resource dominates a lane's prompt).
+type Section struct {
+	Name     string
+	TokenEst int
+}
+
 // ComposeResult is one composed lane prompt and its named degradations.
 type ComposeResult struct {
-	Prompt   string
-	Degraded []string
-	Chunks   []rag.Chunk
+	Prompt    string
+	Degraded  []string
+	Chunks    []rag.Chunk
+	Breakdown []Section
 }
 
 // Compose builds the prompt for one review lane.
@@ -59,6 +68,12 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 	}
 	degraded = append(selectorDegraded, degraded...)
 
+	fullDocs, loadingDegraded, err := loadBudgetedFullDocuments(ctx, input.FullLoader, fullSetRefs)
+	if err != nil {
+		return ComposeResult{}, err
+	}
+	degraded = append(degraded, loadingDegraded...)
+
 	basePrompt := ""
 	if input.Budget > 0 {
 		resourceFree, err := prompt.NewComposer().ComposeLanePrompt(ctx, prompt.LaneComposeInput{
@@ -72,17 +87,67 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 		basePrompt = assembleLanePrompt(preamble, resourceFree.Prompt, input.Lane.ID)
 	}
 
-	composed, composedChunks, err := composeLanePrompt(ctx, input, chunks, fullSetRefs, basePrompt, &degraded)
+	composed, composedChunks, composedDocs, err := composeLanePrompt(ctx, input, chunks, fullDocs, basePrompt, &degraded)
 	if err != nil {
 		return ComposeResult{}, fmt.Errorf("Compose: compose lane prompt: %w", err)
 	}
 
 	degraded = append(degraded, composed.Degraded...)
+	breakdown, err := buildLaneBreakdown(ctx, input, preamble, composedChunks, composedDocs)
+	if err != nil {
+		return ComposeResult{}, fmt.Errorf("Compose: build breakdown: %w", err)
+	}
 	return ComposeResult{
-		Prompt:   assembleLanePrompt(preamble, composed.Prompt, input.Lane.ID),
-		Degraded: degraded,
-		Chunks:   composedChunks,
+		Prompt:    assembleLanePrompt(preamble, composed.Prompt, input.Lane.ID),
+		Degraded:  degraded,
+		Chunks:    composedChunks,
+		Breakdown: breakdown,
 	}, nil
+}
+
+// buildLaneBreakdown assembles the per-section token estimates for one
+// composed lane prompt: the static preamble, the metadata-only base prompt
+// (no resources, no diff), the output contract, one aggregated row per
+// retrieval resource set actually used, one row per surviving full-mode
+// document, and the diff. Every value is measured from data already
+// produced by this composition; nothing here is recomputed independently.
+func buildLaneBreakdown(ctx context.Context, input ComposeInput, preamble []byte, chunks []rag.Chunk, fullDocs []rag.FullDoc) ([]Section, error) {
+	metadataOnly, err := prompt.NewComposer().ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+		Project:      input.Project,
+		MergeRequest: input.MergeRequest,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("compose metadata-only prompt for breakdown: %w", err)
+	}
+
+	sections := []Section{
+		{Name: "lane template preamble", TokenEst: chunk.TokenEst(string(preamble))},
+		{Name: "base prompt/metadata", TokenEst: chunk.TokenEst(metadataOnly.Prompt)},
+		{Name: "output contract", TokenEst: chunk.TokenEst(LaneOutputContract)},
+	}
+
+	setTotals := make(map[string]int, len(chunks))
+	var setOrder []string
+	for _, retrieved := range chunks {
+		name := retrieved.ResourceSet
+		if name == "" {
+			name = "retrieval (unnamed set)"
+		}
+		if _, seen := setTotals[name]; !seen {
+			setOrder = append(setOrder, name)
+		}
+		setTotals[name] += resourceTokenEst(retrieved.TokenEst, retrieved.Text)
+	}
+	for _, name := range setOrder {
+		sections = append(sections, Section{Name: name, TokenEst: setTotals[name]})
+	}
+
+	for _, doc := range fullDocs {
+		sections = append(sections, Section{Name: fullDocumentName(doc), TokenEst: resourceTokenEst(doc.TokenEst, string(doc.Bytes))})
+	}
+
+	sections = append(sections, Section{Name: "diff", TokenEst: chunk.TokenEst(input.Diff)})
+	return sections, nil
 }
 
 func assembleLanePrompt(preamble []byte, composed, laneID string) string {
@@ -110,32 +175,21 @@ func composeLanePrompt(
 	ctx context.Context,
 	input ComposeInput,
 	chunks []rag.Chunk,
-	fullSetRefs []string,
+	fullDocs []rag.FullDoc,
 	basePrompt string,
 	degraded *[]string,
-) (prompt.LaneComposeResult, []rag.Chunk, error) {
+) (prompt.LaneComposeResult, []rag.Chunk, []rag.FullDoc, error) {
 	composer := prompt.NewComposer()
 	if input.Budget == 0 {
-		fullLoader := input.FullLoader
-		if len(fullSetRefs) == 0 {
-			fullLoader = nil
-		}
 		composed, err := composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
 			Project:         input.Project,
 			Diff:            input.Diff,
 			MergeRequest:    input.MergeRequest,
 			RetrievalChunks: chunks,
-			FullSetRefs:     fullSetRefs,
-			FullLoader:      fullLoader,
+			FullDocuments:   fullDocs,
 		})
-		return composed, chunks, err
+		return composed, chunks, fullDocs, err
 	}
-
-	fullDocs, loadingDegraded, err := loadBudgetedFullDocuments(ctx, input.FullLoader, fullSetRefs)
-	if err != nil {
-		return prompt.LaneComposeResult{}, nil, err
-	}
-	*degraded = append(*degraded, loadingDegraded...)
 
 	sections := budgetSections(fullDocs, chunks)
 	budgeted, err := prompt.ComposeWithBudget(prompt.BudgetComposeInput{
@@ -151,7 +205,7 @@ func composeLanePrompt(
 		},
 	})
 	if err != nil {
-		return prompt.LaneComposeResult{}, nil, err
+		return prompt.LaneComposeResult{}, nil, nil, err
 	}
 	*degraded = append(*degraded, budgeted.Degraded...)
 
@@ -170,7 +224,7 @@ func composeLanePrompt(
 		RetrievalChunks: keptChunks,
 		FullDocuments:   keptDocs,
 	})
-	return composed, keptChunks, err
+	return composed, keptChunks, keptDocs, err
 }
 
 func loadBudgetedFullDocuments(ctx context.Context, loader rag.FullLoader, setRefs []string) ([]rag.FullDoc, []string, error) {
