@@ -234,7 +234,7 @@ change B 的 lane registry 明文以 `sets:` 與 `tags:` 兩者的**聯集**引�
 Test file: `internal/rag/resources/resolve_tags_test.go`
 Verification command: `go test ./internal/rag/resources/ -run TestResolve -count=5`
 
-## T24 [ ] [NEW] REQ-03／REQ-11 — denylist 樣式的真實世界涵蓋範圍
+## T24 [x] [NEW] REQ-03／REQ-11 — denylist 樣式的真實世界涵蓋範圍
 
 理由：無對應 `S-XX`——S-12 只列舉九個**字面檔名**，實作全部命中，spec 因此已被滿足；
 本 task 處理的是 spec 沒說、但真實 repo 會遇到的命名。T05 驗證時逐一比對樣式與
