@@ -27,3 +27,24 @@ mrinspect:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
+
+index:
+  stage: ai-review
+  image: golang:1.25-alpine
+  script:
+    - go build -o mrinspect ./cmd/mrinspect
+    - mkdir -p rag-index
+    - ./mrinspect index --out rag-index/mrinspect-rag.sqlite
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - projects/_shared/**/*
+        - projects/margherita-pizza/**/*
+        - projects/fried-chicken/**/*
+    - when: manual
+      allow_failure: true
+  artifacts:
+    paths:
+      - rag-index/mrinspect-rag.sqlite
+    expire_in: 21 days

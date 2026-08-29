@@ -303,6 +303,37 @@ block scalar、以及檔尾無換行的最後一個 operation。
 Test file: `internal/rag/chunk/structured_boundary_test.go`
 Verification command: `go test ./internal/rag/chunk/ -run TestStructured_Boundary -count=1`
 
+## T27 [ ] [NEW] REQ-02／REQ-12 — production 組裝（發現於 T21 執行期）
+
+理由：無對應 `S-XX`——元件層 68 個 scenario 全數以注入的 seam 驗證，沒有任何
+scenario 斷言 production 的組裝存在。現況：`reviewer.rag.ReviewPath` 在 production
+恆為 nil（`internal/reviewer/reviewer.go:300`），四個內建來源（path/package/
+artifact/baked）沒有任何 production 實作與 `RegisterSource` 呼叫（grep 全 repo
+僅 `source.go:128` 的定義），`ResolveStore`→`rag.New`→`ComposeLanePrompt` 的
+接線不存在。整條 RAG 管線在出貨二進位中是死碼。
+範圍：內建來源的 production 實作（path 讀 `MRI_RAG_STORE`；baked 讀程式內常數
+`/app/.rag/mrinspect-rag.sqlite`；package/artifact 走 GitLab API 並吃 REQ-12 的
+逾時／位元組上限／allowlist 設定）、`init()` 或 main 組裝處的註冊、reviewer 的
+production ReviewPath 組裝。以整合測試驗證：真實二進位在 `MRI_RAG_STORE` 指向
+真 store 時，留言 footer 揭露 provenance。
+Verification command: `go test -tags integration ./cmd/mrinspect/ -run TestBinary_ReviewUsesBakedStore -count=1`
+
+## T28 [ ] [NEW] REQ-03 — include/exclude 從未接線＋FilesIndexed 恆為 0（發現於 T21 執行期）
+
+理由：無對應 `S-XX`——REQ-03 正文說索引「套用 include/exclude」，但 68 個 scenario
+沒有一個斷言它。實況兩項：
+1. `resources.Set` 沒有 Include/Exclude 欄位（types.go:12-17），loader 靜默丟棄
+   YAML 的 `include:` 鍵；`sqlite.Index` 呼叫 `intake.Walk` 時只傳 Paths
+   （indexer.go:128），`intake` 的 Include 支援（walk.go:174）從未被餵。
+   後果：resources.yaml 宣告 `include: "*.md"` 完全無效，registry.yaml 與
+   system.yaml 一併被索引（實測 5 個 .md 卻有 7 份 documents）。
+2. `ragcmd.IndexStats.FilesIndexed` 從未被填值（sqlite.IndexStats 無對應欄位，
+   adapter 也不計），CLI 恆印 `files indexed=0`，操作者無法從輸出分辨空 store
+   與正常 store。
+範圍：Set 增 Include/Exclude 欄位、loader 解析、indexer 傳遞給 Walk、
+FilesIndexed 以實際入庫 documents 數回填；測試斷言 include 過濾生效與統計非零。
+Verification command: `go test ./internal/rag/resources/ ./internal/rag/sqlite/ ./internal/ragcmd/ -run 'TestLoad|TestIndex' -count=1`
+
 ## Manual verification checklist
 
 - [ ] `S-22` — `docker build -t mrinspect:spec-check .` 後
