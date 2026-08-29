@@ -195,7 +195,7 @@ Target: `templates/ai-review-template.yaml`
 取決於 runner 的 `allowed_pull_policies`，屬 repo 外因素，以註解記為已知限制。
 Verification command: `grep -nE 'CI_COMMIT_SHORT_SHA' templates/ai-review-template.yaml`
 
-## T20 [MANUAL] `S-22` — image 內 store 可用
+## T20 [x] [MANUAL] `S-22` — image 內 store 可用
 
 理由：容器建置屬 build 階段行為，無對應單元測試；需實際建置 image 後在容器內執行。
 列入下方手動驗證清單。
