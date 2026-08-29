@@ -9,6 +9,8 @@ import (
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
+	"mrinspect/internal/diff"
+	"mrinspect/internal/diffbudget"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/interfaces"
 	"mrinspect/internal/lane"
@@ -35,6 +37,12 @@ type ReviewRAGState struct {
 	Composition          prompt.ComposeResult
 }
 
+type fetchedDiff struct {
+	diff    string
+	changes []gitlab.Change
+	dropped []diffbudget.DroppedFile
+}
+
 // RAGReviewPath supplies retrieval data to the review path. Its API has no indexing
 // operation, so the reviewer cannot request store construction through this seam.
 type RAGReviewPath interface {
@@ -59,6 +67,7 @@ type MultiLaneReviewPath struct {
 type footerAggregation struct {
 	additionalDegraded int
 	laneEvictions      []string
+	droppedFiles       []string
 }
 
 type namedLaneDegradation struct {
@@ -168,7 +177,7 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	}
 
 	stage = "fetchDiff"
-	codeDiff, err := r.fetchDiff(ctx)
+	fetched, err := r.fetchDiff(ctx)
 	if err != nil {
 		finalErr = err
 		r.postErrorComment(ctx, err, stage)
@@ -176,12 +185,13 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	}
 
 	stage = "generateReview"
-	reviewContent, footer, err := r.generateReviewForMode(ctx, codeDiff, mr)
+	reviewContent, footer, err := r.generateReviewForMode(ctx, fetched.diff, fetched.changes, mr)
 	if err != nil {
 		finalErr = err
 		r.postErrorComment(ctx, err, stage)
 		return
 	}
+	footer.droppedFiles = dropPaths(fetched.dropped)
 
 	stage = "postReview"
 	if err := r.postReviewWithFooter(ctx, reviewContent, r.ragFooterWithAggregation(footer)); err != nil {
@@ -193,7 +203,7 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	r.log.Info("review posted successfully", "mr", r.mrIID, "project", r.projectID)
 }
 
-func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
 	if os.Getenv("MRI_REVIEW_MODE") != "multi" {
 		content, err := r.generateReview(ctx, codeDiff, mr)
 		if err == nil && r.cfg.SelfReflection {
@@ -201,10 +211,10 @@ func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff 
 		}
 		return content, footerAggregation{}, err
 	}
-	return r.generateMultiReview(ctx, codeDiff, mr)
+	return r.generateMultiReview(ctx, codeDiff, changes, mr)
 }
 
-func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
 	loadedProject, err := r.loadServiceProject()
 	if err != nil {
 		return "", footerAggregation{}, fmt.Errorf("multi-lane project load failed: %w", err)
@@ -224,15 +234,11 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		return r.generateSingleDegradation(ctx, codeDiff, mr, "no runnable lane; degraded to single review mode")
 	}
 
-	changesResponse, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
-	if err != nil {
-		return "", footerAggregation{}, fmt.Errorf("multi-lane changes fetch failed: %w", err)
-	}
 	r.retrieveReviewRAG(ctx, codeDiff)
 
 	input := lane.FanoutInput{
 		Lanes:            registry.Lanes,
-		Terms:            lane.Terms(changesResponse.Changes),
+		Terms:            lane.Terms(changes),
 		ResourceRegistry: r.multi.ResourceRegistry,
 		Retriever:        r.multi.Retriever,
 		FullLoader:       r.multi.FullLoader,
@@ -254,7 +260,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		return "", footerAggregation{}, fmt.Errorf("multi-lane fan-out failed: %w", err)
 	}
 
-	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changesResponse.Changes)
+	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changes)
 	footer := aggregateLaneFooter(result.LaneResults)
 	footer = mergeLaneDegradations(footer, result.LaneResults, selectorDegraded)
 	if os.Getenv("MRI_RAG_ON_NORMATIVE_EVICTION") == "fail" {
@@ -401,25 +407,91 @@ func (r *MRInspectReviewer) fetchMRDetails(ctx context.Context) (gitlab.MergeReq
 	return mr, nil
 }
 
-func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (string, error) {
+func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) {
 	start := time.Now()
 	src := r.validator.GetSourceBranch()
 	tgt := r.validator.GetTargetBranch()
 	codeDiff, err := r.diff.Fetch(ctx, src, tgt)
 	if err != nil {
-		return "", fmt.Errorf("fetchDiff: %w", err)
+		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
 	}
-	result, err := r.validator.ValidateDiff(codeDiff)
+
+	changesResp, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
 	if err != nil {
-		return "", fmt.Errorf("fetchDiff: validate: %w", err)
+		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
+	}
+
+	kept, dropped, err := r.reduceDiff(changesResp.Changes)
+	if err != nil {
+		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
+	}
+
+	reduced := codeDiff
+	if len(dropped) > 0 {
+		rebuilt, convErr := diff.ConvertChangesToDiff(kept)
+		if convErr != nil {
+			return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", convErr)
+		}
+		reduced = rebuilt + diffbudget.Trailer(dropped)
+	}
+
+	result, err := r.validator.ValidateDiff(reduced)
+	if err != nil {
+		return fetchedDiff{}, fmt.Errorf("fetchDiff: validate: %w", err)
 	}
 	dur := time.Since(start).Milliseconds()
 	r.log.LogStep("fetchDiff", &dur, map[string]any{
 		"sizeKB":         result.SizeKB,
 		"filesChanged":   result.FilesChanged,
 		"supportedFiles": result.SupportedFiles,
+		"droppedFiles":   len(dropped),
 	})
-	return codeDiff, nil
+	return fetchedDiff{diff: reduced, changes: kept, dropped: dropped}, nil
+}
+
+// reduceDiff applies the diff-size reduction stage: dropping whole files
+// (never truncating a hunk — a truncated hunk would make the model report
+// findings against code that does not exist) so an oversized diff shrinks
+// to fit the effective model's prompt budget instead of hard-failing the
+// whole run. A model with no registered token budget (unknown to both
+// prompt.ModelLimitsFromEnv and the multi-lane ModelLimits override) skips
+// reduction entirely and relies on the existing ValidateDiff KB backstop,
+// so an unconfigured model cannot turn this new stage into a new class of
+// failure for setups that worked before it existed.
+func (r *MRInspectReviewer) reduceDiff(changes []gitlab.Change) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
+	limits, err := prompt.ModelLimitsFromEnv()
+	if err != nil {
+		r.log.Warn("invalid model limits configuration; using defaults", "error", err.Error())
+		limits = prompt.DefaultModelLimits
+	}
+	merged := make(map[string]int, len(limits)+len(r.multi.ModelLimits))
+	for model, tokens := range limits {
+		merged[model] = tokens
+	}
+	for model, tokens := range r.multi.ModelLimits {
+		merged[model] = tokens
+	}
+
+	model := r.cfg.Providers[r.cfg.AIProvider].Model
+	budget, err := prompt.PromptBudgetForModel(model, merged)
+	if err != nil {
+		r.log.Warn("diff budget unavailable; skipping diff-size reduction", "model", model, "error", err.Error())
+		return changes, nil, nil
+	}
+
+	return diffbudget.Reduce(changes, diffbudget.Options{
+		ModelBudget:   budget,
+		MaxDiffSizeKB: r.cfg.Validation.MaxDiffSizeKB,
+		Logger:        r.log,
+	})
+}
+
+func dropPaths(dropped []diffbudget.DroppedFile) []string {
+	paths := make([]string, 0, len(dropped))
+	for _, d := range dropped {
+		paths = append(paths, d.Path)
+	}
+	return paths
 }
 
 func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, error) {
@@ -575,6 +647,14 @@ func (r *MRInspectReviewer) ragFooter() string {
 }
 
 func (r *MRInspectReviewer) ragFooterWithAggregation(aggregation footerAggregation) string {
+	footer := r.ragProvenanceFooter(aggregation)
+	if len(aggregation.droppedFiles) > 0 {
+		footer += "\n\n_Dropped for diff size budget: " + strings.Join(aggregation.droppedFiles, ", ") + "_"
+	}
+	return footer
+}
+
+func (r *MRInspectReviewer) ragProvenanceFooter(aggregation footerAggregation) string {
 	state := r.rag.State
 	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 && aggregation.additionalDegraded == 0 {
 		return ""

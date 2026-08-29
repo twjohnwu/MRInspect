@@ -15,6 +15,7 @@ import (
 	"mrinspect/internal/config"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
+	"mrinspect/internal/lane"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
@@ -1114,4 +1115,134 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 			t.Errorf("selfReflect() = %q, want the valid reflection adopted (%q)", got, updated)
 		}
 	})
+}
+
+type changesGitLab struct {
+	*fakeGitLab
+	changes gitlab.MRChangesResponse
+}
+
+func (g *changesGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
+	return g.changes, nil
+}
+
+func TestRun_DroppedFilesDisclosedInFooter(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
+	provider := newModeRoutingProvider()
+	provider.laneResponders["standards"] = func(string) string {
+		return `{"laneId":"standards","findings":[{"title":"dropped-file-finding","severity":"low","rationale":"the dropped file needs attention","file":"big/dropped.go","line":10}]}`
+	}
+
+	bigDiff := "@@ -1,50 +1,50 @@\n" + strings.Repeat("-old filler line\n+new filler line\n", 30)
+	smallDiff := "@@ -1,1 +1,1 @@\n-old\n+new\n"
+	gl := &changesGitLab{
+		fakeGitLab: &fakeGitLab{},
+		changes: gitlab.MRChangesResponse{Changes: []gitlab.Change{
+			{NewPath: "big/dropped.go", Diff: bigDiff},
+			{NewPath: "small/kept.go", Diff: smallDiff},
+		}},
+	}
+	cfg := config.Config{
+		AIProvider: config.ProviderGemini,
+		Providers: map[config.AIProvider]config.ProviderConfig{
+			config.ProviderGemini: {Model: "gemini-test", MaxTokens: 10},
+		},
+		Service: config.ServiceConfig{Name: "test", Type: "backend"},
+		Validation: config.ValidationConfig{
+			AIRetryAttempts: 1,
+			MaxDiffSizeKB:   300,
+		},
+	}
+	r := New(
+		cfg,
+		gl,
+		provider,
+		fakeDiff{},
+		fakeProjects{},
+		fakeComposer{prompt: "single prompt"},
+		fakeValidator{},
+		fakeErrorHandler{},
+		logger.New(slog.LevelError, t.TempDir()+"/metrics.json"),
+	)
+	// PromptBudgetForModel first applies floor(50*0.8) = 40; Reduce then
+	// applies the default 0.85 share, leaving about 34 tokens. The several-
+	// hundred-byte big diff safely exceeds that while the tiny diff survives.
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+		RepoRoot:    root,
+		ModelLimits: map[string]int{"gemini-test": 50},
+		Fanout: func(ctx context.Context, input lane.FanoutInput) (lane.FanoutResult, error) {
+			input.ModelLimits = map[string]int{"gemini-test": 1_000_000}
+			return lane.Fanout(ctx, input)
+		},
+	})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if !strings.Contains(note, "_Dropped for diff size budget: big/dropped.go_") {
+		t.Errorf("posted note does not disclose the dropped file: %q", note)
+	}
+	provider.mu.Lock()
+	prompts := append([]string(nil), provider.prompts...)
+	provider.mu.Unlock()
+	trailerSeen := false
+	for _, receivedPrompt := range prompts {
+		if strings.Contains(receivedPrompt, "<!-- mrinspect:diff-reduction -->") {
+			trailerSeen = true
+			break
+		}
+	}
+	if !trailerSeen {
+		t.Errorf("AI prompts do not contain the diff-reduction trailer: %#v", prompts)
+	}
+	if !strings.Contains(note, "big/dropped.go (location-unverifiable)") {
+		t.Errorf("finding against dropped file is not location-unverifiable: %q", note)
+	}
+}
+
+func TestRun_UnderCapDropsNothingInFooter(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
+	provider := newModeRoutingProvider()
+	gl := &changesGitLab{
+		fakeGitLab: &fakeGitLab{},
+		changes: gitlab.MRChangesResponse{Changes: []gitlab.Change{
+			{NewPath: "src/one.go", Diff: "@@ -1,1 +1,1 @@\n-old\n+new\n"},
+			{NewPath: "src/two.go", Diff: "@@ -2,1 +2,1 @@\n-before\n+after\n"},
+		}},
+	}
+	cfg := config.Config{
+		AIProvider: config.ProviderGemini,
+		Providers: map[config.AIProvider]config.ProviderConfig{
+			config.ProviderGemini: {Model: "gemini-test", MaxTokens: 10},
+		},
+		Service: config.ServiceConfig{Name: "test", Type: "backend"},
+		Validation: config.ValidationConfig{
+			AIRetryAttempts: 1,
+			MaxDiffSizeKB:   300,
+		},
+	}
+	r := New(
+		cfg,
+		gl,
+		provider,
+		fakeDiff{},
+		fakeProjects{},
+		fakeComposer{prompt: "single prompt"},
+		fakeValidator{},
+		fakeErrorHandler{},
+		logger.New(slog.LevelError, t.TempDir()+"/metrics.json"),
+	)
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+		RepoRoot:    root,
+		ModelLimits: map[string]int{"gemini-test": 1_000_000},
+	})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if strings.Contains(note, "_Dropped for diff size budget:") {
+		t.Errorf("under-cap review unexpectedly disclosed dropped files: %q", note)
+	}
 }
