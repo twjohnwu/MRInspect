@@ -321,6 +321,61 @@ func TestMerge_NormalizesFilePaths(t *testing.T) {
 	})
 }
 
+// TestMerge_SameLaneFindingsStaySeparate verifies REQ-05: dedup clusters
+// members from DIFFERENT lanes; two findings from the SAME lane within the
+// line-distance window must never collapse into one cluster.
+func TestMerge_SameLaneFindingsStaySeparate(t *testing.T) {
+	t.Run("two same-lane findings never merge", func(t *testing.T) {
+		low := mergeTestFinding("trivial title", SeverityLow, "internal/a.go", mergeTestLine(10), "")
+		high := mergeTestFinding("serious title", SeverityHigh, "internal/a.go", mergeTestLine(12), "")
+
+		got := Merge(
+			[]string{"code-diff"},
+			[]LaneResult{
+				{LaneID: "code-diff", Findings: []Finding{low, high}},
+			},
+		)
+
+		if len(got) != 2 {
+			t.Fatalf("Merge returned %d findings, want same-lane findings kept in separate clusters: %#v", len(got), got)
+		}
+		gotTitles := []string{got[0].Title, got[1].Title}
+		if !slices.Contains(gotTitles, low.Title) || !slices.Contains(gotTitles, high.Title) {
+			t.Fatalf("titles = %v, want both %q and %q to survive", gotTitles, low.Title, high.Title)
+		}
+		for _, finding := range got {
+			if finding.Title == low.Title && finding.Severity != SeverityLow {
+				t.Errorf("low finding severity = %q, want unmodified %q (no cross-contamination from same-lane peer)", finding.Severity, SeverityLow)
+			}
+			if finding.Title == high.Title && finding.Severity != SeverityHigh {
+				t.Errorf("high finding severity = %q, want unmodified %q", finding.Severity, SeverityHigh)
+			}
+		}
+	})
+
+	t.Run("mixed lanes: same-lane pair splits, other lane joins one of them", func(t *testing.T) {
+		laneA1 := mergeTestFinding("lane-a first", SeverityMedium, "internal/b.go", mergeTestLine(10), "")
+		laneB := mergeTestFinding("lane-b only", SeverityMedium, "internal/b.go", mergeTestLine(11), "")
+		laneA2 := mergeTestFinding("lane-a second", SeverityMedium, "internal/b.go", mergeTestLine(12), "")
+
+		got := Merge(
+			[]string{"lane-a", "lane-b"},
+			[]LaneResult{
+				{LaneID: "lane-a", Findings: []Finding{laneA1, laneA2}},
+				{LaneID: "lane-b", Findings: []Finding{laneB}},
+			},
+		)
+
+		if len(got) != 2 {
+			t.Fatalf("Merge returned %d findings, want two clusters (same-lane pair split apart): %#v", len(got), got)
+		}
+		gotTitles := []string{got[0].Title, got[1].Title}
+		if !slices.Contains(gotTitles, laneA1.Title) || !slices.Contains(gotTitles, laneA2.Title) {
+			t.Fatalf("titles = %v, want both lane-a titles %q and %q to survive", gotTitles, laneA1.Title, laneA2.Title)
+		}
+	})
+}
+
 func TestMerge_CitationsKeepProvenance(t *testing.T) {
 	laneA := mergeTestFinding("lane A", SeverityMedium, "internal/auth.go", mergeTestLine(40), "security")
 	laneA.Citations = []Citation{{SourceID: "source-a", Label: "A"}}

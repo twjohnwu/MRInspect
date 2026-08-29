@@ -135,19 +135,24 @@ func clusterByRepresentativeLine(group []mergeMember) [][]mergeMember {
 	})
 
 	clusters := make([][]mergeMember, 0)
+	laneSeen := make([]map[string]struct{}, 0)
 	for _, member := range group {
 		if len(clusters) == 0 {
 			clusters = append(clusters, []mergeMember{member})
+			laneSeen = append(laneSeen, map[string]struct{}{member.laneID: {}})
 			continue
 		}
 
 		current := clusters[len(clusters)-1]
 		representativeLine := *current[0].finding.Line
-		if *member.finding.Line-representativeLine <= 3 {
+		_, laneAlreadyInCluster := laneSeen[len(laneSeen)-1][member.laneID]
+		if *member.finding.Line-representativeLine <= 3 && !laneAlreadyInCluster {
 			clusters[len(clusters)-1] = append(current, member)
+			laneSeen[len(laneSeen)-1][member.laneID] = struct{}{}
 			continue
 		}
 		clusters = append(clusters, []mergeMember{member})
+		laneSeen = append(laneSeen, map[string]struct{}{member.laneID: {}})
 	}
 	return clusters
 }
