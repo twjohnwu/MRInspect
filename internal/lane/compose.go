@@ -35,6 +35,7 @@ type ComposeInput struct {
 type ComposeResult struct {
 	Prompt   string
 	Degraded []string
+	Chunks   []rag.Chunk
 }
 
 // Compose builds the prompt for one review lane.
@@ -73,6 +74,7 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 			"\n\nCurrent lane ID: " + input.Lane.ID +
 			"\n\n" + LaneOutputContract,
 		Degraded: degraded,
+		Chunks:   chunks,
 	}, nil
 }
 

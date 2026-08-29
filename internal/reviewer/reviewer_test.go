@@ -20,6 +20,8 @@ import (
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/resources"
+	"mrinspect/internal/testfake"
 	"mrinspect/internal/validator"
 )
 
@@ -416,13 +418,17 @@ func reviewerModelLimits() map[string]int {
 }
 
 type modeRoutingProvider struct {
-	mu         sync.Mutex
-	prompts    []string
-	laneErrors map[string]error
+	mu            sync.Mutex
+	prompts       []string
+	laneErrors    map[string]error
+	laneResponses map[string]string
 }
 
 func newModeRoutingProvider() *modeRoutingProvider {
-	return &modeRoutingProvider{laneErrors: make(map[string]error)}
+	return &modeRoutingProvider{
+		laneErrors:    make(map[string]error),
+		laneResponses: make(map[string]string),
+	}
 }
 
 func (p *modeRoutingProvider) Generate(_ context.Context, reviewPrompt string, _ ai.GenerateOptions) (string, error) {
@@ -433,6 +439,11 @@ func (p *modeRoutingProvider) Generate(_ context.Context, reviewPrompt string, _
 	for laneID, laneErr := range p.laneErrors {
 		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
 			return "", laneErr
+		}
+	}
+	for laneID, response := range p.laneResponses {
+		if strings.Contains(reviewPrompt, laneTemplatePrefix+laneID) {
+			return response, nil
 		}
 	}
 	for _, laneID := range []string{"spec-conformance", "standards", "code-diff", "normative-standards"} {
@@ -646,4 +657,57 @@ func unsetEnv(t *testing.T, key string) {
 		}
 		_ = os.Unsetenv(key)
 	})
+}
+
+func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
+	t.Setenv("MRI_REVIEW_MODE", "multi")
+	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
+
+	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
+	lanesYAML, err := os.ReadFile(lanesPath)
+	if err != nil {
+		t.Fatalf("read lanes fixture: %v", err)
+	}
+	lanesYAML = []byte(strings.Replace(string(lanesYAML), "sets: []", "sets: [official-standards]", 1))
+	if err := os.WriteFile(lanesPath, lanesYAML, 0o644); err != nil {
+		t.Fatalf("write lanes fixture resources: %v", err)
+	}
+
+	resourcesYAML := []byte("sets:\n  - name: official-standards\n    mode: retrieval\n    paths: []\n")
+	if err := os.WriteFile(filepath.Join(root, "projects", "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("write resources fixture: %v", err)
+	}
+	resourceRegistry, err := resources.Load(root, "")
+	if err != nil {
+		t.Fatalf("load resources fixture: %v", err)
+	}
+
+	retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+		Result: rag.Result{Chunks: []rag.Chunk{{
+			ID: "std-chunk-7", Source: "standards/rule.md", StartLine: 17,
+		}}},
+	}}
+	provider := newModeRoutingProvider()
+	provider.laneResponses["standards"] = `{"laneId":"standards","findings":[{"title":"known citation","severity":"low","rationale":"matches the received standard","citations":[{"sourceId":"std-chunk-7"}]},{"title":"unknown citation","severity":"low","rationale":"does not match a received standard","citations":[{"sourceId":"missing-source"}]}]}`
+	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.ai = provider
+	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
+		RepoRoot:         root,
+		ResourceRegistry: resourceRegistry,
+		Retriever:        retriever,
+		ModelLimits:      reviewerModelLimits(),
+	})
+
+	r.Run(context.Background())
+
+	note := gl.lastNote(t)
+	if !strings.Contains(note, "standards/rule.md:17") {
+		t.Errorf("posted note missing verified citation coordinate standards/rule.md:17: %q", note)
+	}
+	if strings.Contains(note, "std-chunk-7 (unverified)") {
+		t.Errorf("posted note marks the received citation unverified: %q", note)
+	}
+	if !strings.Contains(note, "missing-source (unverified)") {
+		t.Errorf("posted note does not preserve the unknown citation as unverified: %q", note)
+	}
 }

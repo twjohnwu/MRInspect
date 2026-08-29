@@ -303,14 +303,16 @@ func (r *MRInspectReviewer) multiRenderInput(declarations []lane.Lane, result la
 		renderLanes = append(renderLanes, lane.RenderLane{Declaration: declaration, ResolvedResourceSets: setNames})
 	}
 
-	// FanoutResult currently carries per-lane Degraded counts, but not the
-	// received chunks, per-lane evicted sections, or per-lane skipped-file
-	// counts. Keep those render/footer inputs empty instead of fabricating data.
+	receivedChunks := make(map[string][]rag.Chunk, len(result.LaneResults))
+	for _, laneResult := range result.LaneResults {
+		receivedChunks[laneResult.LaneID] = laneResult.Chunks
+	}
+
 	return lane.RenderInput{
 		Findings:       lane.Merge(laneOrder, result.LaneResults),
 		Lanes:          renderLanes,
 		FailedLanes:    result.Failures,
-		ReceivedChunks: map[string][]rag.Chunk{},
+		ReceivedChunks: receivedChunks,
 		Changes:        changes,
 		ChangedLines:   hunk.Build(changes),
 	}

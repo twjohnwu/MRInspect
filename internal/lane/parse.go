@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"mrinspect/internal/ai"
+	"mrinspect/internal/rag"
 )
 
 const (
@@ -100,6 +101,7 @@ type LaneResult struct {
 	Findings   []Finding
 	ParseStats ParseStats
 	Degraded   []string
+	Chunks     []rag.Chunk
 	Failure    *LaneFailure
 }
 
@@ -226,6 +228,7 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 				Findings:   parsed.Findings,
 				ParseStats: parsed.Stats,
 				Degraded:   composed.Degraded,
+				Chunks:     composed.Chunks,
 			}
 		}
 

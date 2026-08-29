@@ -190,7 +190,7 @@ Spec 不動：T16–T18 是實作向既有 REQ-04/REQ-06/S-34 靠攏；其餘為
 Test file: internal/lane/parse_test.go（追加）、internal/lane/compose_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestParse_RejectsEnvelopeless|TestParse_RejectsLaneIDMismatch|TestCompose_PromptCarriesOutputContract' -count=1`
 
-## T17 [ ] [MODIFY] 修復發現 D — chunks 流經 fanout 進渲染
+## T17 [x] [MODIFY] 修復發現 D — chunks 流經 fanout 進渲染
 
 Test file: internal/reviewer/reviewer_test.go（追加）
 Verification command: `go test ./internal/reviewer/ -run TestRun_CitationsVerifiedAgainstReceivedChunks -count=1`
