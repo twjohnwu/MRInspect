@@ -506,6 +506,7 @@ type fakeGitLab struct {
 	listedNotes []gitlab.Note
 	currentUser gitlab.Author
 	currentErr  error
+	listErr     error
 	updateCalls []fakeNoteUpdate
 }
 
@@ -520,7 +521,7 @@ func (*fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChang
 	return gitlab.MRChangesResponse{}, nil
 }
 func (g *fakeGitLab) ListNotes(context.Context, string, string) ([]gitlab.Note, error) {
-	return append([]gitlab.Note(nil), g.listedNotes...), nil
+	return append([]gitlab.Note(nil), g.listedNotes...), g.listErr
 }
 func (g *fakeGitLab) PostNote(_ context.Context, _, _, body string) (gitlab.Note, error) {
 	g.notes = append(g.notes, body)
@@ -714,5 +715,74 @@ func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
 	}
 	if !strings.Contains(note, "missing-source (unverified)") {
 		t.Errorf("posted note does not preserve the unknown citation as unverified: %q", note)
+	}
+}
+
+func TestPostReview_ListingErrorFallsBackWithLog(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*fakeGitLab, error)
+		wantLog   string
+	}{
+		{
+			name: "CurrentUser error",
+			configure: func(gl *fakeGitLab, err error) {
+				gl.currentErr = err
+			},
+			wantLog: "current user lookup failed",
+		},
+		{
+			name: "ListNotes error",
+			configure: func(gl *fakeGitLab, err error) {
+				gl.listErr = err
+			},
+			wantLog: "note listing failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+			readWarnings := installWarningLogRecorder(t, r)
+			listingErr := errors.New(tt.wantLog)
+			tt.configure(gl, listingErr)
+
+			if err := r.postReview(context.Background(), "## Findings\nreview"); err != nil {
+				t.Fatalf("postReview: %v", err)
+			}
+			if len(gl.notes) != 1 {
+				t.Errorf("PostNote call count = %d, want 1 fallback call", len(gl.notes))
+			}
+			logs := readWarnings()
+			if !strings.Contains(logs, `"level":"WARN"`) || !strings.Contains(logs, listingErr.Error()) {
+				t.Errorf("warning log = %q, want WARN naming error %q", logs, listingErr)
+			}
+		})
+	}
+}
+
+func installWarningLogRecorder(t *testing.T, r *MRInspectReviewer) func() string {
+	t.Helper()
+	sink, err := os.CreateTemp(t.TempDir(), "reviewer-warnings-*.jsonl")
+	if err != nil {
+		t.Fatalf("create warning log sink: %v", err)
+	}
+	t.Cleanup(func() { _ = sink.Close() })
+
+	stdout := os.Stdout
+	os.Stdout = sink
+	r.log = logger.New(slog.LevelWarn, filepath.Join(t.TempDir(), "metrics.json"))
+	os.Stdout = stdout
+
+	return func() string {
+		t.Helper()
+		if err := sink.Sync(); err != nil {
+			t.Fatalf("sync warning log sink: %v", err)
+		}
+		data, err := os.ReadFile(sink.Name())
+		if err != nil {
+			t.Fatalf("read warning log sink: %v", err)
+		}
+		return string(data)
 	}
 }

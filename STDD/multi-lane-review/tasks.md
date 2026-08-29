@@ -200,7 +200,7 @@ Verification command: `go test ./internal/reviewer/ -run TestRun_CitationsVerifi
 Test file: internal/lane/compose_test.go（追加）、internal/reviewer/reviewer_test.go（改既有 S-34 測試為實料驅動）
 Verification command: `go test ./internal/lane/ -run TestCompose_BudgetEviction -count=1 && go test ./internal/reviewer/ -run TestRun_NormativeEvictionFailIsNotSwallowed -count=1`
 
-## T19 [ ] [MODIFY] 修復發現 F1/F10 — 留言更新錯誤路徑記 log
+## T19 [x] [MODIFY] 修復發現 F1/F10 — 留言更新錯誤路徑記 log
 
 Test file: internal/reviewer/reviewer_test.go（追加）
 Verification command: `go test ./internal/reviewer/ -run TestPostReview_ListingErrorFallsBackWithLog -count=1`

@@ -477,8 +477,12 @@ func (r *MRInspectReviewer) postReviewWithFooter(ctx context.Context, content, f
 	// the stable HTML marker so the sanitizer cannot escape it.
 	safe := ReviewNoteMarker + "\n" + r.validator.SanitizeInput(content+footer)
 	currentUser, currentErr := r.gitlab.CurrentUser(ctx)
-	if currentErr == nil {
-		if notes, listErr := r.gitlab.ListNotes(ctx, r.projectID, r.mrIID); listErr == nil {
+	if currentErr != nil {
+		r.log.Warn("failed to get current GitLab user; falling back to PostNote", "error", currentErr)
+	} else {
+		if notes, listErr := r.gitlab.ListNotes(ctx, r.projectID, r.mrIID); listErr != nil {
+			r.log.Warn("failed to list GitLab notes; falling back to PostNote", "error", listErr)
+		} else {
 			for _, note := range notes {
 				if strings.Contains(note.Body, ReviewNoteMarker) && sameAuthor(note.Author, currentUser) {
 					if _, err := r.gitlab.UpdateNote(ctx, r.projectID, r.mrIID, note.ID, safe); err != nil {
