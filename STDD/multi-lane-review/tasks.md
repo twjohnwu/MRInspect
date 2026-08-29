@@ -20,7 +20,7 @@ RED → Verify RED → GREEN → Verify GREEN → REFACTOR（SOLID + DRY）→ S
 T09 的 `errgroup` 需要它先成為直接依賴才能編譯。
 Verification command: `go get golang.org/x/sync/errgroup && go build ./... && grep -c 'golang.org/x/sync' go.mod`
 
-## T02 [INFRA] `internal/testfake/` — 本 repo 第一組測試替身
+## T02 [x] [INFRA] `internal/testfake/` — 本 repo 第一組測試替身
 
 理由：無 scenario 對應——全樹目前無任何 `fake*`／`mock*`／`stub*` 型別，
 `internal/reviewer/` 連 `_test.go` 都沒有。其後每一個 TDD task 都需要
