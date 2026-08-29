@@ -7,14 +7,14 @@ sets:
     include:
       - "*.md"
   - name: margherita-pizza-docs
-    tags: [margherita-pizza, docs]
+    tags: [margherita-pizza]
     mode: retrieval
     paths:
       - ./projects/margherita-pizza
     include:
       - "*.md"
   - name: fried-chicken-docs
-    tags: [fried-chicken, docs]
+    tags: [fried-chicken]
     mode: retrieval
     paths:
       - ./projects/fried-chicken

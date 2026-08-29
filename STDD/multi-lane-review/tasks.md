@@ -210,7 +210,7 @@ Verification command: `go test ./internal/reviewer/ -run TestPostReview_ListingE
 Test file: internal/lane/compose_test.go（追加）
 Verification command: `go test ./internal/lane/ -run TestCompose_UnknownSelectorIsNamedDegradation -count=1`
 
-## T21 [ ] [INFRA] 修復發現 F3 — per-system lane overlay，撤 docs tag
+## T21 [x] [INFRA] 修復發現 F3 — per-system lane overlay，撤 docs tag
 
 理由：純設定檔改動（resources.yaml、lanes.yaml、兩個新 overlay 檔），無程式碼。
 Verification command: `go test ./internal/rag/resources/ ./internal/lane/ -count=1 && test -f projects/margherita-pizza/lanes.yaml && test -f projects/fried-chicken/lanes.yaml`

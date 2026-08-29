@@ -1,0 +1,8 @@
+lanes:
+  - id: spec-conformance
+    enabled: true
+    template: ./projects/_lanes/spec-conformance.tmpl.md
+    intent: "spec and technical documentation conformance"
+    resources:
+      sets: [margherita-pizza-docs]
+      tags: []

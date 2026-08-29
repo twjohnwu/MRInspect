@@ -187,3 +187,12 @@ sequenceDiagram
    HTML 註解，GitLab 渲染不可見；身分判定 = 標記 AND 作者，缺一不可。
 3. **ModelLimits 生產來源**：`prompt.DefaultModelLimits` 具名預設表；
    per-lane model 必須在表內，否則 fan-out 前整體失敗（S-33）。
+
+## T21 執行期補充 — 跨系統資源範圍（plan drift 記錄，回退 T15 第 1 點）
+
+T15 給 per-system set 加 `docs` tag 並讓 canonical `spec-conformance` 以
+`tags: [docs]` 選取——cirdan 審查證實這會讓 A 系統的 MR 檢索到 B 系統的
+spec（發現 F3，已驗證）。裁決：撤回 per-system set 的 `docs` tag；每個系統
+以自己的 `projects/<system>/lanes.yaml` overlay 把 `spec-conformance` 釘到
+自己的 set。canonical 的 `tags: [docs]` 保留給未來真正跨系統共用的文件
+（現無 set 帶此 tag＝檢索零結果）。新增系統＝加一個 overlay 檔，零程式改動。
