@@ -243,6 +243,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		Attempts:         r.cfg.Validation.AIRetryAttempts,
 		GlobalModel:      r.cfg.Providers[r.cfg.AIProvider].Model,
 		ModelLimits:      r.multi.ModelLimits,
+		Logger:           r.log,
 	}
 	fanout := r.multi.Fanout
 	if fanout == nil {

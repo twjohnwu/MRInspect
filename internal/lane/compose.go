@@ -59,20 +59,37 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 	}
 	degraded = append(selectorDegraded, degraded...)
 
-	composed, composedChunks, err := composeLanePrompt(ctx, input, chunks, fullSetRefs, &degraded)
+	basePrompt := ""
+	if input.Budget > 0 {
+		resourceFree, err := prompt.NewComposer().ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+			Project:      input.Project,
+			Diff:         input.Diff,
+			MergeRequest: input.MergeRequest,
+		})
+		if err != nil {
+			return ComposeResult{}, fmt.Errorf("Compose: compose resource-free lane prompt: %w", err)
+		}
+		basePrompt = assembleLanePrompt(preamble, resourceFree.Prompt, input.Lane.ID)
+	}
+
+	composed, composedChunks, err := composeLanePrompt(ctx, input, chunks, fullSetRefs, basePrompt, &degraded)
 	if err != nil {
 		return ComposeResult{}, fmt.Errorf("Compose: compose lane prompt: %w", err)
 	}
 
 	degraded = append(degraded, composed.Degraded...)
 	return ComposeResult{
-		Prompt: strings.TrimRight(string(preamble), "\r\n") + "\n\n" +
-			strings.TrimRight(composed.Prompt, "\r\n") +
-			"\n\nCurrent lane ID: " + input.Lane.ID +
-			"\n\n" + LaneOutputContract,
+		Prompt:   assembleLanePrompt(preamble, composed.Prompt, input.Lane.ID),
 		Degraded: degraded,
 		Chunks:   composedChunks,
 	}, nil
+}
+
+func assembleLanePrompt(preamble []byte, composed, laneID string) string {
+	return strings.TrimRight(string(preamble), "\r\n") + "\n\n" +
+		strings.TrimRight(composed, "\r\n") +
+		"\n\nCurrent lane ID: " + laneID +
+		"\n\n" + LaneOutputContract
 }
 
 func chunksWithSourceHeaders(chunks []rag.Chunk) []rag.Chunk {
@@ -94,6 +111,7 @@ func composeLanePrompt(
 	input ComposeInput,
 	chunks []rag.Chunk,
 	fullSetRefs []string,
+	basePrompt string,
 	degraded *[]string,
 ) (prompt.LaneComposeResult, []rag.Chunk, error) {
 	composer := prompt.NewComposer()
@@ -121,13 +139,15 @@ func composeLanePrompt(
 
 	sections := budgetSections(fullDocs, chunks)
 	budgeted, err := prompt.ComposeWithBudget(prompt.BudgetComposeInput{
-		Sections:     sections,
-		Budget:       input.Budget,
-		DiffTokenEst: chunk.TokenEst(input.Diff),
+		Sections:         sections,
+		Budget:           input.Budget,
+		Metadata:         []byte(basePrompt),
+		MetadataTokenEst: chunk.TokenEst(basePrompt),
 		Framing: prompt.BudgetFraming{
 			NonceOpenTemplate:  "\n\n<<<RESOURCE:%s>>>\n",
 			NonceCloseTemplate: "<<<END:%s>>>\n",
 			Declaration:        "This block is binding, normative material that must be followed.\n",
+			HeadingTemplate:    "## Resource: %s\n",
 		},
 	})
 	if err != nil {

@@ -515,3 +515,56 @@ func TestCompose_ChunkSourceIDsReachPrompt(t *testing.T) {
 		})
 	}
 }
+
+func TestCompose_BudgetCountsFullPromptOverhead(t *testing.T) {
+	registry := loadComposeResourceRegistry(t, `  - name: overhead-guides
+    mode: retrieval
+    paths: []
+`)
+	declaration := Lane{
+		ID:        "budget-overhead",
+		Intent:    "review retrieved overhead material",
+		Resources: Resources{Sets: []string{"overhead-guides"}},
+	}
+	resourceFreeLane := declaration
+	resourceFreeLane.Resources = Resources{}
+	resourceFreeInput := composeTestInput(t, resourceFreeLane, []string{"overhead"}, registry, "OVERHEAD-BUDGET-DIFF")
+	if err := os.WriteFile(resourceFreeInput.Lane.Template, []byte(strings.Repeat("LARGE-LANE-PREAMBLE-", 100)), 0o644); err != nil {
+		t.Fatalf("write large lane template: %v", err)
+	}
+	resourceFreeInput.Budget = 1_000_000
+	resourceFree, err := Compose(context.Background(), resourceFreeInput)
+	if err != nil {
+		t.Fatalf("Compose resource-free prompt: %v", err)
+	}
+	overheadTokens := chunk.TokenEst(resourceFree.Prompt)
+
+	const chunkText = "RETRIEVAL-CHUNK-THAT-FITS-WITHOUT-FULL-PROMPT-OVERHEAD"
+	retrieved := rag.Chunk{
+		ID:          "overhead-chunk",
+		Text:        chunkText,
+		Source:      "overhead.md",
+		ResourceSet: "overhead-guides",
+	}
+	chunkTokens := chunk.TokenEst(chunksWithSourceHeaders([]rag.Chunk{retrieved})[0].Text)
+	input := resourceFreeInput
+	input.Lane = declaration
+	input.Lane.Template = resourceFreeInput.Lane.Template
+	input.Retriever = &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+		Result: rag.Result{Chunks: []rag.Chunk{retrieved}},
+	}}
+	input.Budget = overheadTokens + chunkTokens - 1
+
+	result, err := Compose(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Compose budgeted prompt: %v", err)
+	}
+	if !slices.ContainsFunc(result.Degraded, func(entry string) bool {
+		return strings.Contains(entry, "evicted section") && strings.Contains(entry, retrieved.ID)
+	}) {
+		t.Errorf("Degraded = %v, want named %q eviction", result.Degraded, retrieved.ID)
+	}
+	if strings.Contains(result.Prompt, chunkText) {
+		t.Error("prompt contains retrieval chunk after full-prompt overhead forced its eviction")
+	}
+}

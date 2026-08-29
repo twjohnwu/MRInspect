@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -467,5 +468,81 @@ func TestFanout_ConcurrencyCapped(t *testing.T) {
 				t.Fatal("Fanout did not complete after the provider barrier was released")
 			}
 		})
+	}
+}
+
+type recordingWarnLogger struct {
+	mu       sync.Mutex
+	warnings []string
+}
+
+func (l *recordingWarnLogger) Warn(msg string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.warnings = append(l.warnings, fmt.Sprintf(msg, args...))
+}
+
+func (l *recordingWarnLogger) contains(want string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Contains(l.warnings, want)
+}
+
+func TestFanout_InvalidConcurrencyLogsFallback(t *testing.T) {
+	t.Setenv("MRI_LANE_CONCURRENCY", "abc")
+	lanes := fanoutTestLanes("lane-one", "lane-two", "lane-three", "lane-four", "lane-five")
+	arrived := make(chan struct{}, len(lanes))
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseAll()
+
+	provider := newFanoutPromptProvider(lanes)
+	provider.arrived = arrived
+	provider.release = release
+	log := &recordingWarnLogger{}
+	input := fanoutTestInput(t, lanes, provider, "INVALID-CONCURRENCY-DIFF")
+	input.Logger = log
+	type outcome struct {
+		result FanoutResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := Fanout(context.Background(), input)
+		done <- outcome{result: result, err: err}
+	}()
+
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	for call := 1; call <= 4; call++ {
+		select {
+		case <-arrived:
+		case <-deadline.C:
+			t.Fatalf("only %d/4 Generate calls reached the default-cap barrier", call-1)
+		}
+	}
+	grace := time.NewTimer(200 * time.Millisecond)
+	select {
+	case <-arrived:
+		grace.Stop()
+		t.Fatal("more than 4 Generate calls arrived before release")
+	case <-grace.C:
+	}
+
+	releaseAll()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("Fanout: %v", got.err)
+		}
+		if len(got.result.LaneResults) != len(lanes) || len(got.result.Failures) != 0 {
+			t.Errorf("Fanout result = %#v, want all lanes successful", got.result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Fanout did not complete after the provider barrier was released")
+	}
+	if !log.contains(`invalid MRI_LANE_CONCURRENCY "abc", using default 4`) {
+		t.Errorf("warnings = %v, want invalid concurrency fallback warning", log.warnings)
 	}
 }
