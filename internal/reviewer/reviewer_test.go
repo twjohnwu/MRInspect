@@ -926,3 +926,192 @@ func TestCleanResponse_EarliestMarkerWins(t *testing.T) {
 		}
 	})
 }
+
+// sequencedProvider returns one response per call, in order, holding the
+// last response steady once exhausted. It records every prompt it received.
+type sequencedProvider struct {
+	responses []string
+	prompts   []string
+	calls     int
+}
+
+func (p *sequencedProvider) Generate(_ context.Context, prompt string, _ ai.GenerateOptions) (string, error) {
+	p.prompts = append(p.prompts, prompt)
+	idx := p.calls
+	if idx >= len(p.responses) {
+		idx = len(p.responses) - 1
+	}
+	p.calls++
+	return p.responses[idx], nil
+}
+func (*sequencedProvider) Name() string { return "sequenced-fake" }
+
+// configurableValidator lets a test control ValidateReviewContent while
+// keeping every other validator method a no-op, matching fakeValidator.
+type configurableValidator struct {
+	validateReviewContent func(string) error
+}
+
+func (configurableValidator) ValidateEnvironment() error                     { return nil }
+func (configurableValidator) ValidateMergeRequest(gitlab.MergeRequest) error { return nil }
+func (configurableValidator) ValidateDiff(string) (validator.DiffValidationResult, error) {
+	return validator.DiffValidationResult{}, nil
+}
+func (v configurableValidator) ValidateReviewContent(content string) error {
+	if v.validateReviewContent == nil {
+		return nil
+	}
+	return v.validateReviewContent(content)
+}
+func (configurableValidator) SanitizeInput(input string) string { return input }
+func (configurableValidator) GetProjectID() string               { return "1" }
+func (configurableValidator) GetMRIID() string                   { return "7" }
+func (configurableValidator) GetSourceBranch() string            { return "feature" }
+func (configurableValidator) GetTargetBranch() string            { return "main" }
+
+// newForensicsFixture builds a reviewer with a configurable provider and
+// validator plus a WARN-level log recorder, for the validation-forensics
+// and self-reflection-guard tests below.
+func newForensicsFixture(t *testing.T, provider ai.Provider, v configurableValidator, retryAttempts int, composer fakeComposer) (*MRInspectReviewer, func() string) {
+	t.Helper()
+	gl := &fakeGitLab{}
+	cfg := config.Config{
+		AIProvider: config.ProviderGemini,
+		Providers: map[config.AIProvider]config.ProviderConfig{
+			config.ProviderGemini: {Model: "gemini-test", MaxTokens: 10},
+		},
+		Service:    config.ServiceConfig{Name: "test", Type: "backend"},
+		Validation: config.ValidationConfig{AIRetryAttempts: retryAttempts},
+	}
+	r := New(cfg, gl, provider, fakeDiff{}, fakeProjects{}, composer, v, fakeErrorHandler{}, logger.New(slog.LevelError, t.TempDir()+"/metrics.json"))
+	readWarnings := installWarningLogRecorder(t, r)
+	return r, readWarnings
+}
+
+const validReviewBody = "## Code Review\n## Findings\nnothing found\n## Verdict\napproved"
+
+func reviewSectionsPresent(content string) error {
+	if strings.Contains(content, "## Findings") && strings.Contains(content, "## Verdict") {
+		return nil
+	}
+	return errors.New("missing required sections")
+}
+
+// TestGenerateReview_FailedValidationLogsForensics verifies that a failed
+// ValidateReviewContent attempt is logged with the attempt number, the
+// headings the model actually wrote, and the response length before/after
+// cleanResponse — and that the prompt/response dump only appears for the
+// failed attempt, never for the successful one.
+func TestGenerateReview_FailedValidationLogsForensics(t *testing.T) {
+	unsetEnv(t, "MRI_REVIEW_DUMP_DISABLED")
+	badResponse := "Some preamble.\n# Bad Heading\n## Code Review\nno required sections here"
+	provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
+	r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
+
+	content, err := r.generateReview(context.Background(), "diff --git a/a.go b/a.go", gitlab.MergeRequest{})
+	if err != nil {
+		t.Fatalf("generateReview: %v", err)
+	}
+	if !strings.Contains(content, "## Findings") {
+		t.Fatalf("generateReview returned %q, want the successful attempt's content", content)
+	}
+
+	logs := readWarnings()
+	if !strings.Contains(logs, `"attempt":1`) {
+		t.Errorf("warning log missing attempt number: %q", logs)
+	}
+	if !strings.Contains(logs, "# Bad Heading") || !strings.Contains(logs, "## Code Review") {
+		t.Errorf("warning log missing the headings the model actually wrote: %q", logs)
+	}
+	beforeLen := len(badResponse)
+	afterLen := len(r.cleanResponse(badResponse))
+	if beforeLen == afterLen {
+		t.Fatalf("test fixture invalid: cleanResponse did not shorten the bad response")
+	}
+	if !strings.Contains(logs, fmt.Sprintf(`"responseLenBeforeClean":%d`, beforeLen)) {
+		t.Errorf("warning log missing pre-clean length %d: %q", beforeLen, logs)
+	}
+	if !strings.Contains(logs, fmt.Sprintf(`"responseLenAfterClean":%d`, afterLen)) {
+		t.Errorf("warning log missing post-clean length %d: %q", afterLen, logs)
+	}
+
+	promptStart1 := "======== Prompt (attempt 1) Start ========"
+	responseStart1 := "======== Response (attempt 1) Start ========"
+	if strings.Count(logs, promptStart1) != 1 {
+		t.Errorf("prompt dump for attempt 1 must appear exactly once, got log: %q", logs)
+	}
+	if strings.Count(logs, responseStart1) != 1 {
+		t.Errorf("response dump for attempt 1 must appear exactly once, got log: %q", logs)
+	}
+	if strings.Contains(logs, "attempt 2) Start") {
+		t.Errorf("successful attempt must never be dumped: %q", logs)
+	}
+}
+
+// TestGenerateReview_DumpDisabledByExactTrue pins the exact-match rule for
+// MRI_REVIEW_DUMP_DISABLED: only the literal string "true" disables dumps.
+func TestGenerateReview_DumpDisabledByExactTrue(t *testing.T) {
+	badResponse := "noise\n## Code Review\nno required sections here"
+	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
+
+	t.Run("true disables dumps", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_DUMP_DISABLED", "true")
+		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
+		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
+			t.Fatalf("generateReview: %v", err)
+		}
+		logs := readWarnings()
+		if strings.Contains(logs, "======== Prompt") || strings.Contains(logs, "======== Response") {
+			t.Errorf("MRI_REVIEW_DUMP_DISABLED=true must suppress dumps: %q", logs)
+		}
+	})
+
+	t.Run("1 does not disable dumps (exact match only)", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_DUMP_DISABLED", "1")
+		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
+		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
+			t.Fatalf("generateReview: %v", err)
+		}
+		logs := readWarnings()
+		if !strings.Contains(logs, "======== Prompt (attempt 1) Start ========") || !strings.Contains(logs, "======== Response (attempt 1) Start ========") {
+			t.Errorf("MRI_REVIEW_DUMP_DISABLED=1 must NOT suppress dumps (exact-match rule): %q", logs)
+		}
+	})
+}
+
+// TestSelfReflect_InvalidReflectionKeepsOriginal verifies that a reflection
+// result which fails ValidateReviewContent never replaces the original
+// review, while a valid updated reflection still is adopted (control).
+func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
+	unsetEnv(t, "MRI_REVIEW_DUMP_DISABLED")
+	original := validReviewBody
+	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
+
+	t.Run("garbage reflection keeps the original review", func(t *testing.T) {
+		provider := &sequencedProvider{responses: []string{"garbage, not a review at all"}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
+
+		got := r.selfReflect(context.Background(), original)
+		if got != original {
+			t.Errorf("selfReflect() = %q, want original review kept on invalid reflection", got)
+		}
+		logs := readWarnings()
+		if !strings.Contains(logs, `"level":"WARN"`) {
+			t.Errorf("expected a WARN log on invalid reflection: %q", logs)
+		}
+	})
+
+	t.Run("valid reflection is adopted", func(t *testing.T) {
+		updated := "## Code Review\n## Findings\nnew finding\n## Verdict\nchanges requested"
+		provider := &sequencedProvider{responses: []string{updated}}
+		r, _ := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
+
+		got := r.selfReflect(context.Background(), original)
+		if got != updated {
+			t.Errorf("selfReflect() = %q, want the valid reflection adopted (%q)", got, updated)
+		}
+	})
+}

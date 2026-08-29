@@ -443,25 +443,27 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 
 	var reviewContent string
 	var lastErr error
+	dumpsEnabled := reviewDumpsEnabled()
 	for attempt := 1; attempt <= r.cfg.Validation.AIRetryAttempts; attempt++ {
 		if attempt > 1 {
 			reviewPrompt = r.buildRetryPrompt(reviewPrompt, lastErr)
 			r.log.Info("retrying AI call", "attempt", attempt, "reason", lastErr.Error())
 		}
 
-		content, err := r.callAI(ctx, reviewPrompt)
+		rawResponse, err := r.callAI(ctx, reviewPrompt)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 
-		content = r.cleanResponse(content)
-		if err := r.validator.ValidateReviewContent(content); err != nil {
+		cleaned := r.cleanResponse(rawResponse)
+		if err := r.validator.ValidateReviewContent(cleaned); err != nil {
 			lastErr = err
+			r.logValidationFailure(attempt, reviewPrompt, rawResponse, cleaned, err, dumpsEnabled)
 			continue
 		}
 
-		reviewContent = content
+		reviewContent = cleaned
 		break
 	}
 
@@ -500,6 +502,18 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 		r.log.Info("self-reflection: review validated")
 		return review
 	}
+
+	// Never adopt a reflection result that has not been re-validated: a
+	// garbage reflection would otherwise silently replace a valid review.
+	// Validate the cleaned reflection output before adopting it.
+	dumpsEnabled := reviewDumpsEnabled()
+	cleaned := r.cleanResponse(result)
+	if err := r.validator.ValidateReviewContent(cleaned); err != nil {
+		r.log.Warn("self-reflection produced an invalid review; keeping original", "error", err.Error())
+		r.dumpForensics(dumpsEnabled, "Response", "self-reflection", result)
+		return review
+	}
+
 	r.log.Info("self-reflection: review updated")
 	return result
 }
@@ -641,6 +655,54 @@ func (r *MRInspectReviewer) cleanResponse(response string) string {
 		return response[cutAt:]
 	}
 	return response
+}
+
+// reviewDumpsEnabled reports whether failure-only prompt/response dumps are
+// enabled. Dumps are enabled by default; setting MRI_REVIEW_DUMP_DISABLED to
+// the exact string "true" turns them off. Any other value (1, yes, ...)
+// leaves dumps enabled. Callers read this once per run, not once per attempt.
+func reviewDumpsEnabled() bool {
+	return os.Getenv("MRI_REVIEW_DUMP_DISABLED") != "true"
+}
+
+// logValidationFailure records forensics for a failed ValidateReviewContent
+// attempt: the headings the model actually wrote, and the response length
+// before/after cleanResponse. It never fires on a successful attempt.
+func (r *MRInspectReviewer) logValidationFailure(attempt int, reviewPrompt, rawResponse, cleaned string, validationErr error, dumpsEnabled bool) {
+	r.log.Warn("review validation failed",
+		"attempt", attempt,
+		"headings", extractHeadings(rawResponse),
+		"responseLenBeforeClean", len(rawResponse),
+		"responseLenAfterClean", len(cleaned),
+		"error", validationErr.Error(),
+	)
+	r.dumpForensics(dumpsEnabled, "Prompt", fmt.Sprintf("attempt %d", attempt), reviewPrompt)
+	r.dumpForensics(dumpsEnabled, "Response", fmt.Sprintf("attempt %d", attempt), rawResponse)
+}
+
+// dumpForensics logs content wrapped in Start/End marker lines, gated by
+// dumpsEnabled. It is failure-only by construction: callers only invoke it
+// on a failed-validation path.
+func (r *MRInspectReviewer) dumpForensics(dumpsEnabled bool, kind, tag, content string) {
+	if !dumpsEnabled {
+		return
+	}
+	r.log.Warn(fmt.Sprintf(
+		"======== %s (%s) Start ========\n%s\n======== %s (%s) End ========",
+		kind, tag, content, kind, tag,
+	))
+}
+
+// extractHeadings returns every line the model actually wrote that starts
+// with '#', i.e. any markdown heading level, in response order.
+func extractHeadings(response string) []string {
+	var headings []string
+	for _, line := range strings.Split(response, "\n") {
+		if strings.HasPrefix(line, "#") {
+			headings = append(headings, line)
+		}
+	}
+	return headings
 }
 
 func (r *MRInspectReviewer) buildRetryPrompt(original string, validationErr error) string {
