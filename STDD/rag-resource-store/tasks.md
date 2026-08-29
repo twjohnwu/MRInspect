@@ -180,7 +180,7 @@ Test file: `cmd/mrinspect/main_integration_test.go`（`-tags integration`）
 `main.go` 的 dispatch 順序，而那正是本 scenario 要防的失敗。
 Verification command: `go test -tags integration ./cmd/mrinspect/ -run TestBinary_IndexNeedsNoReviewCredentials -count=1`
 
-## T18 [ ] [NEW] `S-50,S-51` — package 保留份數
+## T18 [x] [NEW] `S-50,S-51` — package 保留份數
 
 Test file: `internal/ragcmd/retention_test.go`
 重點：以替身攔截 registry API，斷言 DELETE 目標為最舊版本；刪除失敗只記警告不影響
