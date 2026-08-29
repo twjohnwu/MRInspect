@@ -3,7 +3,9 @@ package ragcmd
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,5 +205,75 @@ func TestIndex_ReportsRealFileCount(t *testing.T) {
 	}
 	if !strings.Contains(printed.String(), "files indexed=2") {
 		t.Errorf("printed statistics = %q, want files indexed=2", printed.String())
+	}
+}
+
+// TestIndex_CheckValidatesStore verifies REQ-05: --check validates an existing
+// store without rebuilding it, and identifies the failed invariant.
+func TestIndex_CheckValidatesStore(t *testing.T) {
+	newStore := func(t *testing.T) string {
+		t.Helper()
+		output := filepath.Join(t.TempDir(), "store.sqlite")
+		set := fixtureSet(t, "guide.md", "# Guide\n\nindex this resource\n")
+		if exitCode, _, err := runIndexForTest(t, Options{
+			OutputPath: output,
+			Loader:     staticLoader{sets: []resources.Set{set}},
+			Indexer:    sqliteTestIndexer{},
+		}); err != nil || exitCode != 0 {
+			t.Fatalf("RunIndex fixture exit=%d err=%v, want successful store", exitCode, err)
+		}
+		return output
+	}
+
+	check := func(t *testing.T, output string) (int, IndexStats, error) {
+		t.Helper()
+		opts, err := ParseOptions([]string{"--out", output, "--check"}, "", io.Discard)
+		if err != nil {
+			t.Fatalf("ParseOptions --check: %v", err)
+		}
+		return runIndexForTest(t, opts)
+	}
+
+	t.Run("valid store", func(t *testing.T) {
+		exitCode, _, err := check(t, newStore(t))
+		if err != nil || exitCode != 0 {
+			t.Errorf("--check exit=%d err=%v, want 0 and no error", exitCode, err)
+		}
+	})
+
+	t.Run("missing store file", func(t *testing.T) {
+		exitCode, stats, err := check(t, filepath.Join(t.TempDir(), "missing.sqlite"))
+		if err == nil || exitCode != 4 || !strings.Contains(stats.Message, "absence") {
+			t.Errorf("--check exit=%d message=%q err=%v, want 4 naming absence", exitCode, stats.Message, err)
+		}
+	})
+
+	for _, tt := range []struct {
+		name    string
+		corrupt string
+		message string
+	}{
+		{"wrong schema version", `UPDATE schema_meta SET schema_version = schema_version + 1 WHERE id = 1`, "versions"},
+		{"chunk count mismatch", `UPDATE schema_meta SET chunk_count = chunk_count + 1 WHERE id = 1`, "chunk_count"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			output := newStore(t)
+			db, err := sql.Open("sqlite", output)
+			if err != nil {
+				t.Fatalf("open fixture store: %v", err)
+			}
+			if _, err := db.Exec(tt.corrupt); err != nil {
+				db.Close()
+				t.Fatalf("corrupt fixture store: %v", err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatalf("close fixture store: %v", err)
+			}
+
+			exitCode, stats, err := check(t, output)
+			if err == nil || exitCode != 4 || !strings.Contains(stats.Message, tt.message) {
+				t.Errorf("--check exit=%d message=%q err=%v, want 4 naming %q", exitCode, stats.Message, err, tt.message)
+			}
+		})
 	}
 }

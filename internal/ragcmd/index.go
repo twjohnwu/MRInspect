@@ -3,6 +3,7 @@ package ragcmd
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ type Indexer interface {
 type Options struct {
 	OutputPath string
 	DryRun     bool
+	Check      bool
 	Output     io.Writer
 	Loader     ResourceLoader
 	Indexer    Indexer
@@ -65,6 +67,14 @@ type IndexStats struct {
 // RunIndex loads resources and indexes them, returning an observable exit code
 // instead of exiting directly (REQ-05 / S-20 / S-21).
 func RunIndex(ctx context.Context, opts Options) (exitCode int, stats IndexStats, err error) {
+	if opts.Check {
+		if opts.DryRun {
+			stats.Message = "usage error: --check cannot be combined with --dry-run"
+			printStats(opts.Output, stats)
+			return 2, stats, nil
+		}
+		return checkStore(ctx, opts)
+	}
 	if opts.Loader == nil {
 		return indexFailure(opts, stats, "resource loader is not configured", nil)
 	}
@@ -116,9 +126,10 @@ func ParseOptions(args []string, serviceName string, output io.Writer) (Options,
 	flags.SetOutput(output)
 	outputPath := flags.String("out", ".rag/mrinspect-rag.sqlite", "path for the SQLite resource store")
 	dryRun := flags.Bool("dry-run", false, "report indexing statistics without writing a store")
+	check := flags.Bool("check", false, "validate an existing SQLite resource store without writing it")
 	help := flags.Bool("help", false, "show index command help")
 	flags.Usage = func() {
-		fmt.Fprintln(output, "Usage: mrinspect index [--out PATH] [--dry-run]")
+		fmt.Fprintln(output, "Usage: mrinspect index [--out PATH] [--dry-run | --check]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -135,10 +146,56 @@ func ParseOptions(args []string, serviceName string, output io.Writer) (Options,
 	return Options{
 		OutputPath: *outputPath,
 		DryRun:     *dryRun,
+		Check:      *check,
 		Output:     output,
 		Loader:     resourceSetLoader{repoRoot: ".", system: serviceName},
 		Indexer:    sqliteIndexer{backend: os.Getenv("MRI_RAG_BACKEND")},
 	}, nil
+}
+
+// checkStore verifies the REQ-05 store invariants through a read-only SQLite
+// connection. It deliberately bypasses resource loading and indexing.
+func checkStore(ctx context.Context, opts Options) (int, IndexStats, error) {
+	var stats IndexStats
+	if _, err := os.Stat(opts.OutputPath); err != nil {
+		if os.IsNotExist(err) {
+			return indexCheckFailure(opts, stats, "store absence: output store does not exist", nil)
+		}
+		return indexCheckFailure(opts, stats, "store existence check failed", err)
+	}
+
+	db, err := sql.Open("sqlite", "file:"+opts.OutputPath+"?mode=ro")
+	if err != nil {
+		return indexCheckFailure(opts, stats, "store open check failed", err)
+	}
+	defer db.Close()
+
+	var version, manifestCount, actualCount int
+	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {
+		return indexCheckFailure(opts, stats, "schema version check failed", err)
+	}
+	if version != sqlite.SchemaVersion {
+		return indexCheckFailure(opts, stats, fmt.Sprintf("schema versions mismatch: got %d, want %d", version, sqlite.SchemaVersion), nil)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM chunks`).Scan(&actualCount); err != nil {
+		return indexCheckFailure(opts, stats, "chunk_count check failed", err)
+	}
+	if manifestCount != actualCount {
+		return indexCheckFailure(opts, stats, fmt.Sprintf("chunk_count mismatch: schema_meta=%d chunks=%d", manifestCount, actualCount), nil)
+	}
+
+	stats.Message = "store check passed"
+	printStats(opts.Output, stats)
+	return 0, stats, nil
+}
+
+func indexCheckFailure(opts Options, stats IndexStats, cause string, err error) (int, IndexStats, error) {
+	stats.Message = cause
+	printStats(opts.Output, stats)
+	if err != nil {
+		return 4, stats, fmt.Errorf("%s: %w", cause, err)
+	}
+	return 4, stats, fmt.Errorf("%s", cause)
 }
 
 func indexFailure(opts Options, stats IndexStats, cause string, err error) (int, IndexStats, error) {
