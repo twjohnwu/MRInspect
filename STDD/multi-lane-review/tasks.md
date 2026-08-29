@@ -138,7 +138,7 @@ legacy 退回——那是 `A/S-64` 要求移除的路徑，本降級是設定層
 單一留言需比對標記**且作者為本 token 使用者**，誘餌留言不得被觸碰。
 Verification command: `go test ./internal/reviewer/ -run 'TestRun|TestPostReview' -count=1`
 
-## T14 [ ] [MODIFY] `S-45` — lane id 分支的 CI lint（`Makefile`）
+## T14 [x] [MODIFY] `S-45` — lane id 分支的 CI lint（`Makefile`）
 
 Target: `Makefile` 新增 `lint-lane-ids` target
 重點：規則是結構性的（禁止 id 與字串字面值比較），不是列舉三個已知 id——

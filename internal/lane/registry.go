@@ -103,7 +103,7 @@ func loadFile(path string) ([]Lane, bool, error) {
 func validateLanes(lanes []fileLane) error {
 	ids := make(map[string]struct{}, len(lanes))
 	for _, lane := range lanes {
-		if lane.ID == "" {
+		if len(lane.ID) == 0 {
 			return missingFieldError(lane.ID, "id")
 		}
 		if _, exists := ids[lane.ID]; exists {
