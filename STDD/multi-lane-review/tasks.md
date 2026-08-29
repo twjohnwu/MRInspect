@@ -95,7 +95,7 @@ Test file: `internal/lane/render_test.go`
 `file`/`line` 需通過 hunk 成員檢查，四種案例（不在 diff、含 `../`、行號超出、正常）。
 Verification command: `go test ./internal/lane/ -run TestRender -count=1`
 
-## T09 [ ] [NEW] `S-08,S-10,S-30,S-32,S-33` — 平行 fan-out
+## T09 [x] [NEW] `S-08,S-10,S-30,S-32,S-33` — 平行 fan-out
 
 Test file: `internal/lane/fanout_test.go`
 依賴 T01、T02、T05、T06。重點：以 barrier 斷言三個 lane 同時在飛（循序實作會死結而

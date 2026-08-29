@@ -173,6 +173,10 @@ func Parse(raw string, limits ParseLimits) (ParsedLane, error) {
 }
 
 func ExecuteLane(ctx context.Context, input ComposeInput, provider ai.Provider, attempts int) LaneResult {
+	return executeLaneWithOptions(ctx, input, provider, attempts, ai.GenerateOptions{})
+}
+
+func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai.Provider, attempts int, opts ai.GenerateOptions) LaneResult {
 	composed, err := Compose(ctx, input)
 	if err != nil {
 		return failedLane(input.Lane.ID, FailureKindCompose, fmt.Sprintf("compose lane prompt: %v", err))
@@ -181,7 +185,7 @@ func ExecuteLane(ctx context.Context, input ComposeInput, provider ai.Provider, 
 	prompt := composed.Prompt
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		output, generateErr := provider.Generate(ctx, prompt, ai.GenerateOptions{})
+		output, generateErr := provider.Generate(ctx, prompt, opts)
 		if generateErr != nil {
 			lastErr = fmt.Errorf("generate lane response: %w", generateErr)
 			prompt = buildRetryPrompt(composed.Prompt, "", lastErr)

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.13
 	github.com/go-git/go-git/v5 v5.12.0
+	golang.org/x/sync v0.22.0
 	google.golang.org/genai v1.5.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.57.0
@@ -46,7 +47,6 @@ require (
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
