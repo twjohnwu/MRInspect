@@ -1,0 +1,22 @@
+lanes:
+  - id: spec-conformance
+    enabled: true
+    template: ./projects/_lanes/spec-conformance.tmpl.md
+    intent: "spec and technical documentation conformance"
+    resources:
+      sets: []
+      tags: [docs]
+  - id: standards
+    enabled: true
+    template: ./projects/_lanes/standards.tmpl.md
+    intent: "coding standards and conventions compliance"
+    resources:
+      sets: []
+      tags: [standards]
+  - id: code-diff
+    enabled: true
+    template: ./projects/_lanes/code-diff.tmpl.md
+    intent: "general code review"
+    resources:
+      sets: []
+      tags: []

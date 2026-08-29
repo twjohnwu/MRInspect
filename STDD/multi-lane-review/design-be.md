@@ -161,3 +161,19 @@ sequenceDiagram
 - [ ] REQ-06 渲染：既有結構、lane 出處、引用驗證、中性化、Verdict 含執行狀態、單一留言
 - [ ] REQ-07 預設 single 且逐位元組不變、降級具名、multi 不做自我反思
 - [ ] REQ-08 per-lane model 覆寫，預設沿用全域
+
+## T15 執行期補充 — lanes.yaml 預設內容與模板 contract（plan drift 記錄）
+
+原 design 未定義 shipped defaults 的具體內容與模板 contract，T15 執行時補齊。裁決：
+
+1. **Canonical 三個 lane 以 tag 引用資源**（不硬編系統名，D4）：
+   `spec-conformance` → `tags: [docs]`；`standards` → `tags: [standards]`；
+   `code-diff` → `sets: []`、`tags: []`（一等的純 diff lane）。
+   配套：`projects/resources.yaml` 的兩個 per-system set（`margherita-pizza-docs`、
+   `fried-chicken-docs`）各加 `docs` tag——這是對既有檔案的加法性修改，
+   超出 T15 原宣告的「只新增檔案」範圍，於此明記。
+2. **模板 contract：無佔位符**。`*.tmpl.md` 是靜態的 lane 前導文（審查視角與重點），
+   不含任何模板變數；`compose.go` 依序串接 template → MR metadata → 完整 diff →
+   資源區塊（nonce 界定由 change A 負責）。結構化 JSON 輸出契約**不進模板**，
+   由 compose 統一附加，與 parse 的欄位定義同源，避免模板與解析器漂移。
+3. **模板語言：English**（prompt 為機器讀，沿用既有單一 prompt 路徑慣例）。

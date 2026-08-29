@@ -146,7 +146,7 @@ Target: `Makefile` 新增 `lint-lane-ids` target
 掃描路徑不存在時視為失敗，不得因 grep 空手而回而算通過。
 Verification command: `make lint-lane-ids`
 
-## T15 [INFRA] `projects/lanes.yaml` ＋ `projects/_lanes/*.tmpl.md`
+## T15 [x] [INFRA] `projects/lanes.yaml` ＋ `projects/_lanes/*.tmpl.md`
 
 理由：無 scenario 對應——T03 的 registry 測試需要真實的宣告檔與模板檔作為 fixture。
 內含三個預設 lane（spec+techdoc／standards／code-diff-only），
