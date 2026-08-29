@@ -30,7 +30,7 @@ Verification command: `go get golang.org/x/sync/errgroup && go build ./... && gr
 以及 barrier（T09 的併發斷言需要）。
 Verification command: `go build ./internal/testfake/ && go vet ./internal/testfake/`
 
-## T03 [ ] [NEW] `S-01,S-02,S-03,S-04` — lane registry
+## T03 [x] [NEW] `S-01,S-02,S-03,S-04` — lane registry
 
 Test file: `internal/lane/registry_test.go`
 重點：`lanes:` 宣告序列必須保留（讀進 map 再輸出會使 S-01 間歇失敗，故 `-count=5`）；
