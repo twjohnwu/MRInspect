@@ -516,6 +516,39 @@ func TestCompose_ChunkSourceIDsReachPrompt(t *testing.T) {
 	}
 }
 
+// TestCompose_ZeroTopKNeverReachesRetriever verifies that a lane built
+// directly with TopK 0 (bypassing Load's default) still reaches the
+// Retriever with a positive TopK: Compose substitutes DefaultLaneTopK as a
+// backstop so hand-constructed lanes can never trigger the sqlite
+// retriever's "TopK <= 0 => empty result" guard.
+func TestCompose_ZeroTopKNeverReachesRetriever(t *testing.T) {
+	registry := loadComposeResourceRegistry(t, `  - name: zero-topk-guides
+    mode: retrieval
+    paths: []
+`)
+	lane := Lane{
+		ID:        "zero-topk",
+		Intent:    "review material despite an unset topK",
+		Resources: Resources{Sets: []string{"zero-topk-guides"}},
+		TopK:      0,
+	}
+	retriever := &testfake.FakeRetriever{}
+	input := composeTestInput(t, lane, []string{"shared", "terms"}, registry, "ZERO-TOPK-DIFF")
+	input.Retriever = retriever
+
+	if _, err := Compose(context.Background(), input); err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+
+	calls := retriever.RetrieveCalls()
+	if len(calls) != 1 {
+		t.Fatalf("Retrieve call count = %d, want exactly 1", len(calls))
+	}
+	if calls[0].Query.TopK < 1 {
+		t.Errorf("Retrieve call TopK = %d, want >= 1 (never 0 or negative)", calls[0].Query.TopK)
+	}
+}
+
 func TestCompose_BudgetCountsFullPromptOverhead(t *testing.T) {
 	registry := loadComposeResourceRegistry(t, `  - name: overhead-guides
     mode: retrieval

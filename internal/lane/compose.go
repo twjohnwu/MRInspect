@@ -265,11 +265,18 @@ func collectResources(ctx context.Context, input ComposeInput, sets []resources.
 			if input.Retriever == nil {
 				return nil, nil, nil, errRetrieverRequired
 			}
+			topK := input.Lane.TopK
+			if topK <= 0 {
+				// Backstop for hand-constructed Lane values (bypassing
+				// Load's own default): a zero TopK must never reach the
+				// retriever, which treats TopK <= 0 as "return nothing".
+				topK = DefaultLaneTopK
+			}
 			result, err := input.Retriever.Retrieve(ctx, rag.Query{
 				Terms:  input.Terms,
 				SetRef: set.Name,
 				Intent: input.Lane.Intent,
-				TopK:   input.Lane.TopK,
+				TopK:   topK,
 			})
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("Compose: retrieve resource set %q: %w", set.Name, err)

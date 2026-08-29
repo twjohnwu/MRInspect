@@ -76,9 +76,9 @@ lanes:
 		t.Fatalf("Load: %v", err)
 	}
 	want := []Lane{
-		{ID: "spec-conformance", Enabled: true, Template: "./projects/_lanes/spec-conformance.tmpl.md", Intent: "spec and technical documentation conformance", Resources: Resources{Sets: []string{}, Tags: []string{"docs"}}},
-		{ID: "standards", Enabled: true, Template: "./projects/_lanes/standards.tmpl.md", Intent: "coding standards and conventions compliance", Resources: Resources{Sets: []string{"official-standards"}, Tags: []string{"standards"}}},
-		{ID: "code-diff", Enabled: true, Template: "./projects/_lanes/code-diff.tmpl.md", Intent: "general code review", Resources: Resources{Sets: []string{}, Tags: []string{}}},
+		{ID: "spec-conformance", Enabled: true, Template: "./projects/_lanes/spec-conformance.tmpl.md", Intent: "spec and technical documentation conformance", Resources: Resources{Sets: []string{}, Tags: []string{"docs"}}, TopK: DefaultLaneTopK},
+		{ID: "standards", Enabled: true, Template: "./projects/_lanes/standards.tmpl.md", Intent: "coding standards and conventions compliance", Resources: Resources{Sets: []string{"official-standards"}, Tags: []string{"standards"}}, TopK: DefaultLaneTopK},
+		{ID: "code-diff", Enabled: true, Template: "./projects/_lanes/code-diff.tmpl.md", Intent: "general code review", Resources: Resources{Sets: []string{}, Tags: []string{}}, TopK: DefaultLaneTopK},
 	}
 	if !sameLanes(registry.Lanes, want) {
 		t.Errorf("Lanes: want ordered declarations %+v, got %+v", want, registry.Lanes)
@@ -120,9 +120,9 @@ lanes:
 		t.Fatalf("Load: %v", err)
 	}
 	want := []Lane{
-		{ID: "spec-conformance", Enabled: true, Template: "spec.tmpl.md", Intent: "inspect specifications", Resources: Resources{Sets: []string{"specs"}, Tags: []string{"docs"}}},
-		{ID: "standards", Enabled: false, Template: "standards.tmpl.md", Intent: "inspect standards", Resources: Resources{Sets: []string{"style-guide"}, Tags: []string{"standards"}}},
-		{ID: "code-diff", Enabled: true, Template: "diff.tmpl.md", Intent: "inspect changed code", Resources: Resources{Sets: []string{}, Tags: []string{}}},
+		{ID: "spec-conformance", Enabled: true, Template: "spec.tmpl.md", Intent: "inspect specifications", Resources: Resources{Sets: []string{"specs"}, Tags: []string{"docs"}}, TopK: DefaultLaneTopK},
+		{ID: "standards", Enabled: false, Template: "standards.tmpl.md", Intent: "inspect standards", Resources: Resources{Sets: []string{"style-guide"}, Tags: []string{"standards"}}, TopK: DefaultLaneTopK},
+		{ID: "code-diff", Enabled: true, Template: "diff.tmpl.md", Intent: "inspect changed code", Resources: Resources{Sets: []string{}, Tags: []string{}}, TopK: DefaultLaneTopK},
 		{ID: "dependency-risk", Enabled: true, Template: "dependency.tmpl.md", Intent: "inspect dependency risk", Resources: Resources{Sets: []string{"dependency-policy"}, Tags: []string{"security", "supply-chain"}}, TopK: 9, Model: "lane-specific-model"},
 	}
 	if !sameLanes(registry.Lanes, want) {
@@ -243,12 +243,45 @@ lanes:
 		t.Fatalf("Load: %v", err)
 	}
 	want := []Lane{
-		{ID: "a", Enabled: true, Template: "canonical-a.tmpl.md", Intent: "lane a", Resources: Resources{Sets: []string{"a-set"}, Tags: []string{}}},
-		{ID: "b", Enabled: true, Template: "system-b.tmpl.md", Intent: "lane b", Resources: Resources{Sets: []string{"b-set"}, Tags: []string{"canonical"}}},
-		{ID: "c", Enabled: false, Template: "canonical-c.tmpl.md", Intent: "lane c", Resources: Resources{Sets: []string{}, Tags: []string{"c-tag"}}},
-		{ID: "d", Enabled: true, Template: "system-d.tmpl.md", Intent: "lane d", Resources: Resources{Sets: []string{"d-set"}, Tags: []string{"system"}}},
+		{ID: "a", Enabled: true, Template: "canonical-a.tmpl.md", Intent: "lane a", Resources: Resources{Sets: []string{"a-set"}, Tags: []string{}}, TopK: DefaultLaneTopK},
+		{ID: "b", Enabled: true, Template: "system-b.tmpl.md", Intent: "lane b", Resources: Resources{Sets: []string{"b-set"}, Tags: []string{"canonical"}}, TopK: DefaultLaneTopK},
+		{ID: "c", Enabled: false, Template: "canonical-c.tmpl.md", Intent: "lane c", Resources: Resources{Sets: []string{}, Tags: []string{"c-tag"}}, TopK: DefaultLaneTopK},
+		{ID: "d", Enabled: true, Template: "system-d.tmpl.md", Intent: "lane d", Resources: Resources{Sets: []string{"d-set"}, Tags: []string{"system"}}, TopK: DefaultLaneTopK},
 	}
 	if !sameLanes(registry.Lanes, want) {
 		t.Errorf("Lanes: want overlay order and fields %+v, got %+v", want, registry.Lanes)
+	}
+}
+
+// TestLoad_DefaultTopK verifies a lane declared without topK loads with
+// DefaultLaneTopK rather than the YAML zero value, while a declared positive
+// topK passes through untouched.
+func TestLoad_DefaultTopK(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeLaneYAML(t, canonicalLanePath(repoRoot), `
+lanes:
+  - id: no-topk
+    enabled: true
+    template: no-topk.tmpl.md
+    intent: lane without declared topK
+    resources: {sets: [], tags: []}
+  - id: declared-topk
+    enabled: true
+    template: declared-topk.tmpl.md
+    intent: lane with declared topK
+    resources: {sets: [], tags: []}
+    topK: 5
+`)
+
+	registry, err := Load(repoRoot, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []Lane{
+		{ID: "no-topk", Enabled: true, Template: "no-topk.tmpl.md", Intent: "lane without declared topK", Resources: Resources{Sets: []string{}, Tags: []string{}}, TopK: DefaultLaneTopK},
+		{ID: "declared-topk", Enabled: true, Template: "declared-topk.tmpl.md", Intent: "lane with declared topK", Resources: Resources{Sets: []string{}, Tags: []string{}}, TopK: 5},
+	}
+	if !sameLanes(registry.Lanes, want) {
+		t.Errorf("Lanes: want default and declared topK %+v, got %+v", want, registry.Lanes)
 	}
 }

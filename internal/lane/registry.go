@@ -27,6 +27,13 @@ type fileResources struct {
 	Tags []string `yaml:"tags"`
 }
 
+// DefaultLaneTopK is the retrieval TopK applied when a lane declaration
+// omits topK (or declares it as 0/negative). topK is optional in
+// lanes.yaml, but the rag retriever treats TopK <= 0 as "return nothing" —
+// without this default, an out-of-the-box lane with no declared topK would
+// silently retrieve zero chunks instead of using a sane default.
+const DefaultLaneTopK = 8
+
 // Resources selects resource sets by explicit name and by tag.
 type Resources struct {
 	Sets []string
@@ -136,6 +143,10 @@ func missingFieldError(id, field string) error {
 func convertLanes(declarations []fileLane) []Lane {
 	lanes := make([]Lane, 0, len(declarations))
 	for _, declaration := range declarations {
+		topK := declaration.TopK
+		if topK <= 0 {
+			topK = DefaultLaneTopK
+		}
 		lanes = append(lanes, Lane{
 			ID:       declaration.ID,
 			Enabled:  *declaration.Enabled,
@@ -145,7 +156,7 @@ func convertLanes(declarations []fileLane) []Lane {
 				Sets: declaration.Resources.Sets,
 				Tags: declaration.Resources.Tags,
 			},
-			TopK:  declaration.TopK,
+			TopK:  topK,
 			Model: declaration.Model,
 		})
 	}
