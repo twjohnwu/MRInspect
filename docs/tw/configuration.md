@@ -1,0 +1,98 @@
+# 設定
+
+要選哪個 AI backend、要存哪些密鑰，以及 runner 會讀取的每一個環境變數。
+
+[English](../us/configuration.md)
+
+## AI provider
+
+兩個 runner 都支援三種 AI backend，用 `AI_PROVIDER` 選擇：
+
+| Provider | `AI_PROVIDER` 值 | 預設模型 | 金鑰變數 |
+|---|---|---|---|
+| Google Gemini | `gemini` _(預設)_ | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
+| Anthropic Claude | `anthropic` | `claude-3-5-sonnet-20241022` | `AI_PROVIDER_KEY` |
+| OpenAI | `openai` | `gpt-5` | `AI_PROVIDER_KEY` |
+
+> **注意：** superpowers 層一律使用 Anthropic（Claude Code CLI 的要求）。不管 mrinspect runner 用哪個 provider，都要設定 `ANTHROPIC_API_KEY`。
+
+## 必要密鑰
+
+使用前先在你的 CI/CD 密鑰存放區設定這些：
+
+| 變數 | 誰需要 | 說明 |
+|---|---|---|
+| `AI_PROVIDER_KEY` | mrinspect (Go + TypeScript) | 選定 AI provider 的 API 金鑰（Gemini / Anthropic / OpenAI） |
+| `ANTHROPIC_API_KEY` | superpowers | Anthropic API 金鑰（Claude Code CLI 一律使用 Anthropic） |
+| `GITLAB_TOKEN` | 所有層 | 具備 `api` 與 `write_repository` scope 的 GitLab token |
+
+**GitLab：** `Settings → CI/CD → Variables` → 每一項都勾選 **Protected** 與 **Masked**。
+
+**GitHub：** `Settings → Secrets and variables → Actions → New repository secret`。
+
+## 完整變數對照
+
+<details>
+<summary>mrinspect runner 變數（Go + TypeScript；僅 Go 適用者另行標註）</summary>
+
+| 變數 | 預設值 | 說明 |
+|---|---|---|
+| `AI_PROVIDER` | `gemini` | AI provider：`anthropic` \| `gemini` \| `openai` |
+| `AI_PROVIDER_KEY` | _(必填)_ | 選定 provider 的 API 金鑰 |
+| `GITLAB_TOKEN` | _(必填)_ | GitLab API token |
+| `GITLAB_API_BASE` | `https://gitlab.com/api/v4` | GitLab API base URL（自架時要設） |
+| `MRI_SERVICE_NAME` | `unknown` | 服務名稱——必須對應到 `projects/registry.yaml` 裡的某個 key |
+| `MRI_SERVICE_TYPE` | `backend` | 服務類型：`backend` \| `frontend` \| `ai` \| `iac` |
+| `MRI_REVIEW_MODE` | `single` | Go runner 的審查模式：`single` \| `multi`；`multi` 會跑設定好的 lane 平行展開 |
+| `MRI_LANE_CONCURRENCY` | `4` | Go runner 的最大平行 lane 數；必須是正整數，否則會記錄一則警告並改用 `4` |
+| `IS_SELF_REFLECTION` | `false` | 設為 `true` 會再跑一次 AI 驗證 |
+| `PROJECTS_DIR` | `./projects` | projects 目錄的路徑 |
+| `MRI_RAG_STORE` | _(未設定)_ | Go `path` 來源要用的明確 SQLite 路徑；把 `path` 放在來源鏈最前面即可讓它優先 |
+| `MRI_RAG_SOURCE` | `package,artifact,baked` | Go runner 的 store 來源鏈，以逗號分隔並依序嘗試 |
+| `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package 版本；設定明確版本可釘住 RAG store |
+| `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | full 模式的 normative 段落被裁掉時，Go runner 的處理方式：`warn` \| `fail` |
+| `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數 |
+| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | 覆寫 Anthropic 模型 |
+| `GEMINI_MODEL` | `gemini-2.5-pro` | 覆寫 Gemini 模型 |
+| `OPENAI_MODEL` | `gpt-5` | 覆寫 OpenAI 模型 |
+| `ANTHROPIC_MAX_TOKENS` | `4000` | Anthropic 的最大輸出 token 數 |
+| `GEMINI_MAX_TOKENS` | `8000` | Gemini 的最大輸出 token 數 |
+| `OPENAI_MAX_TOKENS` | `4000` | OpenAI 的最大輸出 token 數 |
+| `MRI_MODEL_LIMITS` | _(未設定)_ | Go runner：以逗號分隔的 `model:tokens` 項目，會疊在內建的 context-window 預設值之上；格式錯誤的項目（缺冒號、token 非正整數）會導致啟動失敗 |
+| `API_RETRY_ATTEMPTS` | `3` | API 重試次數 |
+| `API_RETRY_DELAY_MS` | `1000` | 初始重試延遲（毫秒） |
+| `API_MAX_RETRY_DELAY_MS` | `10000` | 最大重試延遲（指數退避的上限） |
+| `API_TIMEOUT_MS` | `30000` | HTTP 請求逾時（毫秒） |
+| `MAX_FILES_CHANGED` | `50` | MR 更動的檔案數超過此值就略過審查 |
+| `AI_RETRY_ATTEMPTS` | `3` | AI 輸出未通過驗證時的重試次數 |
+| `LOG_LEVEL` | `info` | 記錄層級：`debug` \| `info` |
+| `AI_REVIEW_METRICS_FILE` | `./mrinspect-metrics.json` | metrics JSON 的輸出路徑 |
+
+</details>
+
+<details>
+<summary>執行模式變數</summary>
+
+mrinspect 會依 `CI_PIPELINE_SOURCE` 自動判斷執行模式。
+
+**本地 MR 模式** — 由 `CI_PIPELINE_SOURCE == "merge_request_event"` 觸發（GitLab 自動設定）：
+
+| 變數 | 由誰設定 | 說明 |
+|---|---|---|
+| `CI_PROJECT_ID` | GitLab（自動） | 目前 repository 的 project ID |
+| `CI_MERGE_REQUEST_IID` | GitLab（自動） | 目前 repository 的 MR IID |
+| `CI_COMMIT_REF_NAME` | GitLab（自動） | 來源分支 |
+| `CI_MERGE_REQUEST_TARGET_BRANCH_NAME` | GitLab（自動） | 目標分支 |
+
+**跨 repo 觸發模式** — 由 `CI_PIPELINE_SOURCE == "trigger"` 觸發（由呼叫端 pipeline 傳入）：
+
+| 變數 | 說明 |
+|---|---|
+| `MRI_PROJECT_ID` | 被審查 repository 的 project ID |
+| `MRI_MR_IID` | 目標 repository 的 MR IID |
+| `MRI_SOURCE_BRANCH` | 該 MR 的來源分支 |
+| `MRI_TARGET_BRANCH` | 該 MR 的目標分支 |
+| `MRI_SERVICE_NAME` | 用來查找 profile 的服務名稱 |
+| `MRI_SERVICE_TYPE` | 服務類型覆寫值 |
+
+</details>

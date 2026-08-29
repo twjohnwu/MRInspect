@@ -1,0 +1,75 @@
+# 安裝與建置
+
+需要先裝什麼、各個 runner 怎麼建置，以及如何在自己的機器上跑一次審查。
+
+[English](../us/installation.md)
+
+## 前置需求
+
+- Go 1.23+（Go 執行檔需要）
+- Node.js 22+（TypeScript runner 需要）
+- Docker（Go 容器化部署需要）
+- Claude Code CLI — 只有 superpowers 層需要：`npm install -g @anthropic-ai/claude-code`
+
+## Go 執行檔
+
+```bash
+git clone https://github.com/twjohnwu/MRInspect
+cd mrinspect
+make build        # compiles to ./bin/mrinspect
+```
+
+## 建置並推送 Docker image
+
+```bash
+make docker       # builds mrinspect:latest locally
+
+# Tag and push to your registry:
+docker build -t registry.example.com/mrinspect:latest .
+docker push registry.example.com/mrinspect:latest
+```
+
+這個 Docker image 採多階段建置：Go 執行檔在 `golang:1.23-alpine` 裡編譯，再複製進 `alpine:3.20` 的 runtime image（約 15 MB）。`projects/` 目錄會被烤進 image 的 `/app/projects/`。
+
+## TypeScript runner
+
+```bash
+cd mrinspect
+npm install       # one-time dependency install (no build step)
+npm test          # run Jest test suite
+```
+
+## 在本機執行
+
+**Go 執行檔：**
+
+```bash
+AI_PROVIDER_KEY=your-key \
+GITLAB_TOKEN=your-token \
+CI_PROJECT_ID=123 \
+CI_MERGE_REQUEST_IID=45 \
+  ./bin/mrinspect
+```
+
+**TypeScript runner（不需要 Docker）：**
+
+```bash
+AI_PROVIDER_KEY=your-key \
+GITLAB_TOKEN=your-token \
+CI_PROJECT_ID=123 \
+CI_MERGE_REQUEST_IID=45 \
+  npx tsx review.ts
+```
+
+## `mrinspect index`
+
+用 `./bin/mrinspect index --out .rag/mrinspect-rag.sqlite` 建立 SQLite RAG store。`--dry-run` 只回報資源與檔案統計，不會寫出 store；`--check` 則驗證 `--out` 路徑上既有的 store，`--check` 與 `--dry-run` 不能一起用。預設輸出位置是 `.rag/mrinspect-rag.sqlite`。
+
+| 離開碼 | 意義 |
+|---|---|
+| `0` | 建索引、dry run 或 store 檢查成功 |
+| `1` | 設定、參數、資源載入或建索引失敗 |
+| `2` | 用法衝突，或沒有解析出任何 resource set |
+| `3` | 索引完成，但有一個以上的檔案失敗 |
+| `4` | 既有 store 檢查失敗 |
+| `5` | 選定的 backend 不支援建索引 |
