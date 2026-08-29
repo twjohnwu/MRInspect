@@ -84,9 +84,14 @@ stages:
 # ══════════════════════════════════════════════════════════════════════════════
 .mrinspect-go-review:
   stage: ai-review
+  variables:
+    MRINSPECT_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   # Image contains the compiled mrinspect binary and the projects/ directory.
-  # Build your own with: docker build -t registry.example.com/mrinspect:latest .
-  image: registry.example.com/mrinspect:latest
+  # Build your own with: docker build -t registry.example.com/mrinspect:${CI_COMMIT_SHORT_SHA} .
+  # To explicitly opt out of pinning, set MRINSPECT_IMAGE_TAG: "latest" (and publish :latest).
+  # Known limitation: pull_policy: always depends on the runner's allowed_pull_policies,
+  # which is outside this repo; the immutable tag is the primary mechanism, not pull policy.
+  image: registry.example.com/mrinspect:${MRINSPECT_IMAGE_TAG}
   script:
     - |
       # ── Debug: show available variables ───────────────────────────────────

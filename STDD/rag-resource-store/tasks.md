@@ -187,7 +187,7 @@ Test file: `internal/ragcmd/retention_test.go`
 本次發佈；保留份數設為 0 或負數視為設定錯誤，不得刪光所有版本。
 Verification command: `go test ./internal/ragcmd/ -run TestRetention -count=1`
 
-## T19 [ ] [MODIFY] `S-32` — template 以不可變 tag 指定 image
+## T19 [x] [MODIFY] `S-32` — template 以不可變 tag 指定 image
 
 Target: `templates/ai-review-template.yaml`
 理由：驗證手段是靜態檢查而非 Go 測試，但仍為可自動化的 CI 步驟，故不列為 [MANUAL]。
