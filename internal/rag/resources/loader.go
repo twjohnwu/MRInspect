@@ -58,17 +58,59 @@ func Load(repoRoot, system string) (Registry, error) {
 // registry's loaded sets, returning the matched sets and any selectors that
 // matched nothing (REQ-01 / S-03).
 func (r Registry) Resolve(selectors []string, tags []string) (matched []Set, unknown []string) {
-	for _, selector := range selectors {
-		found := false
-		for _, set := range r.Sets {
-			if set.Name == selector {
-				matched = append(matched, set)
-				found = true
-				break
+	// Preserve the original selector-only behavior exactly.
+	if len(tags) == 0 {
+		for _, selector := range selectors {
+			found := false
+			for _, set := range r.Sets {
+				if set.Name == selector {
+					matched = append(matched, set)
+					found = true
+					break
+				}
+			}
+			if !found {
+				unknown = append(unknown, selector)
 			}
 		}
-		if !found {
+		return matched, unknown
+	}
+
+	selectedNames := make(map[string]bool, len(selectors))
+	for _, selector := range selectors {
+		selectedNames[selector] = true
+	}
+	selectedTags := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		selectedTags[tag] = true
+	}
+
+	matchedNames := make(map[string]bool, len(r.Sets))
+	matchedTags := make(map[string]bool, len(tags))
+	for _, set := range r.Sets {
+		nameMatch := selectedNames[set.Name]
+		tagMatch := false
+		for _, tag := range set.Tags {
+			if selectedTags[tag] {
+				tagMatch = true
+				matchedTags[tag] = true
+			}
+		}
+		if nameMatch || tagMatch {
+			matched = append(matched, set)
+		}
+		if nameMatch {
+			matchedNames[set.Name] = true
+		}
+	}
+	for _, selector := range selectors {
+		if !matchedNames[selector] {
 			unknown = append(unknown, selector)
+		}
+	}
+	for _, tag := range tags {
+		if !matchedTags[tag] {
+			unknown = append(unknown, tag)
 		}
 	}
 	return matched, unknown

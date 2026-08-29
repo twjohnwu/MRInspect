@@ -214,7 +214,7 @@ Verification command: `docker build -t mrinspect:t21 . && docker run --rm --entr
 `expire_in` 為排程週期三倍。既有 `test` 與 `mrinspect` job 不得改動。
 Verification command: `git diff --stat .gitlab-ci.yml && grep -c 'rules:' .gitlab-ci.yml`
 
-## T23 [ ] [NEW] REQ-01 — `Resolve` 的 tag 選取（spec 覆蓋缺口）
+## T23 [x] [NEW] REQ-01 — `Resolve` 的 tag 選取（spec 覆蓋缺口）
 
 理由：無對應 `S-XX`——這正是缺口本身。REQ-01 正文說消費端「以 name 或 tag 引用」，
 但 spec 的 68 個 scenario 沒有任何一個斷言 tag 那一半；T03 交付的 `Resolve`
