@@ -54,7 +54,7 @@ Test file: `internal/lane/compose_test.go`
 資源集的 lane 看不到它。丟棄檢索結果的實作能通過 S-05/S-06/S-07，只有 S-35 擋得住。
 Verification command: `go test ./internal/lane/ -run TestCompose -count=1`
 
-## T06 [ ] [NEW] `S-13,S-14,S-15,S-16,S-40,S-42,S-43` — 解析
+## T06 [x] [NEW] `S-13,S-14,S-15,S-16,S-40,S-42,S-43` — 解析
 
 Test file: `internal/lane/parse_test.go`
 重點：四種雜訊形態都取出同一組 findings；契約未定義的欄位被忽略；缺 `title`/`rationale`
