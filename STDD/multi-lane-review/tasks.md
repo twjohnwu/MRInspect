@@ -230,7 +230,7 @@ Verification command: `go test -race ./internal/lane/ -run 'TestFanout_Concurren
 Test file: internal/ragwire/lane_resources_test.go（新建）
 Verification command: `go test ./internal/ragwire/ -run TestResolvingRetriever -count=1 -race`
 
-## T25 [ ] [MODIFY] 修復發現 F9 — ListNotes 頁數上限
+## T25 [x] [MODIFY] 修復發現 F9 — ListNotes 頁數上限
 
 Test file: internal/gitlab/client_test.go（追加）
 Verification command: `go test ./internal/gitlab/ -run TestListNotes_PageCap -count=1`

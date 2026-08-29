@@ -15,6 +15,8 @@ import (
 	"mrinspect/internal/logger"
 )
 
+const maxNoteListPages = 20
+
 type RetryConfig struct {
 	Attempts   int
 	DelayMs    int
@@ -89,7 +91,7 @@ func (c *Client) ListNotes(ctx context.Context, projectID, mrIID string) ([]Note
 	var notes []Note
 	nextPage := ""
 
-	for {
+	for pageCount := 1; ; pageCount++ {
 		requestPath := path + "?per_page=100"
 		if nextPage != "" {
 			requestPath += "&page=" + url.QueryEscape(nextPage)
@@ -123,6 +125,9 @@ func (c *Client) ListNotes(ctx context.Context, projectID, mrIID string) ([]Note
 		nextPage = resp.Header.Get("X-Next-Page")
 		if nextPage == "" {
 			return notes, nil
+		}
+		if pageCount >= maxNoteListPages {
+			return nil, fmt.Errorf("ListNotes: page cap of %d exceeded for endpoint %s", maxNoteListPages, path)
 		}
 	}
 }

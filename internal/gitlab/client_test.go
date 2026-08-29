@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -93,4 +94,29 @@ func newTestClient(apiBase string) *Client {
 			TimeoutMs: 1_000,
 		},
 	}, logger.New(slog.LevelError, ""))
+}
+
+func TestListNotes_PageCap(t *testing.T) {
+	const pageCap = 20
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Next-Page", "2")
+		_, _ = w.Write([]byte(`[{"id":11,"body":"note","author":{"username":"review-bot"}}]`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := client.ListNotes(context.Background(), "42", "7")
+	if err == nil {
+		t.Fatal("ListNotes() error: want page cap error, got nil")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "page") {
+		t.Fatalf("ListNotes() error: want page cap named, got %q", err)
+	}
+	if got := requests.Load(); got > pageCap+1 {
+		t.Fatalf("request count: want at most %d, got %d", pageCap+1, got)
+	}
 }
