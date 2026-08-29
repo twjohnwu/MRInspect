@@ -244,3 +244,8 @@ Verification command: `go test ./internal/lane/ -run TestCompose_ChunkSourceIDsR
 
 Test file: internal/lane/compose_test.go（追加）、internal/lane/fanout_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestCompose_BudgetCountsFullPromptOverhead|TestFanout_InvalidConcurrencyLogsFallback' -count=1`
+
+## T28 [x] [MODIFY] 修復複審 NEW-1b — citation 保留提供者 lane，驗證只對該 lane 的 chunks
+
+Test file: internal/lane/merge_test.go（追加）、internal/lane/render_test.go（追加）
+Verification command: `go test ./internal/lane/ -run 'TestMerge_CitationsKeepProvenance|TestRender_CitationVerifiedOnlyAgainstProvidingLane' -count=1`

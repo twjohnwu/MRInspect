@@ -320,3 +320,37 @@ func TestMerge_NormalizesFilePaths(t *testing.T) {
 		}
 	})
 }
+
+func TestMerge_CitationsKeepProvenance(t *testing.T) {
+	laneA := mergeTestFinding("lane A", SeverityMedium, "internal/auth.go", mergeTestLine(40), "security")
+	laneA.Citations = []Citation{{SourceID: "source-a", Label: "A"}}
+	laneB := mergeTestFinding("lane B", SeverityMedium, "internal/auth.go", mergeTestLine(42), "security")
+	laneB.Citations = []Citation{{SourceID: "source-b", Label: "B"}}
+
+	got := Merge(
+		[]string{"lane-a", "lane-b"},
+		[]LaneResult{
+			{LaneID: "lane-b", Findings: []Finding{laneB}},
+			{LaneID: "lane-a", Findings: []Finding{laneA}},
+		},
+	)
+
+	if len(got) != 1 {
+		t.Fatalf("Merge returned %d findings, want one cluster: %#v", len(got), got)
+	}
+	want := []struct {
+		citation Citation
+		laneID   string
+	}{
+		{citation: laneA.Citations[0], laneID: "lane-a"},
+		{citation: laneB.Citations[0], laneID: "lane-b"},
+	}
+	if len(got[0].Citations) != len(want) || len(got[0].CitationLanes) != len(want) {
+		t.Fatalf("merged citation provenance = (%#v, %v), want %d paired entries", got[0].Citations, got[0].CitationLanes, len(want))
+	}
+	for index := range want {
+		if got[0].Citations[index] != want[index].citation || got[0].CitationLanes[index] != want[index].laneID {
+			t.Errorf("citation %d provenance = (%#v, %q), want (%#v, %q)", index, got[0].Citations[index], got[0].CitationLanes[index], want[index].citation, want[index].laneID)
+		}
+	}
+}

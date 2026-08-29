@@ -125,8 +125,9 @@ func renderCitationSummary(finding MergedFinding, received map[string][]rag.Chun
 	}
 
 	citations := make([]string, 0, len(finding.Citations))
-	for _, citation := range finding.Citations {
-		location, verified := resolveCitation(citation.SourceID, finding.ReportedBy, received)
+	for index, citation := range finding.Citations {
+		laneID := citationLane(finding, index)
+		location, verified := resolveCitation(citation.SourceID, laneID, received)
 		if !verified {
 			location = valueOrDash(neutralize(citation.SourceID)) + " (unverified)"
 		}
@@ -138,18 +139,26 @@ func renderCitationSummary(finding MergedFinding, received map[string][]rag.Chun
 	return strings.Join(citations, "; ")
 }
 
-func resolveCitation(sourceID string, reportedBy []string, received map[string][]rag.Chunk) (string, bool) {
-	for _, laneID := range reportedBy {
-		for _, chunk := range received[laneID] {
-			if chunk.ID != sourceID {
-				continue
-			}
-			location := neutralize(chunk.Source)
-			if chunk.StartLine > 0 {
-				location = fmt.Sprintf("%s:%d", location, chunk.StartLine)
-			}
-			return location, true
+func citationLane(finding MergedFinding, index int) string {
+	if index < len(finding.CitationLanes) {
+		return finding.CitationLanes[index]
+	}
+	if len(finding.ReportedBy) == 1 {
+		return finding.ReportedBy[0]
+	}
+	return ""
+}
+
+func resolveCitation(sourceID, laneID string, received map[string][]rag.Chunk) (string, bool) {
+	for _, chunk := range received[laneID] {
+		if chunk.ID != sourceID {
+			continue
 		}
+		location := neutralize(chunk.Source)
+		if chunk.StartLine > 0 {
+			location = fmt.Sprintf("%s:%d", location, chunk.StartLine)
+		}
+		return location, true
 	}
 	return "", false
 }

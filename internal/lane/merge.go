@@ -10,7 +10,8 @@ import (
 // Citations with the contributions from all cluster members.
 type MergedFinding struct {
 	Finding
-	ReportedBy []string `json:"reportedBy"`
+	ReportedBy    []string `json:"reportedBy"`
+	CitationLanes []string `json:"citationLanes,omitempty"`
 }
 
 // Merge combines findings according to lane declaration order.
@@ -162,7 +163,8 @@ func mergeCluster(cluster []mergeMember) mergeOutput {
 	representative := cluster[0]
 	finding := representative.finding
 	finding.Severity = maximumSeverity(cluster)
-	finding.Citations = mergeCitations(cluster)
+	var citationLanes []string
+	finding.Citations, citationLanes = mergeCitations(cluster)
 
 	reportedBy := make([]string, 0, len(cluster))
 	seenLanes := make(map[string]struct{}, len(cluster))
@@ -176,8 +178,9 @@ func mergeCluster(cluster []mergeMember) mergeOutput {
 
 	return mergeOutput{
 		finding: MergedFinding{
-			Finding:    finding,
-			ReportedBy: reportedBy,
+			Finding:       finding,
+			ReportedBy:    reportedBy,
+			CitationLanes: citationLanes,
 		},
 		representativePosition: representative.lanePosition,
 	}
@@ -193,20 +196,24 @@ func maximumSeverity(cluster []mergeMember) Severity {
 	return maximum
 }
 
-func mergeCitations(cluster []mergeMember) []Citation {
+func mergeCitations(cluster []mergeMember) ([]Citation, []string) {
 	count := 0
 	for _, member := range cluster {
 		count += len(member.finding.Citations)
 	}
 	if count == 0 {
-		return nil
+		return nil, nil
 	}
 
 	citations := make([]Citation, 0, count)
+	citationLanes := make([]string, 0, count)
 	for _, member := range cluster {
 		citations = append(citations, member.finding.Citations...)
+		for range member.finding.Citations {
+			citationLanes = append(citationLanes, member.laneID)
+		}
 	}
-	return citations
+	return citations, citationLanes
 }
 
 func severityRank(severity Severity) int {

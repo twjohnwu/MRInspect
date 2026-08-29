@@ -376,3 +376,28 @@ func TestRender_NeutralizesBackslash(t *testing.T) {
 		t.Errorf("backslash row has %d raw pipe delimiters, want control row count %d", got, want)
 	}
 }
+
+func TestRender_CitationVerifiedOnlyAgainstProvidingLane(t *testing.T) {
+	finding := renderTestFinding("lane-scoped citations", SeverityMedium, "lane-a")
+	finding.ReportedBy = []string{"lane-a", "lane-b"}
+	finding.Citations = []Citation{
+		{SourceID: "b-chunk-1", Label: "provided by lane A"},
+		{SourceID: "b-chunk-1", Label: "provided by lane B"},
+	}
+	finding.CitationLanes = []string{"lane-a", "lane-b"}
+	input := renderTestInput([]MergedFinding{finding})
+	input.Lanes = []RenderLane{renderTestLane("lane-a"), renderTestLane("lane-b")}
+	input.ReceivedChunks = map[string][]rag.Chunk{
+		"lane-a": {},
+		"lane-b": {{ID: "b-chunk-1", Source: "standards/lane-b.md", StartLine: 23}},
+	}
+
+	rendered := Render(input)
+
+	if !strings.Contains(rendered, "b-chunk-1 (unverified) — provided by lane A") {
+		t.Errorf("lane-a citation matched another lane's chunk: %q", rendered)
+	}
+	if !strings.Contains(rendered, "standards/lane-b.md:23 — provided by lane B") {
+		t.Errorf("lane-b citation did not verify against its own chunk: %q", rendered)
+	}
+}
