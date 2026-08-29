@@ -165,6 +165,23 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// LoadForIndex loads only the configuration required by mrinspect index
+// (REQ-05). Unlike Load, it must not require review credentials.
+func LoadForIndex() (Config, error) {
+	projectsDir := getEnv("PROJECTS_DIR", "./projects")
+	return Config{
+		Service: ServiceConfig{
+			Name: getEnv("MRI_SERVICE_NAME", "unknown"),
+			Type: getEnv("MRI_SERVICE_TYPE", "backend"),
+		},
+		Projects: ProjectsConfig{
+			Directory:    projectsDir,
+			RegistryFile: projectsDir + "/registry.yaml",
+			SharedDir:    projectsDir + "/_shared",
+		},
+	}, nil
+}
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

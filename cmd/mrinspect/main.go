@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"log/slog"
 	"os"
 
@@ -14,12 +16,34 @@ import (
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
+	"mrinspect/internal/ragcmd"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/validator"
 )
 
 func main() {
 	ctx := context.Background()
+	path, args := ragcmd.Dispatch(os.Args[1:])
+	if path == ragcmd.PathIndex {
+		cfg, err := config.LoadForIndex()
+		if err != nil {
+			slog.Error("index configuration error", "error", err)
+			os.Exit(1)
+		}
+		opts, err := ragcmd.ParseOptions(args, cfg.Service.Name, os.Stdout)
+		if err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				os.Exit(0)
+			}
+			slog.Error("index arguments error", "error", err)
+			os.Exit(1)
+		}
+		exitCode, _, err := ragcmd.RunIndex(ctx, opts)
+		if err != nil {
+			slog.Error("index error", "error", err)
+		}
+		os.Exit(exitCode)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

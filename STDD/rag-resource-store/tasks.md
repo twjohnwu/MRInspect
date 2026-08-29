@@ -165,7 +165,7 @@ Test file: `internal/reviewer/reviewer_test.go`
 以 spy 斷言 review 路徑呼叫索引次數為 0；未固定版本時 footer 標示，已固定時不標示。
 Verification command: `go test ./internal/reviewer/ -run 'TestRun|TestPostReview' -count=1`
 
-## T16 [ ] [MODIFY] `S-18,S-20,S-21` — index 子命令（`cmd/mrinspect/main.go`）
+## T16 [x] [MODIFY] `S-18,S-20,S-21` — index 子命令（`cmd/mrinspect/main.go`）
 
 Test file: `internal/ragcmd/index_test.go`
 重點：`main()` 的子命令 dispatch 必須早於 `config.Load()`——現況 `main.go:24` 首行即
