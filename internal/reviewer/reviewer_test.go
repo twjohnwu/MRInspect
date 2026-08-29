@@ -16,6 +16,7 @@ import (
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
+	"mrinspect/internal/diffbudget"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/lane"
@@ -968,10 +969,10 @@ func (v configurableValidator) ValidateReviewContent(content string) error {
 	return v.validateReviewContent(content)
 }
 func (configurableValidator) SanitizeInput(input string) string { return input }
-func (configurableValidator) GetProjectID() string               { return "1" }
-func (configurableValidator) GetMRIID() string                   { return "7" }
-func (configurableValidator) GetSourceBranch() string            { return "feature" }
-func (configurableValidator) GetTargetBranch() string            { return "main" }
+func (configurableValidator) GetProjectID() string              { return "1" }
+func (configurableValidator) GetMRIID() string                  { return "7" }
+func (configurableValidator) GetSourceBranch() string           { return "feature" }
+func (configurableValidator) GetTargetBranch() string           { return "main" }
 
 // newForensicsFixture builds a reviewer with a configurable provider and
 // validator plus a WARN-level log recorder, for the validation-forensics
@@ -1110,7 +1111,8 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 
 	t.Run("valid reflection is adopted", func(t *testing.T) {
 		updated := "## Code Review\n## Findings\nnew finding\n## Verdict\nchanges requested"
-		provider := &sequencedProvider{responses: []string{updated}}
+		preambled := "Sure — here's the improved review:\n\n" + updated
+		provider := &sequencedProvider{responses: []string{preambled}}
 		r, _ := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
 
 		got := r.selfReflect(context.Background(), original)
@@ -1118,6 +1120,67 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 			t.Errorf("selfReflect() = %q, want the valid reflection adopted (%q)", got, updated)
 		}
 	})
+}
+
+type erroringChangesGitLab struct {
+	*fakeGitLab
+	err error
+}
+
+func (g *erroringChangesGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
+	return gitlab.MRChangesResponse{}, g.err
+}
+
+func TestRun_GetMRChangesFailureDependsOnReviewMode(t *testing.T) {
+	changesErr := errors.New("changes API unavailable")
+
+	t.Run("single mode continues with local diff", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_MODE", "single")
+		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		gl := &erroringChangesGitLab{fakeGitLab: &fakeGitLab{}, err: changesErr}
+		r.gitlab = gl
+
+		r.Run(context.Background())
+
+		note := gl.lastNote(t)
+		if !strings.Contains(note, ReviewNoteMarker) || !strings.Contains(note, "## Code Review") {
+			t.Errorf("single-mode review did not complete with the local diff: %q", note)
+		}
+	})
+
+	t.Run("multi mode reports the changes API failure", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_MODE", "multi")
+		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		gl := &erroringChangesGitLab{fakeGitLab: &fakeGitLab{}, err: changesErr}
+		r.gitlab = gl
+
+		r.Run(context.Background())
+
+		note := gl.lastNote(t)
+		if !strings.Contains(note, "fetchDiff") || !strings.Contains(note, changesErr.Error()) {
+			t.Errorf("multi-mode changes failure was not visibly posted: %q", note)
+		}
+		if strings.Contains(note, ReviewNoteMarker) {
+			t.Errorf("multi-mode changes failure posted a normal review: %q", note)
+		}
+	})
+}
+
+func TestSplitDiffTrailer_UsesFinalMarker(t *testing.T) {
+	embedded := "diff --git a/internal/diffbudget/diffbudget.go b/internal/diffbudget/diffbudget.go\n" +
+		"@@ -1 +1 @@\n" +
+		"+embedded source text\n\n<!-- mrinspect:diff-reduction -->\n" +
+		"+this is still part of the reviewed diff\n"
+	realTrailer := diffbudget.Trailer([]diffbudget.DroppedFile{{Path: "large.go", Reason: diffbudget.ReasonSizeBudget}})
+
+	diffText, trailerText := splitDiffTrailer(embedded + realTrailer)
+
+	if diffText != embedded {
+		t.Errorf("diff text split at embedded marker:\n got %q\nwant %q", diffText, embedded)
+	}
+	if trailerText != realTrailer {
+		t.Errorf("trailer = %q, want final appended trailer %q", trailerText, realTrailer)
+	}
 }
 
 type changesGitLab struct {
@@ -1168,12 +1231,13 @@ func TestRun_DroppedFilesDisclosedInFooter(t *testing.T) {
 		fakeErrorHandler{},
 		logger.New(slog.LevelError, t.TempDir()+"/metrics.json"),
 	)
-	// PromptBudgetForModel first applies floor(50*0.8) = 40; Reduce then
-	// applies the default 0.85 share, leaving about 34 tokens. The several-
-	// hundred-byte big diff safely exceeds that while the tiny diff survives.
+	// PromptBudgetForModel first applies floor(250*0.8) = 200; Reduce then
+	// applies the default 0.85 share, leaving about 170 tokens. The several-
+	// hundred-token big diff exceeds that while the rendered tiny diff plus
+	// its required reduction trailer survives.
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
 		RepoRoot:    root,
-		ModelLimits: map[string]int{"gemini-test": 50},
+		ModelLimits: map[string]int{"gemini-test": 250},
 		Fanout: func(ctx context.Context, input lane.FanoutInput) (lane.FanoutResult, error) {
 			input.ModelLimits = map[string]int{"gemini-test": 1_000_000}
 			return lane.Fanout(ctx, input)

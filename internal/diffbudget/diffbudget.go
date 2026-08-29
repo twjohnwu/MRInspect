@@ -42,6 +42,11 @@ type WarningLogger interface {
 	Warn(string, ...any)
 }
 
+// RenderFunc renders the exact artifact produced for a set of kept and
+// dropped files. It lets callers account for headers and the disclosure
+// trailer in addition to each GitLab change's Diff body.
+type RenderFunc func(kept []gitlab.Change, dropped []DroppedFile) (string, error)
+
 // Options configures Reduce.
 type Options struct {
 	// ModelBudget is the caller-supplied per-model token budget (from
@@ -55,6 +60,12 @@ type Options struct {
 	// NonReviewablePatterns overrides DefaultNonReviewablePatterns when non-nil.
 	NonReviewablePatterns []string
 	Logger                WarningLogger
+	// InitialDiff is the caller's pass-through artifact before any files are
+	// dropped. When empty, Reduce preserves its legacy API-body accounting.
+	InitialDiff string
+	// Render, when non-nil, renders the exact post-reduction artifact for fit
+	// checks. Its zero value preserves the legacy API-body accounting.
+	Render RenderFunc
 }
 
 // Reduce drops whole changed files until the diff fits both configured budgets.
@@ -67,7 +78,7 @@ func Reduce(changes []gitlab.Change, opts Options) ([]gitlab.Change, []DroppedFi
 	share := 0.85
 	if raw := os.Getenv("MRI_DIFF_PROMPT_SHARE"); raw != "" {
 		parsed, err := strconv.ParseFloat(raw, 64)
-		if err != nil || parsed <= 0 {
+		if err != nil || parsed <= 0 || parsed > 1 {
 			if opts.Logger != nil {
 				opts.Logger.Warn(fmt.Sprintf("invalid MRI_DIFF_PROMPT_SHARE %q, using default 0.85", raw))
 			}
@@ -77,19 +88,44 @@ func Reduce(changes []gitlab.Change, opts Options) ([]gitlab.Change, []DroppedFi
 	}
 	budget := int(float64(opts.ModelBudget) * share)
 
-	totalTokens := 0
-	totalBytes := 0
-	for _, change := range changes {
-		totalTokens += chunk.TokenEst(change.Diff)
-		totalBytes += len(change.Diff)
+	apiTokens, apiBytes := changeMetrics(changes)
+	initialFits := fits(apiTokens, apiBytes, budget, opts.MaxDiffSizeKB)
+	// initialDiffTokens/initialDiffBytes measure the caller's pass-through
+	// artifact (the local go-git diff, when nothing has been dropped yet).
+	// It carries per-file diff headers the API-body sum above does not, so
+	// it can fail to fit even when the API sum says it does — and vice
+	// versa, since it is a single fixed string unrelated to individual
+	// change sizes.
+	initialDiffTokens, initialDiffBytes := 0, 0
+	if opts.InitialDiff != "" {
+		initialDiffTokens = chunk.TokenEst(opts.InitialDiff)
+		initialDiffBytes = len(opts.InitialDiff)
+		initialFits = initialFits && fits(initialDiffTokens, initialDiffBytes, budget, opts.MaxDiffSizeKB)
 	}
-	if fits(totalTokens, totalBytes, budget, opts.MaxDiffSizeKB) {
+	if initialFits {
 		return changes, nil, nil
 	}
 
-	kept := make([]gitlab.Change, 0, len(changes))
+	// Seed the reduction loop with whichever measurement is more
+	// restrictive (api-body sum vs. the pass-through artifact): fits() is
+	// monotonic in tokens/bytes, so if either measurement alone would fail
+	// to fit, the max of the two also fails to fit and the loop below is
+	// guaranteed to run at least one iteration. Every iteration after the
+	// first re-measures the actual rendered kept form via renderedMetrics,
+	// so this seed only decides whether reduction starts, never how much
+	// is ultimately dropped.
+	totalTokens, totalBytes := apiTokens, apiBytes
+	if initialDiffTokens > totalTokens {
+		totalTokens = initialDiffTokens
+	}
+	if initialDiffBytes > totalBytes {
+		totalBytes = initialDiffBytes
+	}
+
+	kept := append([]gitlab.Change(nil), changes...)
 	dropped := make([]DroppedFile, 0)
-	for _, change := range changes {
+	for index := 0; index < len(kept) && !fits(totalTokens, totalBytes, budget, opts.MaxDiffSizeKB); {
+		change := kept[index]
 		tokens := chunk.TokenEst(change.Diff)
 		if matchesAnyPath(change, patterns) {
 			dropped = append(dropped, DroppedFile{
@@ -97,11 +133,15 @@ func Reduce(changes []gitlab.Change, opts Options) ([]gitlab.Change, []DroppedFi
 				Reason:   ReasonNonReviewable,
 				TokenEst: tokens,
 			})
-			totalTokens -= tokens
-			totalBytes -= len(change.Diff)
+			kept = append(kept[:index], kept[index+1:]...)
+			var err error
+			totalTokens, totalBytes, err = renderedMetrics(kept, dropped, opts)
+			if err != nil {
+				return kept, dropped, fmt.Errorf("diffbudget: render reduced diff: %w", err)
+			}
 			continue
 		}
-		kept = append(kept, change)
+		index++
 	}
 
 	for !fits(totalTokens, totalBytes, budget, opts.MaxDiffSizeKB) && len(kept) > 0 {
@@ -118,15 +158,40 @@ func Reduce(changes []gitlab.Change, opts Options) ([]gitlab.Change, []DroppedFi
 			Reason:   ReasonSizeBudget,
 			TokenEst: tokens,
 		})
-		totalTokens -= tokens
-		totalBytes -= len(change.Diff)
 		kept = append(kept[:largest], kept[largest+1:]...)
+		var renderErr error
+		totalTokens, totalBytes, renderErr = renderedMetrics(kept, dropped, opts)
+		if renderErr != nil {
+			return kept, dropped, fmt.Errorf("diffbudget: render reduced diff: %w", renderErr)
+		}
 	}
 
 	if !fits(totalTokens, totalBytes, budget, opts.MaxDiffSizeKB) {
 		return kept, dropped, fmt.Errorf("diffbudget: diff cannot fit budget even after dropping all reducible files (tokens=%d, budget=%d)", totalTokens, budget)
 	}
 	return kept, dropped, nil
+}
+
+func renderedMetrics(kept []gitlab.Change, dropped []DroppedFile, opts Options) (int, int, error) {
+	if opts.Render == nil {
+		tokens, bytes := changeMetrics(kept)
+		return tokens, bytes, nil
+	}
+	rendered, err := opts.Render(kept, dropped)
+	if err != nil {
+		return 0, 0, err
+	}
+	return chunk.TokenEst(rendered), len(rendered), nil
+}
+
+func changeMetrics(changes []gitlab.Change) (int, int) {
+	totalTokens := 0
+	totalBytes := 0
+	for _, change := range changes {
+		totalTokens += chunk.TokenEst(change.Diff)
+		totalBytes += len(change.Diff)
+	}
+	return totalTokens, totalBytes
 }
 
 func fits(tokens, bytes, budget int, maxDiffSizeKB float64) bool {

@@ -112,8 +112,10 @@ export class MRReviewer {
         console.log('[mrinspect] self-reflection: review validated');
         return review;
       }
+      const cleaned = this.cleanResponse(result);
+      this.validator.validateContent(cleaned);
       console.log('[mrinspect] self-reflection: review updated');
-      return result;
+      return cleaned;
     } catch (err) {
       console.warn('[mrinspect] self-reflection failed, using original review:', err);
       return review;

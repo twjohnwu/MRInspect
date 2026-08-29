@@ -5,9 +5,18 @@ import (
 	"strings"
 	"testing"
 
+	"mrinspect/internal/diff"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/rag/chunk"
 )
+
+type warningRecorder struct {
+	messages []string
+}
+
+func (r *warningRecorder) Warn(message string, _ ...any) {
+	r.messages = append(r.messages, message)
+}
 
 func TestReduce_PassThroughUnderBudget(t *testing.T) {
 	t.Setenv("MRI_DIFF_PROMPT_SHARE", "")
@@ -112,5 +121,100 @@ func TestReduce_InvalidShareFallsBack(t *testing.T) {
 	}
 	if len(dropped) != 1 || dropped[0].Path != "src/borderline.go" || dropped[0].Reason != ReasonSizeBudget {
 		t.Fatalf("dropped = %#v, want borderline file dropped for %q", dropped, ReasonSizeBudget)
+	}
+}
+
+func TestReduce_ShareAboveOneFallsBackAndWarns(t *testing.T) {
+	t.Setenv("MRI_DIFF_PROMPT_SHARE", "85")
+	diffText := strings.Repeat("x", 360)
+	log := &warningRecorder{}
+
+	kept, dropped, err := Reduce([]gitlab.Change{{NewPath: "src/borderline.go", Diff: diffText}}, Options{
+		ModelBudget:   100,
+		MaxDiffSizeKB: 300,
+		Logger:        log,
+	})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(kept) != 0 || len(dropped) != 1 {
+		t.Fatalf("kept = %#v, dropped = %#v; want file dropped under 0.85 fallback", kept, dropped)
+	}
+	wantWarning := `invalid MRI_DIFF_PROMPT_SHARE "85", using default 0.85`
+	if len(log.messages) != 1 || log.messages[0] != wantWarning {
+		t.Fatalf("warnings = %#v, want [%q]", log.messages, wantWarning)
+	}
+}
+
+func TestReduce_RenderedInitialDiffTriggersTokenReduction(t *testing.T) {
+	t.Setenv("MRI_DIFF_PROMPT_SHARE", "1")
+	changes := []gitlab.Change{
+		{OldPath: "a.go", NewPath: "a.go", Diff: "x"},
+		{OldPath: "b.go", NewPath: "b.go", Diff: "y"},
+	}
+	initialDiff := strings.Repeat("local-render-overhead ", 20)
+	render := func(kept []gitlab.Change, dropped []DroppedFile) (string, error) {
+		rendered, err := diff.ConvertChangesToDiff(kept)
+		return rendered + Trailer(dropped), err
+	}
+
+	kept, dropped, err := Reduce(changes, Options{
+		ModelBudget:   100,
+		MaxDiffSizeKB: 300,
+		InitialDiff:   initialDiff,
+		Render:        render,
+	})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(dropped) == 0 {
+		t.Fatal("Reduce dropped no files even though the rendered initial diff exceeds the token budget")
+	}
+	finalDiff, err := render(kept, dropped)
+	if err != nil {
+		t.Fatalf("render final diff: %v", err)
+	}
+	if got := chunk.TokenEst(finalDiff); got > 100 {
+		t.Fatalf("final rendered TokenEst = %d, want <= 100; diff = %q", got, finalDiff)
+	}
+}
+
+func TestReduce_PostReductionRenderedDiffFitsKBBackstop(t *testing.T) {
+	t.Setenv("MRI_DIFF_PROMPT_SHARE", "1")
+	changes := []gitlab.Change{
+		{OldPath: strings.Repeat("a", 300) + ".go", NewPath: strings.Repeat("a", 300) + ".go", Diff: "x"},
+		{OldPath: "b.go", NewPath: "b.go", Diff: "y"},
+	}
+	render := func(kept []gitlab.Change, dropped []DroppedFile) (string, error) {
+		rendered, err := diff.ConvertChangesToDiff(kept)
+		return rendered + Trailer(dropped), err
+	}
+	initialDiff, err := render(changes, nil)
+	if err != nil {
+		t.Fatalf("render initial diff: %v", err)
+	}
+	const maxKB = 0.55
+	if float64(len(initialDiff))/1024 <= maxKB {
+		t.Fatalf("fixture initial size = %.3f KB, want > %.3f KB", float64(len(initialDiff))/1024, maxKB)
+	}
+
+	kept, dropped, err := Reduce(changes, Options{
+		ModelBudget:   10_000,
+		MaxDiffSizeKB: maxKB,
+		InitialDiff:   initialDiff,
+		Render:        render,
+	})
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(dropped) == 0 {
+		t.Fatal("Reduce dropped no files even though rendered headers exceed the KB backstop")
+	}
+	finalDiff, err := render(kept, dropped)
+	if err != nil {
+		t.Fatalf("render final diff: %v", err)
+	}
+	if gotKB := float64(len(finalDiff)) / 1024; gotKB > maxKB {
+		t.Fatalf("final rendered size = %.3f KB, want <= %.3f KB; diff = %q", gotKB, maxKB, finalDiff)
 	}
 }

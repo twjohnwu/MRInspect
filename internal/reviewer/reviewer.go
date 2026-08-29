@@ -420,10 +420,25 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 
 	changesResp, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
 	if err != nil {
-		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
+		if os.Getenv("MRI_REVIEW_MODE") == "multi" {
+			return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
+		}
+		r.log.Warn("GetMRChanges failed in single mode; skipping diff-size reduction", "error", err.Error())
+		result, validateErr := r.validator.ValidateDiff(codeDiff)
+		if validateErr != nil {
+			return fetchedDiff{}, fmt.Errorf("fetchDiff: validate: %w", validateErr)
+		}
+		dur := time.Since(start).Milliseconds()
+		r.log.LogStep("fetchDiff", &dur, map[string]any{
+			"sizeKB":         result.SizeKB,
+			"filesChanged":   result.FilesChanged,
+			"supportedFiles": result.SupportedFiles,
+			"droppedFiles":   0,
+		})
+		return fetchedDiff{diff: codeDiff}, nil
 	}
 
-	kept, dropped, err := r.reduceDiff(changesResp.Changes)
+	kept, dropped, err := r.reduceDiff(codeDiff, changesResp.Changes)
 	if err != nil {
 		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
 	}
@@ -460,7 +475,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 // reduction entirely and relies on the existing ValidateDiff KB backstop,
 // so an unconfigured model cannot turn this new stage into a new class of
 // failure for setups that worked before it existed.
-func (r *MRInspectReviewer) reduceDiff(changes []gitlab.Change) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
+func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
 	limits, err := prompt.ModelLimitsFromEnv()
 	if err != nil {
 		r.log.Warn("invalid model limits configuration; using defaults", "error", err.Error())
@@ -485,6 +500,11 @@ func (r *MRInspectReviewer) reduceDiff(changes []gitlab.Change) ([]gitlab.Change
 		ModelBudget:   budget,
 		MaxDiffSizeKB: r.cfg.Validation.MaxDiffSizeKB,
 		Logger:        r.log,
+		InitialDiff:   codeDiff,
+		Render: func(kept []gitlab.Change, dropped []diffbudget.DroppedFile) (string, error) {
+			rendered, renderErr := diff.ConvertChangesToDiff(kept)
+			return rendered + diffbudget.Trailer(dropped), renderErr
+		},
 	})
 }
 
@@ -498,7 +518,7 @@ const diffReductionMarker = "<!-- mrinspect:diff-reduction -->"
 // them as distinct sections instead of double-counting the trailer as diff
 // content.
 func splitDiffTrailer(codeDiff string) (diffText, trailerText string) {
-	if idx := strings.Index(codeDiff, "\n\n"+diffReductionMarker); idx >= 0 {
+	if idx := strings.LastIndex(codeDiff, "\n\n"+diffReductionMarker); idx >= 0 {
 		return codeDiff[:idx], codeDiff[idx:]
 	}
 	return codeDiff, ""
@@ -708,7 +728,7 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 	}
 
 	r.log.Info("self-reflection: review updated")
-	return result
+	return cleaned
 }
 
 func (r *MRInspectReviewer) postReview(ctx context.Context, content string) error {
