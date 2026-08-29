@@ -45,7 +45,7 @@ Test file: `internal/lane/terms_test.go`
 所有 lane 共用同一組 Terms。`Terms: nil` 會讓 BM25 回空，本 task 是唯一防線。
 Verification command: `go test ./internal/lane/ -run TestTerms -count=1`
 
-## T05 [ ] [NEW] `S-05,S-06,S-07,S-35` — 每 lane 的 prompt 組裝
+## T05 [x] [NEW] `S-05,S-06,S-07,S-35` — 每 lane 的 prompt 組裝
 
 Test file: `internal/lane/compose_test.go`
 重點：每個 `retrieval` set 各一次 `Retrieve` 且 `Intent` 正確；空 `resources` 完全不呼叫
