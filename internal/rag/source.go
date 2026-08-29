@@ -34,6 +34,9 @@ type StoreCandidate struct {
 	PublisherProjectID string
 	BuiltAt            string
 	Version            string
+	// Cleanup releases a source-owned local candidate. It is nil for files the
+	// resolver does not own, including path and baked sources.
+	Cleanup func() error
 	// Local identifies candidates supplied by REQ-12's path and baked names.
 	// Those files are not published stores, so publisher allowlisting does not
 	// apply to them.
@@ -54,6 +57,8 @@ type StoreResolution struct {
 	BuiltAt    string
 	Version    string
 	Degraded   []DegradedEntry
+	// Cleanup releases the winning source-owned local file, if any.
+	Cleanup func() error
 }
 
 // FileReader reads downloaded store bytes for pre-SQLite digest verification.
@@ -169,11 +174,13 @@ func ResolveStore(ctx context.Context, config ResolverConfig) (StoreResolution, 
 			// local provenance. This also keeps test fixtures registered under the
 			// REQ-12 local names on the same path as production sources.
 			candidate.Local = true
+			candidate.Cleanup = nil
 		}
 		if err == nil {
 			err = validateCandidate(totalCtx, candidate, config)
 		}
 		if err != nil {
+			err = cleanupCandidate(candidate, err)
 			resolution.Degraded = append(resolution.Degraded, DegradedEntry{
 				Source: named.name, StatusCode: statusCode(err), Err: err,
 			})
@@ -183,6 +190,7 @@ func ResolveStore(ctx context.Context, config ResolverConfig) (StoreResolution, 
 		resolution.SourceName = named.name
 		resolution.BuiltAt = candidate.BuiltAt
 		resolution.Version = candidate.Version
+		resolution.Cleanup = candidate.Cleanup
 		return resolution, nil
 	}
 	return resolution, fmt.Errorf("resolve store: no valid source (%d degraded)", len(resolution.Degraded))
@@ -259,12 +267,22 @@ func resolveCandidate(ctx context.Context, source Source, request SourceRequest,
 	defer cancel()
 	candidate, err := source.Resolve(sourceCtx, request)
 	if err != nil {
-		return StoreCandidate{}, err
+		return StoreCandidate{}, cleanupCandidate(candidate, err)
 	}
 	if err := sourceCtx.Err(); err != nil {
-		return StoreCandidate{}, err
+		return StoreCandidate{}, cleanupCandidate(candidate, err)
 	}
 	return candidate, nil
+}
+
+func cleanupCandidate(candidate StoreCandidate, cause error) error {
+	if candidate.Cleanup == nil {
+		return cause
+	}
+	if err := candidate.Cleanup(); err != nil {
+		return errors.Join(cause, fmt.Errorf("cleanup candidate: %w", err))
+	}
+	return cause
 }
 
 func validateCandidate(ctx context.Context, candidate StoreCandidate, config ResolverConfig) error {

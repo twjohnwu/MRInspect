@@ -2,8 +2,10 @@ package ragwire
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/chunk"
@@ -11,14 +13,68 @@ import (
 	"mrinspect/internal/rag/resources"
 )
 
+type resolveStoreFunc func(context.Context, rag.ResolverConfig) (rag.StoreResolution, error)
+
+// resolvedStore memoizes one production resolution and owns its cleanup.
+type resolvedStore struct {
+	config       rag.ResolverConfig
+	resolveStore resolveStoreFunc
+	once         sync.Once
+	resolution   rag.StoreResolution
+	err          error
+	mu           sync.Mutex
+	closed       bool
+	closeOnce    sync.Once
+	closeErr     error
+}
+
+func newResolvedStore(config rag.ResolverConfig, resolver resolveStoreFunc) *resolvedStore {
+	if resolver == nil {
+		resolver = rag.ResolveStore
+	}
+	return &resolvedStore{config: config, resolveStore: resolver}
+}
+
+func (s *resolvedStore) resolve(ctx context.Context) (rag.StoreResolution, error) {
+	s.mu.Lock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
+		return rag.StoreResolution{}, errors.New("resolve store: retriever is closed")
+	}
+	s.once.Do(func() {
+		s.resolution, s.err = s.resolveStore(ctx, s.config)
+	})
+	return s.resolution, s.err
+}
+
+func (s *resolvedStore) close() error {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+		// Do not start an unused download merely because the retriever closes.
+		s.once.Do(func() {
+			s.err = errors.New("resolve store: retriever is closed")
+		})
+		if s.resolution.Cleanup != nil {
+			s.closeErr = s.resolution.Cleanup()
+		}
+	})
+	return s.closeErr
+}
+
 // resolvingRetriever gives each concurrent lane an independently opened store
-// handle while sharing the same production resolution policy as ReviewPath.
-type resolvingRetriever struct{ config ReviewPathConfig }
+// handle while sharing one resolved store with ReviewPath.
+type resolvingRetriever struct {
+	config ReviewPathConfig
+	store  *resolvedStore
+}
 
-func (resolvingRetriever) Name() string { return "production" }
+func (*resolvingRetriever) Name() string { return "production" }
 
-func (r resolvingRetriever) Retrieve(ctx context.Context, query rag.Query) (rag.Result, error) {
-	resolution, err := rag.ResolveStore(ctx, r.config.ResolverConfig)
+func (r *resolvingRetriever) Retrieve(ctx context.Context, query rag.Query) (rag.Result, error) {
+	resolution, err := r.store.resolve(ctx)
 	if err != nil {
 		degraded := degradedEntries(resolution.Degraded)
 		degraded = append(degraded, fmt.Sprintf("store unavailable: %v", err))
@@ -39,7 +95,7 @@ func (r resolvingRetriever) Retrieve(ctx context.Context, query rag.Query) (rag.
 	return result, nil
 }
 
-func (resolvingRetriever) Close() error { return nil }
+func (r *resolvingRetriever) Close() error { return r.store.close() }
 
 // resourceFullLoader loads normative sets directly from their declared files;
 // full-mode material deliberately bypasses the retrieval store.

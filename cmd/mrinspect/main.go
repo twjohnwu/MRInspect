@@ -100,6 +100,11 @@ func main() {
 		ResourceSets:   resourceRegistry.Sets,
 		Composer:       promptComposer,
 	})
+	defer func() {
+		if err := productionRAG.Retriever.Close(); err != nil {
+			log.Warn("failed to clean up resolved RAG store", "error", err)
+		}
+	}()
 	r.SetRAGReviewPath(productionRAG.ReviewPath)
 	r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{
 		RepoRoot:         repoRoot,

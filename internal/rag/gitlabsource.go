@@ -164,7 +164,12 @@ func downloadGitLabStore(ctx context.Context, config *GitLabSourceConfig, path s
 		return StoreCandidate{}, fmt.Errorf("close download file: %w", err)
 	}
 	success = true
-	return StoreCandidate{Path: pathOnDisk, SHA256: fmt.Sprintf("%x", hash.Sum(nil)), PublisherProjectID: config.ProjectID}, nil
+	return StoreCandidate{
+		Path:               pathOnDisk,
+		SHA256:             fmt.Sprintf("%x", hash.Sum(nil)),
+		PublisherProjectID: config.ProjectID,
+		Cleanup:            func() error { return os.Remove(pathOnDisk) },
+	}, nil
 }
 
 type contextReader struct {

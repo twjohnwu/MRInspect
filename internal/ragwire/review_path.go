@@ -30,10 +30,15 @@ type ReviewPathConfig struct {
 }
 
 // ReviewPath is the production implementation of reviewer.RAGReviewPath.
-type ReviewPath struct{ config ReviewPathConfig }
+type ReviewPath struct {
+	config ReviewPathConfig
+	store  *resolvedStore
+}
 
 // NewReviewPath constructs the production RAG review adapter.
-func NewReviewPath(config ReviewPathConfig) *ReviewPath { return &ReviewPath{config: config} }
+func NewReviewPath(config ReviewPathConfig) *ReviewPath {
+	return &ReviewPath{config: config, store: newResolvedStore(config.ResolverConfig, nil)}
+}
 
 // ProductionReviewDependencies are the review-only RAG adapters shared by the
 // single and multi-lane production paths.
@@ -45,7 +50,7 @@ type ProductionReviewDependencies struct {
 
 // RetrieveForReview resolves a store, retrieves context, and composes its lane.
 func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (reviewer.ReviewRAGState, error) {
-	resolution, err := rag.ResolveStore(ctx, p.config.ResolverConfig)
+	resolution, err := p.store.resolve(ctx)
 	if err != nil {
 		return reviewer.ReviewRAGState{Degraded: degradedEntries(resolution.Degraded)}, nil
 	}
@@ -100,9 +105,10 @@ func NewProductionReviewDependencies(_ config.Config, reviewConfig ReviewPathCon
 	if reviewConfig.ResolverConfig.MaxBytes == 0 {
 		reviewConfig.ResolverConfig = rag.DefaultResolverConfig()
 	}
+	store := newResolvedStore(reviewConfig.ResolverConfig, nil)
 	return ProductionReviewDependencies{
-		ReviewPath: NewReviewPath(reviewConfig),
-		Retriever:  resolvingRetriever{config: reviewConfig},
+		ReviewPath: &ReviewPath{config: reviewConfig, store: store},
+		Retriever:  &resolvingRetriever{config: reviewConfig, store: store},
 		FullLoader: resourceFullLoader{sets: reviewConfig.ResourceSets},
 	}
 }

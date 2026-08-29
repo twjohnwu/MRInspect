@@ -225,7 +225,7 @@ Verification command: `go test ./internal/lane/ -run 'TestParse_TransportErrorIs
 Test file: internal/lane/fanout_test.go（追加）、internal/lane/render_test.go（追加）
 Verification command: `go test -race ./internal/lane/ -run 'TestFanout_ConcurrencyCapped|TestRender_NeutralizesBackslash' -count=1`
 
-## T24 [ ] [MODIFY] 修復發現 F4 — store 解析 memoize＋temp 清理
+## T24 [x] [MODIFY] 修復發現 F4 — store 解析 memoize＋temp 清理
 
 Test file: internal/ragwire/lane_resources_test.go（新建）
 Verification command: `go test ./internal/ragwire/ -run TestResolvingRetriever -count=1 -race`
