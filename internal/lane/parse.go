@@ -18,6 +18,7 @@ const (
 	DefaultMaxFindings      = 50
 	DefaultMaxJSONDepth     = 16
 	DefaultMaxFieldChars    = 4000
+	maxRetryOutputBytes     = 4096
 )
 
 type LimitName string
@@ -86,6 +87,7 @@ type FailureKind string
 
 const (
 	FailureKindParse          FailureKind = "parse"
+	FailureKindGenerate       FailureKind = "generate"
 	FailureKindNotImplemented FailureKind = "not_implemented"
 	FailureKindCompose        FailureKind = "compose"
 )
@@ -205,10 +207,12 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 
 	prompt := composed.Prompt
 	var lastErr error
+	lastFailureKind := FailureKindParse
 	for attempt := 1; attempt <= attempts; attempt++ {
 		output, generateErr := provider.Generate(ctx, prompt, opts)
 		if generateErr != nil {
 			lastErr = fmt.Errorf("generate lane response: %w", generateErr)
+			lastFailureKind = FailureKindGenerate
 			prompt = buildRetryPrompt(composed.Prompt, "", lastErr)
 			continue
 		}
@@ -233,17 +237,18 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 		}
 
 		lastErr = parseErr
+		lastFailureKind = FailureKindParse
 		prompt = buildRetryPrompt(composed.Prompt, output, parseErr)
 	}
 
 	if lastErr == nil {
 		lastErr = errors.New("no generation attempts configured")
 	}
-	return failedLane(
-		input.Lane.ID,
-		FailureKindParse,
-		fmt.Sprintf("parse lane response failed after %d attempts: %v", attempts, lastErr),
-	)
+	failureReason := fmt.Sprintf("parse lane response failed after %d attempts: %v", attempts, lastErr)
+	if lastFailureKind == FailureKindGenerate {
+		failureReason = fmt.Sprintf("lane response generation failed after %d attempts: %v", attempts, lastErr)
+	}
+	return failedLane(input.Lane.ID, lastFailureKind, failureReason)
 }
 
 func defaultParseLimits() ParseLimits {
@@ -462,6 +467,18 @@ func truncateFields(values []string, name string, maxChars int, stats *ParseStat
 }
 
 func buildRetryPrompt(original, previousOutput string, previousErr error) string {
+	if len(previousOutput) > maxRetryOutputBytes {
+		retainedBytes := maxRetryOutputBytes
+		for {
+			marker := fmt.Sprintf("\n[truncated %d bytes]", len(previousOutput)-retainedBytes)
+			nextRetainedBytes := maxRetryOutputBytes - len(marker)
+			if nextRetainedBytes == retainedBytes {
+				previousOutput = previousOutput[:retainedBytes] + marker
+				break
+			}
+			retainedBytes = nextRetainedBytes
+		}
+	}
 	return original + fmt.Sprintf(
 		"\n\n---\nPrevious attempt was rejected because its lane response could not be parsed: %s\n"+
 			"Previous output:\n%s\nPlease follow this lane response contract:\n%s\n",

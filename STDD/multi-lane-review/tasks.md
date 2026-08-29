@@ -215,7 +215,7 @@ Verification command: `go test ./internal/lane/ -run TestCompose_UnknownSelector
 理由：純設定檔改動（resources.yaml、lanes.yaml、兩個新 overlay 檔），無程式碼。
 Verification command: `go test ./internal/rag/resources/ ./internal/lane/ -count=1 && test -f projects/margherita-pizza/lanes.yaml && test -f projects/fried-chicken/lanes.yaml`
 
-## T22 [ ] [MODIFY] 修復發現 F5/F6 — FailureKindGenerate＋重試 prompt 截斷
+## T22 [x] [MODIFY] 修復發現 F5/F6 — FailureKindGenerate＋重試 prompt 截斷
 
 Test file: internal/lane/parse_test.go（追加）
 Verification command: `go test ./internal/lane/ -run 'TestParse_TransportErrorIsGenerateKind|TestParse_RetryPromptTruncatesPreviousOutput' -count=1`

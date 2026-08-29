@@ -481,3 +481,77 @@ func TestParse_RejectsLaneIDMismatch(t *testing.T) {
 		}
 	})
 }
+
+func TestParse_TransportErrorIsGenerateKind(t *testing.T) {
+	t.Run("all attempts are transport errors", func(t *testing.T) {
+		const transportMessage = "provider connection reset"
+		lane := Lane{ID: "transport-error-lane", Intent: "classify provider transport errors"}
+		input := composeTestInput(t, lane, nil, resources.Registry{}, "TRANSPORT-ERROR-DIFF")
+		provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+			Err: errors.New(transportMessage),
+		}}
+
+		got := ExecuteLane(context.Background(), input, provider, 2)
+		if got.Failure == nil {
+			t.Fatal("Failure = nil, want generation failure")
+		}
+		if got.Failure.Kind != FailureKindGenerate {
+			t.Errorf("failure Kind = %q, want %q", got.Failure.Kind, FailureKindGenerate)
+		}
+		if !strings.Contains(got.Failure.Reason, transportMessage) {
+			t.Errorf("failure Reason = %q, want transport error %q", got.Failure.Reason, transportMessage)
+		}
+		if strings.Contains(strings.ToLower(got.Failure.Reason), "parse") {
+			t.Errorf("failure Reason = %q, must not claim a parse failure", got.Failure.Reason)
+		}
+	})
+
+	t.Run("last parse error wins", func(t *testing.T) {
+		lane := Lane{ID: "mixed-error-lane", Intent: "classify the terminal attempt"}
+		input := composeTestInput(t, lane, nil, resources.Registry{}, "MIXED-ERROR-DIFF")
+		provider := &testfake.FakeProvider{Responses: []testfake.ProviderResponse{
+			{Err: errors.New("temporary provider outage")},
+			{Output: "not a JSON lane response"},
+		}}
+
+		got := ExecuteLane(context.Background(), input, provider, 2)
+		if got.Failure == nil {
+			t.Fatal("Failure = nil, want terminal parse failure")
+		}
+		if got.Failure.Kind != FailureKindParse {
+			t.Errorf("failure Kind = %q, want %q", got.Failure.Kind, FailureKindParse)
+		}
+		if !strings.Contains(strings.ToLower(got.Failure.Reason), "parse") {
+			t.Errorf("failure Reason = %q, want it to name parsing", got.Failure.Reason)
+		}
+	})
+}
+
+func TestParse_RetryPromptTruncatesPreviousOutput(t *testing.T) {
+	lane := Lane{ID: "bounded-retry-lane", Intent: "bound retry prompt growth"}
+	input := composeTestInput(t, lane, nil, resources.Registry{}, "BOUNDED-RETRY-DIFF")
+	badOutput := strings.Repeat("x", 64*1024)
+	provider := &testfake.FakeProvider{Responses: []testfake.ProviderResponse{
+		{Output: badOutput},
+		{Output: `{"laneId":"bounded-retry-lane","findings":[]}`},
+	}}
+
+	got := ExecuteLane(context.Background(), input, provider, 2)
+	if got.Failure != nil {
+		t.Fatalf("ExecuteLane failure = %#v, want success", got.Failure)
+	}
+	calls := provider.GenerateCalls()
+	if len(calls) != 2 {
+		t.Fatalf("Generate call count = %d, want 2", len(calls))
+	}
+	retryPrompt := calls[1].Prompt
+	if len(retryPrompt) >= len(calls[0].Prompt)+8192 {
+		t.Errorf("second prompt length = %d, want < composed prompt length %d + 8192", len(retryPrompt), len(calls[0].Prompt))
+	}
+	if !strings.Contains(strings.ToLower(retryPrompt), "[truncated") {
+		t.Error("second prompt does not contain a truncation marker")
+	}
+	if !strings.Contains(retryPrompt, badOutput[:32]) {
+		t.Error("second prompt does not retain the first bytes of the previous output")
+	}
+}
