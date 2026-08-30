@@ -126,7 +126,7 @@ func load(requireGitLabToken bool) (Config, error) {
 				Temperature: 0.1,
 			},
 			ProviderGemini: {
-				Model:       getEnv("GEMINI_MODEL", "gemini-2.5-pro"),
+				Model:       getEnv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
 				MaxTokens:   getEnvInt("GEMINI_MAX_TOKENS", 8000),
 				Temperature: 0.1,
 			},

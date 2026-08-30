@@ -32,8 +32,8 @@ func TestModelLimits(t *testing.T) {
 			t.Errorf("existing model not overridden: got %d", got["claude-3-5-sonnet-20241022"])
 		}
 		// untouched default entries survive the merge.
-		if got["gemini-2.5-pro"] != DefaultModelLimits["gemini-2.5-pro"] {
-			t.Errorf("untouched default entry changed: got %d", got["gemini-2.5-pro"])
+		if got["gemini-3.1-pro-preview"] != DefaultModelLimits["gemini-3.1-pro-preview"] {
+			t.Errorf("untouched default entry changed: got %d", got["gemini-3.1-pro-preview"])
 		}
 	})
 

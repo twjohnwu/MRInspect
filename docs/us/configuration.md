@@ -10,7 +10,7 @@ MRInspect supports three AI backends. Select one via `AI_PROVIDER`:
 
 | Provider | `AI_PROVIDER` value | Default model | Key variable |
 |---|---|---|---|
-| Google Gemini | `gemini` | `gemini-2.5-pro` | `AI_PROVIDER_KEY` |
+| Google Gemini | `gemini` | `gemini-3.1-pro-preview` | `AI_PROVIDER_KEY` |
 | Anthropic Claude | `anthropic` | `claude-sonnet-5` | `AI_PROVIDER_KEY` |
 | OpenAI | `openai` _(default)_ | `gpt-5.6` | `AI_PROVIDER_KEY` |
 
@@ -57,7 +57,7 @@ Any of the variables below can also be supplied via a `.env` file in the working
 | `MRI_DIFF_PROMPT_SHARE` | `0.85` | Fraction of the effective model's prompt budget the diff may occupy; oversized diffs drop whole files (non-reviewable patterns first, then largest-first; hunks are never truncated) with drops disclosed in the prompt and the review footer. Invalid values fall back to the default. Measured incident data showed a model omitting required sections when the diff exceeded ~93% of the prompt; ~85% restored format compliance — the cap scales with the model's budget rather than a fixed KB value. |
 | `MRI_REVIEW_DUMP_ENABLED` | _(unset)_ | Set to the exact string `true` to enable failure-only prompt/response dumps in the CI job log when review validation fails. Off by default: the default failure log carries only the validation error, the section titles found, pre/post-clean lengths, and 12-char sha256 prefixes of the prompt and response — never their content. Enable only for debugging, and only on repositories whose diffs contain no sensitive values. |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the Anthropic model |
-| `GEMINI_MODEL` | `gemini-2.5-pro` | Override the Gemini model |
+| `GEMINI_MODEL` | `gemini-3.1-pro-preview` | Override the Gemini model. Existing accounts may override it back to `gemini-2.5-pro`; free-tier API keys have zero quota for 3.1 Pro, so use `gemini-2.5-flash` instead. |
 | `OPENAI_MODEL` | `gpt-5.6` | Override the OpenAI model |
 | `ANTHROPIC_MAX_TOKENS` | `4000` | Max output tokens for Anthropic |
 | `GEMINI_MAX_TOKENS` | `8000` | Max output tokens for Gemini |
