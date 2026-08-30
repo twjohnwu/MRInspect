@@ -4,7 +4,6 @@ package rag
 import "context"
 
 // Query describes one retrieval request for one resource set (REQ-02).
-// It is the canonical shared form; a later task migrates sqlite to use it.
 type Query struct {
 	Terms  []string
 	SetRef string
@@ -13,7 +12,6 @@ type Query struct {
 }
 
 // Chunk is one retrieved, citeable resource chunk (REQ-02).
-// It is the canonical shared form; a later task migrates sqlite to use it.
 type Chunk struct {
 	ID          string
 	Text        string
@@ -27,7 +25,6 @@ type Chunk struct {
 }
 
 // Result is the outcome of a retrieval request (REQ-02).
-// It is the canonical shared form; a later task migrates sqlite to use it.
 type Result struct {
 	Chunks    []Chunk
 	Truncated bool

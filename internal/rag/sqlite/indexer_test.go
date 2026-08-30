@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
 )
 
@@ -85,7 +86,7 @@ func TestIndex_EmbeddingsOffByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenRetriever: %v", err)
 	}
-	result, err := retriever.Retrieve(context.Background(), Query{Terms: []string{"error", "handling"}, SetRef: set.Name, TopK: 2})
+	result, err := retriever.Retrieve(context.Background(), rag.Query{Terms: []string{"error", "handling"}, SetRef: set.Name, TopK: 2})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestIndex_FullModeSetsAreNotChunked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenRetriever: %v", err)
 	}
-	if _, err := retriever.Retrieve(context.Background(), Query{SetRef: set.Name}); err == nil {
+	if _, err := retriever.Retrieve(context.Background(), rag.Query{SetRef: set.Name}); err == nil {
 		t.Errorf("Retrieve(%q) error = nil, want an error because full sets must use FullLoader", set.Name)
 	}
 }

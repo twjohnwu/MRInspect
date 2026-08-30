@@ -80,6 +80,7 @@ func main() {
 			PackageName: "rag-index", ArtifactRef: v.GetTargetBranch(), ArtifactJob: "rag-index",
 			StoreName: "mrinspect-rag.sqlite",
 		}})
+		ragwire.RegisterBuiltinBackends()
 		if err := evalrun.RunWithConfig(ctx, *fixturesDir, *reportPath, cfg, log); err != nil {
 			log.Error("evaluation failed", "error", err)
 			os.Exit(1)
@@ -111,6 +112,7 @@ func main() {
 		PackageName: "rag-index", ArtifactRef: v.GetTargetBranch(), ArtifactJob: "rag-index",
 		StoreName: "mrinspect-rag.sqlite",
 	}})
+	ragwire.RegisterBuiltinBackends()
 	repoRoot := "."
 	resourceRegistry, err := resources.Load(repoRoot, "")
 	if err != nil {

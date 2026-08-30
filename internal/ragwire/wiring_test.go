@@ -1,9 +1,11 @@
-package rag_test
+package ragwire_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +19,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func digest(content []byte) string {
+	sum := sha256.Sum256(content)
+	return fmt.Sprintf("%x", sum)
+}
+
 func TestProductionWiring_RegistersBuiltinSources(t *testing.T) {
 	baked := productionStore(t)
 	rag.RegisterBuiltinSources(rag.BuiltinSourcesConfig{BakedPath: baked})
+	ragwire.RegisterBuiltinBackends()
 	t.Setenv("MRI_RAG_SOURCE", "package,artifact,baked")
 
 	got, err := rag.ResolveStore(context.Background(), rag.DefaultResolverConfig())
@@ -86,6 +94,7 @@ func (s fixtureCandidateSource) Resolve(context.Context, rag.SourceRequest) (rag
 
 func productionStore(t *testing.T) string {
 	t.Helper()
+	ragwire.RegisterBuiltinBackends()
 	dir := t.TempDir()
 	doc := filepath.Join(dir, "review.md")
 	if err := os.WriteFile(doc, []byte("# Review\n\nneedle guidance\n"), 0o600); err != nil {

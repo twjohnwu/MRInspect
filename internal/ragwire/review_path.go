@@ -30,6 +30,7 @@ type ReviewPath struct {
 
 // NewReviewPath constructs the production RAG review adapter.
 func NewReviewPath(config ReviewPathConfig) *ReviewPath {
+	RegisterBuiltinBackends()
 	return &ReviewPath{config: config, store: newResolvedStore(config.ResolverConfig, nil)}
 }
 
@@ -93,6 +94,7 @@ func retrieveResourceSets(ctx context.Context, retriever rag.Retriever, sets []r
 // both reviewer modes. Construction stays lazy: store resolution and opening
 // happen only on the review path, never during process wiring.
 func NewProductionReviewDependencies(reviewConfig ReviewPathConfig) ProductionReviewDependencies {
+	RegisterBuiltinBackends()
 	if reviewConfig.ResolverConfig.MaxBytes == 0 {
 		reviewConfig.ResolverConfig = rag.DefaultResolverConfig()
 	}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/chunk"
 	"mrinspect/internal/rag/resources"
 )
@@ -47,16 +48,16 @@ func indexedRetriever(t *testing.T, sets ...resources.Set) (*Retriever, string) 
 	return r, path
 }
 
-func retrieve(t *testing.T, r *Retriever, set string, terms []string, topK int) Result {
+func retrieve(t *testing.T, r *Retriever, set string, terms []string, topK int) rag.Result {
 	t.Helper()
-	got, err := r.Retrieve(context.Background(), Query{Terms: terms, SetRef: set, TopK: topK})
+	got, err := r.Retrieve(context.Background(), rag.Query{Terms: terms, SetRef: set, TopK: topK})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	return got
 }
 
-func ids(chunks []Chunk) []string {
+func ids(chunks []rag.Chunk) []string {
 	got := make([]string, len(chunks))
 	for i := range chunks {
 		got[i] = chunks[i].ID
@@ -64,7 +65,7 @@ func ids(chunks []Chunk) []string {
 	return got
 }
 
-func sameResult(got, want Result) bool {
+func sameResult(got, want rag.Result) bool {
 	if got.Truncated != want.Truncated || !reflect.DeepEqual(got.Degraded, want.Degraded) || len(got.Chunks) != len(want.Chunks) {
 		return false
 	}
@@ -144,7 +145,7 @@ func TestRetrieve_ConcurrentSafe(t *testing.T) {
 		sets[i] = retrievalSet(t, fmt.Sprintf("set-%d", i), map[string]string{"doc.md": fmt.Sprintf("# Doc\n\n## Match\nneedle set-%d\n", i)})
 	}
 	r, _ := indexedRetriever(t, sets...)
-	want := make([]Result, len(sets))
+	want := make([]rag.Result, len(sets))
 	for i, set := range sets {
 		want[i] = retrieve(t, r, set.Name, []string{"needle"}, 5)
 	}
@@ -154,7 +155,7 @@ func TestRetrieve_ConcurrentSafe(t *testing.T) {
 		wg.Add(1)
 		go func(i int, set resources.Set) {
 			defer wg.Done()
-			result, err := r.Retrieve(context.Background(), Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 5})
+			result, err := r.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 5})
 			if err != nil {
 				errs <- err
 				return
@@ -179,7 +180,7 @@ func TestRetrieve_MissingStoreDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenRetriever: %v", err)
 	}
-	got, err := r.Retrieve(context.Background(), Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1})
+	got, err := r.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1})
 	if err != nil || len(got.Chunks) != 0 || !contains(got.Degraded, "store") {
 		t.Errorf("Retrieve = (%+v, %v), want zero chunks, nil error, named missing-store degradation", got, err)
 	}
@@ -197,7 +198,7 @@ func TestRetrieve_SchemaMismatchDegrades(t *testing.T) {
 		t.Fatalf("alter schema_meta: %v", err)
 	}
 	_ = db.Close()
-	got, err := r.Retrieve(context.Background(), Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1})
+	got, err := r.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1})
 	if err != nil || len(got.Chunks) != 0 || !contains(got.Degraded, fmt.Sprintf("%d", SchemaVersion+1)) || !contains(got.Degraded, fmt.Sprintf("%d", SchemaVersion)) {
 		t.Errorf("Retrieve = (%+v, %v), want zero chunks, nil error, and actual/expected schema versions", got, err)
 	}
@@ -208,7 +209,7 @@ func TestRetrieve_AllUnknownSelectorsReturnEmpty(t *testing.T) {
 	a := retrievalSet(t, "indexed-a", map[string]string{"a.md": "# A\n\nneedle from a\n"})
 	b := retrievalSet(t, "indexed-b", map[string]string{"b.md": "# B\n\nneedle from b\n"})
 	r, _ := indexedRetriever(t, a, b)
-	got, err := r.Retrieve(context.Background(), Query{Terms: []string{"needle"}, SetRef: "unknown-set", TopK: 5})
+	got, err := r.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: "unknown-set", TopK: 5})
 	if err != nil || len(got.Chunks) != 0 || !contains(got.Degraded, "unknown-set") {
 		t.Errorf("Retrieve = (%+v, %v), want zero chunks, nil error, and named unknown SetRef degradation", got, err)
 	}
@@ -285,7 +286,7 @@ func TestRetrieve_TokenEstEnablesBudgeting(t *testing.T) {
 	set := retrievalSet(t, "tokens", map[string]string{"ascii.md": "# ascii\n\nabcdef\n", "cjk.md": "# cjk\n\n中文\n", "emoji.md": "# emoji\n\n😀😀\n", "hiragana.md": "# hiragana\n\nあい\n"})
 	r, _ := indexedRetriever(t, set)
 	got := retrieve(t, r, set.Name, []string{"ascii", "cjk", "emoji", "hiragana"}, 10)
-	byText := map[string]Chunk{}
+	byText := map[string]rag.Chunk{}
 	for _, item := range got.Chunks {
 		byText[item.Text] = item
 		if item.TokenEst != chunk.TokenEst(item.Text) {
@@ -315,7 +316,7 @@ func TestRetrieve_CloseIsIdempotent(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Errorf("second Close = %v, want nil", err)
 	}
-	if _, err := r.Retrieve(context.Background(), Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1}); err == nil {
+	if _, err := r.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 1}); err == nil {
 		t.Error("Retrieve after Close error = nil, want explicit error")
 	}
 }

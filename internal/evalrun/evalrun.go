@@ -352,6 +352,7 @@ func RunWithConfig(ctx context.Context, fixturesDir, reportPath string, cfg conf
 }
 
 func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger) error {
+	ragwire.RegisterBuiltinBackends()
 	repoRoot := "."
 	resourceRegistry, err := resources.Load(repoRoot, "")
 	if err != nil && log != nil {

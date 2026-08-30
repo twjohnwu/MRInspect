@@ -3,7 +3,6 @@ package rag
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -11,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"mrinspect/internal/rag/sqlite"
 )
 
 // Source resolves one REQ-12 named store source into a local candidate file.
@@ -92,45 +89,34 @@ var sourceRegistry = struct {
 	sources map[string]Source
 }{sources: make(map[string]Source)}
 
+var storeOpenerRegistry = struct {
+	sync.RWMutex
+	opener StoreOpener
+}{}
+
 type osFileReader struct{}
 
 func (osFileReader) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
 
-// sqliteStoreOpener validates an existing store without initializing or mutating it.
-type sqliteStoreOpener struct{}
-
-func (sqliteStoreOpener) OpenAndValidate(ctx context.Context, path string) error {
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return fmt.Errorf("open SQLite store: %w", err)
-	}
-	defer db.Close()
-
-	var version, manifestCount, actualCount int
-	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {
-		return fmt.Errorf("read schema_meta: %w", err)
-	}
-	if version != sqlite.SchemaVersion {
-		return fmt.Errorf("schema_version %d does not match expected %d", version, sqlite.SchemaVersion)
-	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM chunks`).Scan(&actualCount); err != nil {
-		return fmt.Errorf("count chunks: %w", err)
-	}
-	if manifestCount != actualCount {
-		return fmt.Errorf("schema_meta chunk_count %d does not match chunks count %d", manifestCount, actualCount)
-	}
-	return nil
-}
-
 // DefaultResolverConfig returns the REQ-12 default timeout, deadline, and byte-cap values.
 func DefaultResolverConfig() ResolverConfig {
+	storeOpenerRegistry.RLock()
+	opener := storeOpenerRegistry.opener
+	storeOpenerRegistry.RUnlock()
 	return ResolverConfig{
 		SourceTimeout: defaultSourceTimeout,
 		TotalTimeout:  defaultTotalTimeout,
 		MaxBytes:      defaultMaxBytes,
 		FileReader:    osFileReader{},
-		StoreOpener:   sqliteStoreOpener{},
+		StoreOpener:   opener,
 	}
+}
+
+// RegisterStoreOpener installs the store validator used by DefaultResolverConfig.
+func RegisterStoreOpener(opener StoreOpener) {
+	storeOpenerRegistry.Lock()
+	defer storeOpenerRegistry.Unlock()
+	storeOpenerRegistry.opener = opener
 }
 
 // RegisterSource adds a named REQ-12 source to the source registry.

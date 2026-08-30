@@ -15,6 +15,7 @@ func retrievalSets() []resources.Set {
 // TestNew_DefaultsToSqlite verifies REQ-02 / S-05: an unset backend selects sqlite.
 func TestNew_DefaultsToSqlite(t *testing.T) {
 	t.Setenv("MRI_RAG_BACKEND", "")
+	Register("sqlite", func(string, []resources.Set) (Retriever, error) { return namedFakeRetriever("sqlite"), nil })
 
 	retriever, err := New("test-store.sqlite", retrievalSets())
 	if err != nil {
@@ -28,6 +29,7 @@ func TestNew_DefaultsToSqlite(t *testing.T) {
 // TestNew_UnknownBackendListsRegistered verifies REQ-02 / S-06: unknown names report the registry.
 func TestNew_UnknownBackendListsRegistered(t *testing.T) {
 	t.Setenv("MRI_RAG_BACKEND", "pinecone")
+	Register("sqlite", func(string, []resources.Set) (Retriever, error) { return namedFakeRetriever("sqlite"), nil })
 	Register("custom", func(string, []resources.Set) (Retriever, error) { return fakeRetriever{}, nil })
 
 	_, err := New("test-store.sqlite", retrievalSets())
@@ -70,6 +72,14 @@ func TestNew_DisabledYieldsNoop(t *testing.T) {
 }
 
 type fakeRetriever struct{}
+
+type namedFakeRetriever string
+
+func (r namedFakeRetriever) Name() string { return string(r) }
+
+func (namedFakeRetriever) Retrieve(context.Context, Query) (Result, error) { return Result{}, nil }
+
+func (namedFakeRetriever) Close() error { return nil }
 
 func (fakeRetriever) Name() string { return "custom" }
 

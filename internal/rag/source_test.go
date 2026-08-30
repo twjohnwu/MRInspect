@@ -12,9 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"mrinspect/internal/rag/resources"
-	"mrinspect/internal/rag/sqlite"
-
 	_ "modernc.org/sqlite"
 )
 
@@ -175,7 +172,7 @@ func TestResolveStore_RejectsCorruptDownload(t *testing.T) {
 		RegisterSource("package", &fixtureSource{candidate: candidateForPath(t, broken, "package", "publisher-a")})
 		RegisterSource("baked", &fixtureSource{candidate: candidateForPath(t, validStore(t), "baked", "publisher-a")})
 		config := fixtureConfig()
-		config.StoreOpener = DefaultResolverConfig().StoreOpener
+		config.StoreOpener = fixtureSQLiteOpener{}
 		got, err := ResolveStore(context.Background(), config)
 		if err != nil || got.SourceName != "baked" {
 			t.Fatalf("result = %#v, %v; want baked fallback", got, err)
@@ -306,6 +303,30 @@ func (osReader) ReadFile(path string) ([]byte, error) { return os.ReadFile(path)
 type acceptingOpener struct{}
 
 func (acceptingOpener) OpenAndValidate(context.Context, string) error { return nil }
+
+type fixtureSQLiteOpener struct{}
+
+func (fixtureSQLiteOpener) OpenAndValidate(ctx context.Context, path string) error {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var version, manifestCount, actualCount int
+	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {
+		return err
+	}
+	if version != 1 {
+		return fmt.Errorf("schema_version %d does not match expected 1", version)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM chunks`).Scan(&actualCount); err != nil {
+		return err
+	}
+	if manifestCount != actualCount {
+		return fmt.Errorf("schema_meta chunk_count %d does not match chunks count %d", manifestCount, actualCount)
+	}
+	return nil
+}
 func candidate(t *testing.T, source, builtAt, version, publisher string) StoreCandidate {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), source+".db")
@@ -362,14 +383,18 @@ func manifestMismatchStore(t *testing.T) string {
 
 func validStore(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	doc := filepath.Join(dir, "doc.md")
-	if err := os.WriteFile(doc, []byte("# title\n\nbody\n"), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "store.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "store.db")
-	if _, err := sqlite.Index(context.Background(), sqlite.IndexOptions{OutputPath: path, Sets: []resources.Set{{Name: "fixture", Paths: []string{doc}}}}); err != nil {
-		t.Fatalf("index fixture: %v", err)
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE schema_meta (id INTEGER PRIMARY KEY, schema_version INTEGER NOT NULL, chunk_count INTEGER NOT NULL);
+		CREATE TABLE chunks (id INTEGER PRIMARY KEY);
+		INSERT INTO schema_meta (id, schema_version, chunk_count) VALUES (1, 1, 0);
+	`); err != nil {
+		t.Fatalf("create fixture: %v", err)
 	}
 	return path
 }
