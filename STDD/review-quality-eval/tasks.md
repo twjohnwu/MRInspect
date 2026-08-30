@@ -89,6 +89,16 @@ language: zh-TW
   20 審/日假設、定價來源日期）。
 - Verification command: `grep -n 'MRI_DAILY_TOKEN_BUDGET' docs/us/configuration.md docs/tw/configuration.md`
 
+## T8 `[x]` [INFRA] eval 進度輸出（使用者要求 2026-08-30）
+
+- 原因：純可觀測性補強，無 GWT 行為 scenario；S-09 實跑 15+ 分鐘全程
+  無輸出（mode-run logger 經 writer seam 進緩衝供報告擷取，進度 log
+  被吞），需要 stderr 進度行。
+- 內容：evalrun 編排層直接對 stderr 印進度——`[i/N] <fixture> <mode> …`
+  開始與完成（含耗時、成功/失敗/降級一字結果）；與報告擷取用的
+  buffer logger 分離，不影響報告內容。
+- Verification command: `MRI_EVAL_ALLOW_CI=true AI_PROVIDER_KEY=fake ./bin/mrinspect eval 2>&1 | grep -c '\[1/4\]'`（≥1）
+
 ## Manual verification checklist
 
 - [ ] S-09：本機真 key 跑 `./bin/mrinspect eval`，確認 REPORT.md 完整、

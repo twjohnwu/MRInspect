@@ -43,6 +43,30 @@ type Fixture struct {
 	Changes []gitlab.Change
 }
 
+type runOptions struct {
+	progressWriter io.Writer
+}
+
+// RunOption customizes eval orchestration behavior.
+type RunOption func(*runOptions)
+
+// WithProgressWriter directs live eval progress to writer.
+func WithProgressWriter(writer io.Writer) RunOption {
+	return func(options *runOptions) {
+		if writer != nil {
+			options.progressWriter = writer
+		}
+	}
+}
+
+func newRunOptions(options ...RunOption) runOptions {
+	runOptions := runOptions{progressWriter: os.Stderr}
+	for _, option := range options {
+		option(&runOptions)
+	}
+	return runOptions
+}
+
 // ReviewerFactory constructs the independently configured reviewer for a mode-run.
 type ReviewerFactory func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error)
 
@@ -330,7 +354,7 @@ func LoadFixtures(dir string, log *logger.Logger) ([]Fixture, error) {
 	return fixtures, nil
 }
 
-func Run(fixturesDir, reportPath string, log *logger.Logger) error {
+func Run(fixturesDir, reportPath string, log *logger.Logger, options ...RunOption) error {
 	fixtures, err := LoadFixtures(fixturesDir, log)
 	if err != nil {
 		return err
@@ -339,19 +363,19 @@ func Run(fixturesDir, reportPath string, log *logger.Logger) error {
 	if err != nil {
 		return err
 	}
-	return runLoaded(context.Background(), fixtures, reportPath, cfg, log)
+	return runLoaded(context.Background(), fixtures, reportPath, cfg, log, newRunOptions(options...))
 }
 
 // RunWithConfig executes the offline eval workflow with command-loaded config.
-func RunWithConfig(ctx context.Context, fixturesDir, reportPath string, cfg config.Config, log *logger.Logger) error {
+func RunWithConfig(ctx context.Context, fixturesDir, reportPath string, cfg config.Config, log *logger.Logger, options ...RunOption) error {
 	fixtures, err := LoadFixtures(fixturesDir, log)
 	if err != nil {
 		return err
 	}
-	return runLoaded(ctx, fixtures, reportPath, cfg, log)
+	return runLoaded(ctx, fixtures, reportPath, cfg, log, newRunOptions(options...))
 }
 
-func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger) error {
+func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger, options runOptions) error {
 	ragwire.RegisterBuiltinBackends()
 	repoRoot := "."
 	resourceRegistry, err := resources.Load(repoRoot, "")
@@ -370,10 +394,17 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 	}
 	fixtureReports := make([]FixtureReport, 0, len(fixtures))
 	usage := UsageSummary{}
+	wallStarted := time.Now()
+	okModes := 0
+	failedModes := 0
+	defer func() {
+		fmt.Fprintf(options.progressWriter, "Totals: %d modes ok, %d failed (%.1fs wall)\n", okModes, failedModes, time.Since(wallStarted).Seconds())
+	}()
 	metricsBase, persistModeMetrics := os.LookupEnv("AI_REVIEW_METRICS_FILE")
 	persistModeMetrics = persistModeMetrics && strings.TrimSpace(metricsBase) != ""
 
-	for _, fixture := range fixtures {
+	for fixtureIndex, fixture := range fixtures {
+		fmt.Fprintf(options.progressWriter, "[%d/%d] %s\n", fixtureIndex+1, len(fixtures), fixture.Name)
 		var runLogs []*logger.Logger
 		var promptLogs []*bytes.Buffer
 		var closers []io.Closer
@@ -425,8 +456,21 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 
 		modeReports := make([]ModeReport, 0, len(modes))
 		for _, mode := range modes {
+			fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s ...\n", fixtureIndex+1, len(fixtures), fixture.Name, mode)
+			modeStarted := time.Now()
 			results := RunModes(ctx, fixture, []reviewer.EvalMode{mode}, factory)
 			result := results[0]
+			status := "ok"
+			if result.Err != nil {
+				status = "failed"
+				failedModes++
+			} else {
+				okModes++
+				if result.Outcome.Degraded || (mode == reviewer.EvalModeReflect && !result.Outcome.ReflectApplied) {
+					status = "degraded"
+				}
+			}
+			fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s %s (%.1fs)\n", fixtureIndex+1, len(fixtures), fixture.Name, mode, status, time.Since(modeStarted).Seconds())
 			runLog := runLogs[len(runLogs)-1]
 			promptLog := promptLogs[len(promptLogs)-1]
 			if persistModeMetrics {
