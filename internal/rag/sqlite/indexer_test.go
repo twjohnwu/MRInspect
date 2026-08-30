@@ -230,3 +230,22 @@ func TestIndex_AppliesIncludeExclude(t *testing.T) {
 		}
 	})
 }
+
+func TestIndex_CreatesMissingOutputDirectory(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "missing", "nested", "store.sqlite")
+	set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\nindex this resource\n")
+
+	stats, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{set},
+	})
+	if err != nil {
+		t.Fatalf("Index into missing output directory: %v", err)
+	}
+	if stats.FilesIndexed != 1 {
+		t.Errorf("IndexStats.FilesIndexed = %d, want 1", stats.FilesIndexed)
+	}
+	if _, err := os.Stat(output); err != nil {
+		t.Fatalf("Stat indexed store: %v", err)
+	}
+}

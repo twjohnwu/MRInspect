@@ -77,6 +77,9 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 
 func createTempStorePath(outputPath string) (string, error) {
 	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("Index: create output directory: %w", err)
+	}
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(outputPath)+"-*")
 	if err != nil {
 		return "", fmt.Errorf("Index: create temporary store: %w", err)
