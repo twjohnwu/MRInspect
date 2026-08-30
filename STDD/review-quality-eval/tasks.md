@@ -46,7 +46,7 @@ language: zh-TW
 - 註：`NewWithWriter` 在本 task 一併落地（S-06 依賴），其斷言在 T5
 - Verification command: `go test ./internal/ai/ -run TestS07_TokenUsageRecorded -count=1 -v`
 
-## T4 `[ ]` `S-03,S-04` [MODIFY] eval 核心執行（結果 seam＋三 mode-run）
+## T4 `[x]` `S-03,S-04` [MODIFY] eval 核心執行（結果 seam＋三 mode-run）
 
 - 檔案：`internal/config/config.go`（`LoadForEval`）、
   `internal/reviewer/reviewer.go`（`RunForEval`＋`EvalMode`）、

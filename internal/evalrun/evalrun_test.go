@@ -2,15 +2,25 @@ package evalrun_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"mrinspect/internal/config"
+	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/evalrun"
 	"mrinspect/internal/logger"
+	"mrinspect/internal/project"
+	"mrinspect/internal/prompt"
+	"mrinspect/internal/reviewer"
+	"mrinspect/internal/testfake"
+	"mrinspect/internal/validator"
 )
 
 // TestS02_FixtureLoading verifies REQ-02 / S-02 fixture loading, filtering, ordering, and change synthesis.
@@ -168,4 +178,233 @@ func captureWarnings(t *testing.T) (*logger.Logger, func() string) {
 		}
 		return string(data)
 	}
+}
+
+// TestS03_OfflineIsolation verifies REQ-01 / S-03 keeps every GitLab method unused and returns review text through the eval result seam.
+func TestS03_OfflineIsolation(t *testing.T) {
+	configureEvalTestEnv(t)
+	fixture := loadEvalFixture(t)
+	gitlabClient := &testfake.FakeGitLabClient{}
+	provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+		Output: evalReviewText("single"),
+	}}
+
+	results := evalrun.RunModes(
+		context.Background(),
+		fixture,
+		[]reviewer.EvalMode{reviewer.EvalModeSingle},
+		func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+			cfg, err := config.LoadForEval()
+			if err != nil {
+				return nil, err
+			}
+			return newEvalReviewer(cfg, gitlabClient, provider, false, ""), nil
+		},
+	)
+
+	counters := map[string]int{
+		"HealthCheck":     gitlabClient.HealthCheckCallCount(),
+		"CurrentUser":     gitlabClient.CurrentUserCallCount(),
+		"GetMergeRequest": gitlabClient.GetMergeRequestCallCount(),
+		"GetMRChanges":    gitlabClient.GetMRChangesCallCount(),
+		"ListNotes":       gitlabClient.ListNotesCallCount(),
+		"PostNote":        gitlabClient.PostNoteCallCount(),
+		"UpdateNote":      gitlabClient.UpdateNoteCallCount(),
+	}
+	for method, got := range counters {
+		if got != 0 {
+			t.Errorf("fake GitLab %s call count = %d, want 0", method, got)
+		}
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("RunModes returned %d results, want 1", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("single mode-run error = %v", results[0].Err)
+	}
+	if results[0].Mode != reviewer.EvalModeSingle || results[0].Outcome.Mode != reviewer.EvalModeSingle {
+		t.Errorf("single result mode labels = (%q, %q), want %q", results[0].Mode, results[0].Outcome.Mode, reviewer.EvalModeSingle)
+	}
+	if strings.TrimSpace(results[0].Outcome.ReviewText) == "" {
+		t.Fatal("single mode-run returned empty review text through the result seam")
+	}
+}
+
+// TestS04_ThreeModes verifies REQ-01 / S-04 runs single, multi, and reflect in order without env or failure cross-contamination.
+func TestS04_ThreeModes(t *testing.T) {
+	modeBefore := snapshotEnv("MRI_REVIEW_MODE")
+	reflectionBefore := snapshotEnv("IS_SELF_REFLECTION")
+	defer func() {
+		assertEnvSnapshot(t, "MRI_REVIEW_MODE", modeBefore)
+		assertEnvSnapshot(t, "IS_SELF_REFLECTION", reflectionBefore)
+	}()
+
+	configureEvalTestEnv(t)
+	fixture := loadEvalFixture(t)
+	modes := []reviewer.EvalMode{
+		reviewer.EvalModeSingle,
+		reviewer.EvalModeMulti,
+		reviewer.EvalModeReflect,
+	}
+	brokenLanesRoot := t.TempDir()
+	gitlabClient := &testfake.FakeGitLabClient{}
+
+	created := 0
+	results := evalrun.RunModes(context.Background(), fixture, modes,
+		func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+			created++
+			cfg, err := config.LoadForEval()
+			if err != nil {
+				return nil, err
+			}
+			cfg.SelfReflection = mode == reviewer.EvalModeReflect
+			provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+				Output: evalReviewText(string(mode)),
+			}}
+			if mode == reviewer.EvalModeReflect {
+				provider.Responses = []testfake.ProviderResponse{
+					{Output: evalReviewText(string(mode))},
+					{Output: "REVIEW VALIDATED"},
+				}
+			}
+			return newEvalReviewer(cfg, gitlabClient, provider, mode == reviewer.EvalModeMulti, brokenLanesRoot), nil
+		})
+
+	if len(results) != len(modes) {
+		t.Fatalf("RunModes returned %d results, want %d", len(results), len(modes))
+	}
+	if created != len(modes) {
+		t.Errorf("reviewer factory calls = %d, want %d independent reviewers", created, len(modes))
+	}
+	for i, mode := range modes {
+		if results[i].Mode != mode || results[i].Outcome.Mode != mode {
+			t.Errorf("result[%d] mode labels = (%q, %q), want %q", i, results[i].Mode, results[i].Outcome.Mode, mode)
+		}
+		if results[i].Err != nil {
+			t.Errorf("result[%d] (%s) unexpected error = %v", i, mode, results[i].Err)
+		}
+		if !strings.Contains(results[i].Outcome.ReviewText, string(mode)) {
+			t.Errorf("result[%d] review is not distinguishable as %q: %q", i, mode, results[i].Outcome.ReviewText)
+		}
+	}
+	if results[1].Outcome.Degraded != true {
+		t.Error("multi result Degraded = false with deliberately broken lanes config, want true")
+	}
+	if results[0].Outcome.Degraded || results[2].Outcome.Degraded {
+		t.Errorf("broken multi lanes contaminated other modes: single=%t reflect=%t", results[0].Outcome.Degraded, results[2].Outcome.Degraded)
+	}
+	assertEnvSnapshot(t, "MRI_REVIEW_MODE", modeBefore)
+	assertEnvSnapshot(t, "IS_SELF_REFLECTION", reflectionBefore)
+
+	injected := errors.New("injected multi provider failure")
+	failureResults := evalrun.RunModes(context.Background(), fixture, modes,
+		func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+			cfg, err := config.LoadForEval()
+			if err != nil {
+				return nil, err
+			}
+			cfg.SelfReflection = mode == reviewer.EvalModeReflect
+			provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+				Output: evalReviewText(string(mode)),
+			}}
+			if mode == reviewer.EvalModeMulti {
+				provider.DefaultResponse = testfake.ProviderResponse{Err: injected}
+			}
+			if mode == reviewer.EvalModeReflect {
+				provider.Responses = []testfake.ProviderResponse{
+					{Output: evalReviewText(string(mode))},
+					{Output: "REVIEW VALIDATED"},
+				}
+			}
+			return newEvalReviewer(cfg, gitlabClient, provider, mode == reviewer.EvalModeMulti, brokenLanesRoot), nil
+		})
+	if len(failureResults) != len(modes) {
+		t.Fatalf("failure RunModes returned %d results, want %d", len(failureResults), len(modes))
+	}
+	for i, mode := range modes {
+		if mode == reviewer.EvalModeMulti {
+			if failureResults[i].Err == nil || !strings.Contains(failureResults[i].Err.Error(), injected.Error()) {
+				t.Errorf("multi failure record error = %v, want injected provider failure", failureResults[i].Err)
+			}
+			continue
+		}
+		if failureResults[i].Err != nil {
+			t.Errorf("provider failure leaked into %s result: %v", mode, failureResults[i].Err)
+		}
+	}
+}
+
+type envSnapshot struct {
+	value string
+	set   bool
+}
+
+func snapshotEnv(key string) envSnapshot {
+	value, set := os.LookupEnv(key)
+	return envSnapshot{value: value, set: set}
+}
+
+func assertEnvSnapshot(t *testing.T, key string, want envSnapshot) {
+	t.Helper()
+	gotValue, gotSet := os.LookupEnv(key)
+	if gotSet != want.set || gotValue != want.value {
+		t.Errorf("%s changed: got (value=%q, set=%t), want (value=%q, set=%t)", key, gotValue, gotSet, want.value, want.set)
+	}
+}
+
+func configureEvalTestEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("AI_PROVIDER_KEY", "eval-test-key")
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("CI_PROJECT_ID", "")
+	t.Setenv("CI_MERGE_REQUEST_IID", "")
+	projectsDir, err := filepath.Abs(filepath.Join("..", "..", "projects"))
+	if err != nil {
+		t.Fatalf("resolve projects directory: %v", err)
+	}
+	t.Setenv("PROJECTS_DIR", projectsDir)
+}
+
+func loadEvalFixture(t *testing.T) evalrun.Fixture {
+	t.Helper()
+	dir := t.TempDir()
+	writeFixture(t, dir, "01-offline.diff", []byte(
+		"# mrinspect-fixture: source=abc123 kind=logic\n"+
+			"--- a/internal/service.go\n"+
+			"+++ b/internal/service.go\n"+
+			"@@ -1 +1 @@\n"+
+			"-return oldValue\n"+
+			"+return newValue\n"))
+	fixtures, err := evalrun.LoadFixtures(dir, logger.NewWithWriter(slog.LevelWarn, "", io.Discard))
+	if err != nil {
+		t.Fatalf("LoadFixtures: %v", err)
+	}
+	if len(fixtures) != 1 {
+		t.Fatalf("LoadFixtures returned %d fixtures, want 1", len(fixtures))
+	}
+	return fixtures[0]
+}
+
+func newEvalReviewer(cfg config.Config, gitlabClient *testfake.FakeGitLabClient, provider *testfake.FakeProvider, brokenMulti bool, lanesRoot string) *reviewer.MRInspectReviewer {
+	log := logger.NewWithWriter(slog.LevelDebug, "", io.Discard)
+	r := reviewer.New(
+		cfg,
+		gitlabClient,
+		provider,
+		nil,
+		project.NewLoader(cfg.Projects),
+		prompt.NewComposer(),
+		validator.New(cfg),
+		mrerrors.NewHandler(cfg, log),
+		log,
+	)
+	if brokenMulti {
+		r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{RepoRoot: lanesRoot})
+	}
+	return r
+}
+
+func evalReviewText(mode string) string {
+	return fmt.Sprintf("## Code Review: %s\n### Findings\nNo blocking issue in this fixture. %s\n### Verdict\nNeeds Minor Changes\n", mode, strings.Repeat("mode-specific evidence. ", 6))
 }

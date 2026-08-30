@@ -77,12 +77,23 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	return load(true)
+}
+
+// LoadForEval loads only the configuration required by offline evaluation.
+// It intentionally skips the GitLab credential requirement because the eval
+// path consumes fixture-owned merge request data and never calls GitLab.
+func LoadForEval() (Config, error) {
+	return load(false)
+}
+
+func load(requireGitLabToken bool) (Config, error) {
 	key := os.Getenv("AI_PROVIDER_KEY")
 	if key == "" {
 		return Config{}, fmt.Errorf("AI_PROVIDER_KEY environment variable is required")
 	}
 	token := os.Getenv("GITLAB_TOKEN")
-	if token == "" {
+	if requireGitLabToken && token == "" {
 		return Config{}, fmt.Errorf("GITLAB_TOKEN environment variable is required")
 	}
 

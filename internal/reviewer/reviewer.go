@@ -70,6 +70,7 @@ type footerAggregation struct {
 	additionalDegraded int
 	laneEvictions      []string
 	droppedFiles       []string
+	degradedToSingle   bool
 }
 
 type namedLaneDegradation struct {
@@ -206,14 +207,35 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 }
 
 func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
-	if os.Getenv("MRI_REVIEW_MODE") != "multi" {
+	mode := EvalModeSingle
+	if r.cfg.SelfReflection {
+		mode = EvalModeReflect
+	}
+	if os.Getenv("MRI_REVIEW_MODE") == "multi" {
+		mode = EvalModeMulti
+	}
+	return r.generateReviewForExplicitMode(ctx, mode, codeDiff, changes, mr)
+}
+
+// generateReviewForExplicitMode is the shared generation seam used by both
+// production and offline evaluation. Callers decide the mode; this helper does
+// not read process-global mode configuration.
+func (r *MRInspectReviewer) generateReviewForExplicitMode(ctx context.Context, mode EvalMode, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+	switch mode {
+	case EvalModeSingle:
 		content, err := r.generateReview(ctx, codeDiff, mr)
-		if err == nil && r.cfg.SelfReflection {
+		return content, footerAggregation{}, err
+	case EvalModeReflect:
+		content, err := r.generateReview(ctx, codeDiff, mr)
+		if err == nil {
 			content = r.selfReflect(ctx, content)
 		}
 		return content, footerAggregation{}, err
+	case EvalModeMulti:
+		return r.generateMultiReview(ctx, codeDiff, changes, mr)
+	default:
+		return "", footerAggregation{}, fmt.Errorf("unsupported eval mode %q", mode)
 	}
-	return r.generateMultiReview(ctx, codeDiff, changes, mr)
 }
 
 func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
@@ -285,7 +307,7 @@ func (r *MRInspectReviewer) generateSingleDegradation(ctx context.Context, codeD
 	if r.cfg.SelfReflection {
 		content = r.selfReflect(ctx, content)
 	}
-	return content + "\n\n> MRInspect degradation: " + reason, footerAggregation{}, nil
+	return content + "\n\n> MRInspect degradation: " + reason, footerAggregation{degradedToSingle: true}, nil
 }
 
 func hasEnabledLane(lanes []lane.Lane) bool {

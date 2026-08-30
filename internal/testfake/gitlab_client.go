@@ -55,6 +55,11 @@ type HealthCheckCall struct {
 	Context context.Context
 }
 
+// CurrentUserCall records the context of one CurrentUser call.
+type CurrentUserCall struct {
+	Context context.Context
+}
+
 // MergeRequestCall records the arguments of one GetMergeRequest call.
 type MergeRequestCall struct {
 	Context   context.Context
@@ -118,6 +123,7 @@ type FakeGitLabClient struct {
 	postNoteIndex     int
 	updateNoteIndex   int
 	healthCheckCalls  []HealthCheckCall
+	currentUserCalls  []CurrentUserCall
 	mergeRequestCalls []MergeRequestCall
 	mrChangesCalls    []MRChangesCall
 	listNotesCalls    []ListNotesCall
@@ -125,8 +131,11 @@ type FakeGitLabClient struct {
 	updateNoteCalls   []UpdateNoteCall
 }
 
-// CurrentUser is a T11 RED compile-only stub.
-func (*FakeGitLabClient) CurrentUser(context.Context) (gitlab.Author, error) {
+// CurrentUser records its context and returns the T11 compile-only default.
+func (f *FakeGitLabClient) CurrentUser(ctx context.Context) (gitlab.Author, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.currentUserCalls = append(f.currentUserCalls, CurrentUserCall{Context: ctx})
 	return gitlab.Author{}, nil
 }
 
@@ -293,6 +302,20 @@ func (f *FakeGitLabClient) HealthCheckCalls() []HealthCheckCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]HealthCheckCall(nil), f.healthCheckCalls...)
+}
+
+// CurrentUserCallCount returns the number of CurrentUser calls.
+func (f *FakeGitLabClient) CurrentUserCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.currentUserCalls)
+}
+
+// CurrentUserCalls returns a snapshot of recorded CurrentUser calls.
+func (f *FakeGitLabClient) CurrentUserCalls() []CurrentUserCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]CurrentUserCall(nil), f.currentUserCalls...)
 }
 
 // GetMergeRequestCallCount returns the number of GetMergeRequest calls.

@@ -2,6 +2,7 @@ package evalrun
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/logger"
+	"mrinspect/internal/reviewer"
 )
 
 var ErrNoValidFixtures = errors.New("no valid fixtures")
@@ -25,6 +27,45 @@ type Fixture struct {
 	Name    string
 	Diff    []byte
 	Changes []gitlab.Change
+}
+
+// ReviewerFactory constructs the independently configured reviewer for a mode-run.
+type ReviewerFactory func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error)
+
+// ModeResult records one mode-run outcome or its isolated failure.
+type ModeResult struct {
+	Mode    reviewer.EvalMode
+	Outcome reviewer.EvalOutcome
+	Err     error
+}
+
+// RunModes executes each requested mode with a freshly constructed reviewer.
+// A mode-local construction or review failure is recorded without stopping
+// subsequent modes.
+func RunModes(ctx context.Context, fixture Fixture, modes []reviewer.EvalMode, factory ReviewerFactory) []ModeResult {
+	results := make([]ModeResult, 0, len(modes))
+	input := reviewer.EvalInput{
+		Diff:    string(fixture.Diff),
+		Changes: fixture.Changes,
+		Title:   fixture.Name,
+	}
+	for _, mode := range modes {
+		result := ModeResult{Mode: mode}
+		r, err := factory(mode)
+		if err != nil {
+			result.Err = err
+			results = append(results, result)
+			continue
+		}
+		if r == nil {
+			result.Err = errors.New("reviewer factory returned nil reviewer")
+			results = append(results, result)
+			continue
+		}
+		result.Outcome, result.Err = r.RunForEval(ctx, mode, input)
+		results = append(results, result)
+	}
+	return results
 }
 
 func LoadFixtures(dir string, log *logger.Logger) ([]Fixture, error) {
