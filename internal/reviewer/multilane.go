@@ -11,10 +11,10 @@ import (
 	"mrinspect/internal/rag"
 )
 
-func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, *lane.FanoutResult, error) {
 	loadedProject, err := r.loadServiceProject()
 	if err != nil {
-		return "", footerAggregation{}, fmt.Errorf("multi-lane project load failed: %w", err)
+		return "", footerAggregation{}, nil, fmt.Errorf("multi-lane project load failed: %w", err)
 	}
 
 	registry, err := lane.Load(r.multi.RepoRoot, loadedProject.SystemDirectory)
@@ -25,10 +25,12 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		}
 		// A/S-64 forbids silently replacing a failed prompt composition with a
 		// legacy template. This is a separate, named configuration-level fallback.
-		return r.generateSingleDegradation(ctx, codeDiff, mr, reason)
+		content, footer, err := r.generateSingleDegradation(ctx, codeDiff, mr, reason)
+		return content, footer, nil, err
 	}
 	if !hasEnabledLane(registry.Lanes) {
-		return r.generateSingleDegradation(ctx, codeDiff, mr, "no runnable lane; degraded to single review mode")
+		content, footer, err := r.generateSingleDegradation(ctx, codeDiff, mr, "no runnable lane; degraded to single review mode")
+		return content, footer, nil, err
 	}
 
 	r.retrieveReviewRAG(ctx, codeDiff)
@@ -57,7 +59,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 	}
 	result, err := fanout(ctx, input)
 	if err != nil {
-		return "", footerAggregation{}, fmt.Errorf("multi-lane fan-out failed: %w", err)
+		return "", footerAggregation{}, nil, fmt.Errorf("multi-lane fan-out failed: %w", err)
 	}
 	r.logMultiLanePromptBreakdowns(result.LaneResults)
 
@@ -68,11 +70,11 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		if failure, ok := normativeEvictionFailure(result.Failures); ok {
 			renderInput.Findings = nil
 			renderInput.FailedLanes = []lane.LaneFailure{failure}
-			return lane.Render(renderInput), footer, nil
+			return lane.Render(renderInput), footer, &result, nil
 		}
 	}
 
-	return lane.Render(renderInput), footer, nil
+	return lane.Render(renderInput), footer, &result, nil
 }
 
 func (r *MRInspectReviewer) generateSingleDegradation(ctx context.Context, codeDiff string, mr gitlab.MergeRequest, reason string) (string, footerAggregation, error) {

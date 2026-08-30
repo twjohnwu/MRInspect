@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"context"
+	"fmt"
 
 	"mrinspect/internal/gitlab"
 )
@@ -39,15 +40,26 @@ func (r *MRInspectReviewer) RunForEval(ctx context.Context, mode EvalMode, input
 		Title:       input.Title,
 		Description: input.Description,
 	}
-	content, footer, reflectApplied, err := r.generateReviewForExplicitModeWithStatus(ctx, mode, input.Diff, input.Changes, mr)
+	content, footer, status, err := r.generateReviewForExplicitModeWithStatus(ctx, mode, input.Diff, input.Changes, mr)
 	outcome := EvalOutcome{
 		ReviewText:     content,
-		ReflectApplied: reflectApplied,
+		ReflectApplied: status.reflectApplied,
 		Degraded:       footer.degradedToSingle,
 		Mode:           mode,
 	}
 	if err != nil {
 		return outcome, err
+	}
+	if mode == EvalModeMulti && status.multiFanout != nil && len(status.multiFanout.LaneResults) == 0 {
+		failed := len(status.multiFanout.Failures)
+		if failed == 0 {
+			return outcome, fmt.Errorf("multi review failed: 0 lanes succeeded and 0 lane failures were recorded")
+		}
+		return outcome, fmt.Errorf(
+			"multi review failed: %d lanes failed; first lane error: %s",
+			failed,
+			status.multiFanout.Failures[0].Reason,
+		)
 	}
 	return outcome, nil
 }

@@ -74,6 +74,11 @@ type namedLaneDegradation struct {
 	message string
 }
 
+type generationStatus struct {
+	reflectApplied bool
+	multiFanout    *lane.FanoutResult
+}
+
 // MRInspectReviewer orchestrates the full code review pipeline.
 type MRInspectReviewer struct {
 	cfg        config.Config
@@ -221,23 +226,23 @@ func (r *MRInspectReviewer) generateReviewForExplicitMode(ctx context.Context, m
 	return content, footer, err
 }
 
-func (r *MRInspectReviewer) generateReviewForExplicitModeWithStatus(ctx context.Context, mode EvalMode, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, bool, error) {
+func (r *MRInspectReviewer) generateReviewForExplicitModeWithStatus(ctx context.Context, mode EvalMode, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, generationStatus, error) {
 	switch mode {
 	case EvalModeSingle:
 		content, err := r.generateReview(ctx, codeDiff, mr)
-		return content, footerAggregation{}, false, err
+		return content, footerAggregation{}, generationStatus{}, err
 	case EvalModeReflect:
 		content, err := r.generateReview(ctx, codeDiff, mr)
 		reflectApplied := false
 		if err == nil {
 			content, reflectApplied = r.selfReflectWithStatus(ctx, content)
 		}
-		return content, footerAggregation{}, reflectApplied, err
+		return content, footerAggregation{}, generationStatus{reflectApplied: reflectApplied}, err
 	case EvalModeMulti:
-		content, footer, err := r.generateMultiReview(ctx, codeDiff, changes, mr)
-		return content, footer, false, err
+		content, footer, fanout, err := r.generateMultiReview(ctx, codeDiff, changes, mr)
+		return content, footer, generationStatus{multiFanout: fanout}, err
 	default:
-		return "", footerAggregation{}, false, fmt.Errorf("unsupported eval mode %q", mode)
+		return "", footerAggregation{}, generationStatus{}, fmt.Errorf("unsupported eval mode %q", mode)
 	}
 }
 
