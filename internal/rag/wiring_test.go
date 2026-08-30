@@ -49,7 +49,12 @@ func TestProductionReviewPath_AssemblesStateForFooter(t *testing.T) {
 		ResolverConfig: rag.DefaultResolverConfig(),
 		ResourceSets:   []resources.Set{{Name: "review", Mode: resources.ModeRetrieval}},
 	})
-	state, err := path.RetrieveForReview(context.Background(), "needle change")
+	state, err := path.RetrieveForReview(context.Background(), `--- a/review.go
++++ b/review.go
+@@ -1 +1 @@
+-old guidance
++needle change
+`)
 	if err != nil {
 		t.Fatalf("RetrieveForReview: %v", err)
 	}
