@@ -73,7 +73,7 @@ language: zh-TW
 - GREEN：實作；`go build ./...` 全綠
 - Verification command: `go test ./internal/evalrun/ -run 'TestS06_ReportGeneration|TestS08_BudgetWarning|TestS10_CIGuard' -count=1 -v`
 
-## T6 `[ ]` [INFRA] fixtures 落檔
+## T6 `[x]` [INFRA] fixtures 落檔
 
 - 原因：純資料工件（diff 檔＋README 表），無可紅綠的行為。
 - Maia 從 git log 裁選 3–5 個歷史 commit（涵蓋 Go 邏輯變更／跨檔

@@ -1,0 +1,156 @@
+# mrinspect-fixture: source=8e87066 kind=refactor
+
+commit 8e870667092bf1247b9faa0e330bf247a64e6055
+Author: tw.johnwu <tw.johnwu@gmail.com>
+Date:   Sat Aug 29 17:17:18 2026 +0800
+
+    fix(logger): mutex-guard metrics; make test runs -race (B/T29, final-review blocker)
+
+diff --git a/Makefile b/Makefile
+index 862de59..44b641c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -7,7 +7,7 @@ build:
+ 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/mrinspect
+ 
+ test:
+-	go test ./...
++	go test -race ./...
+ 
+ test-integration:
+ 	go test -tags integration ./...
+diff --git a/internal/logger/logger.go b/internal/logger/logger.go
+index 2452d1f..9caabb6 100644
+--- a/internal/logger/logger.go
++++ b/internal/logger/logger.go
+@@ -4,6 +4,7 @@ import (
+ 	"encoding/json"
+ 	"log/slog"
+ 	"os"
++	"sync"
+ 	"time"
+ )
+ 
+@@ -57,6 +58,7 @@ type ReviewSummary struct {
+ 
+ type Logger struct {
+ 	slog        *slog.Logger
++	metricsMu   sync.Mutex
+ 	metrics     Metrics
+ 	metricsFile string
+ }
+@@ -91,12 +93,16 @@ func (l *Logger) Debug(msg string, args ...any) {
+ }
+ 
+ func (l *Logger) StartReview(mrID, projectID int) {
++	l.metricsMu.Lock()
++	defer l.metricsMu.Unlock()
+ 	l.metrics.StartTimeMs = time.Now().UnixMilli()
+ 	l.metrics.MrID = mrID
+ 	l.metrics.ProjectID = projectID
+ }
+ 
+ func (l *Logger) LogStep(step string, durationMs *int64, meta map[string]any) {
++	l.metricsMu.Lock()
++	defer l.metricsMu.Unlock()
+ 	l.metrics.Steps = append(l.metrics.Steps, StepMetric{
+ 		Step:       step,
+ 		DurationMs: durationMs,
+@@ -116,10 +122,14 @@ func (l *Logger) LogAPICall(service, endpoint string, durationMs int64, success
+ 	if err != nil {
+ 		m.Error = err.Error()
+ 	}
++	l.metricsMu.Lock()
++	defer l.metricsMu.Unlock()
+ 	l.metrics.APICalls = append(l.metrics.APICalls, m)
+ }
+ 
+ func (l *Logger) LogError(errType, stage, category string, err error) {
++	l.metricsMu.Lock()
++	defer l.metricsMu.Unlock()
+ 	l.metrics.Errors = append(l.metrics.Errors, ErrorMetric{
+ 		Type:      errType,
+ 		Stage:     stage,
+@@ -130,6 +140,9 @@ func (l *Logger) LogError(errType, stage, category string, err error) {
+ }
+ 
+ func (l *Logger) CompleteReview(success bool, finalErr error) ReviewSummary {
++	l.metricsMu.Lock()
++	defer l.metricsMu.Unlock()
++
+ 	now := time.Now().UnixMilli()
+ 	l.metrics.EndTimeMs = now
+ 	l.metrics.Success = success
+@@ -157,11 +170,15 @@ func (l *Logger) CompleteReview(success bool, finalErr error) ReviewSummary {
+ }
+ 
+ func (l *Logger) SaveMetrics() error {
++	l.metricsMu.Lock()
++	metrics := l.metrics
++	l.metricsMu.Unlock()
++
+ 	var history []Metrics
+ 	if data, err := os.ReadFile(l.metricsFile); err == nil {
+ 		_ = json.Unmarshal(data, &history)
+ 	}
+-	history = append(history, l.metrics)
++	history = append(history, metrics)
+ 	if len(history) > 100 {
+ 		history = history[len(history)-100:]
+ 	}
+diff --git a/internal/logger/logger_test.go b/internal/logger/logger_test.go
+index 9acaec1..1dfe4e4 100644
+--- a/internal/logger/logger_test.go
++++ b/internal/logger/logger_test.go
+@@ -2,10 +2,12 @@ package logger
+ 
+ import (
+ 	"encoding/json"
++	"errors"
+ 	"log/slog"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
++	"sync"
+ 	"testing"
+ )
+ 
+@@ -50,6 +52,38 @@ func TestFormatDurationViaSummary(t *testing.T) {
+ 	}
+ }
+ 
++func TestLogger_ConcurrentMetricsAreRaceFree(t *testing.T) {
++	l := newTestLogger(t)
++	l.StartReview(1, 1)
++
++	const goroutines = 50
++	const callsPerGoroutine = 3
++
++	var wg sync.WaitGroup
++	wg.Add(goroutines)
++	for i := 0; i < goroutines; i++ {
++		go func(i int) {
++			defer wg.Done()
++			for j := 0; j < callsPerGoroutine; j++ {
++				l.LogAPICall("gitlab", "/mr", int64(i+j), true, nil)
++				l.LogError("api", "review", "transient", errors.New("boom"))
++			}
++		}(i)
++	}
++	wg.Wait()
++
++	summary := l.CompleteReview(true, nil)
++
++	wantAPICalls := goroutines * callsPerGoroutine
++	if summary.APICalls.Total != wantAPICalls {
++		t.Errorf("APICalls.Total: want %d, got %d", wantAPICalls, summary.APICalls.Total)
++	}
++	wantErrors := goroutines * callsPerGoroutine
++	if summary.Errors != wantErrors {
++		t.Errorf("Errors: want %d, got %d", wantErrors, summary.Errors)
++	}
++}
++
+ func TestSaveMetrics(t *testing.T) {
+ 	dir := t.TempDir()
+ 	file := filepath.Join(dir, "metrics.json")
