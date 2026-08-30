@@ -1,13 +1,12 @@
 # Installation and build
 
-What you need installed, how to build each runner, and how to run a review from your own machine.
+What you need installed, how to build MRInspect, and how to run a review from your own machine.
 
 [繁體中文版](../tw/installation.md)
 
 ## Prerequisites
 
-- Go 1.23+ (for the Go binary)
-- Node.js 22+ (for the TypeScript runner)
+- Go 1.23+
 - Docker (for containerized Go deployments)
 - Claude Code CLI — superpowers layer only: `npm install -g @anthropic-ai/claude-code`
 
@@ -31,17 +30,7 @@ docker build -t mrinspect:dev .
 
 Official release images are published to GHCR. The Docker image is a multi-stage build: the Go binary is compiled in `golang:1.23-alpine` and copied into an `alpine:3.20` runtime image (~15 MB). The `projects/` directory is baked into the image at `/app/projects/`.
 
-## TypeScript runner
-
-```bash
-cd mrinspect
-npm install       # one-time dependency install (no build step)
-npm test          # run Jest test suite
-```
-
 ## Run locally
-
-**Go binary:**
 
 ```bash
 AI_PROVIDER_KEY=your-key \
@@ -49,16 +38,6 @@ GITLAB_TOKEN=your-token \
 CI_PROJECT_ID=123 \
 CI_MERGE_REQUEST_IID=45 \
   ./bin/mrinspect
-```
-
-**TypeScript runner (no Docker required):**
-
-```bash
-AI_PROVIDER_KEY=your-key \
-GITLAB_TOKEN=your-token \
-CI_PROJECT_ID=123 \
-CI_MERGE_REQUEST_IID=45 \
-  npx tsx review.ts
 ```
 
 ## `mrinspect index`

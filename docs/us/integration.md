@@ -57,11 +57,6 @@ ai-review-go:
   variables:
     MRI_SERVICE_NAME: my-service
 
-ai-review-ts:
-  extends: .mrinspect-ts-review  # TypeScript runner only
-  variables:
-    MRI_SERVICE_NAME: my-service
-
 ai-review-superpowers:
   extends: .superpowers-review   # Claude Code skills only
   variables:

@@ -12,22 +12,19 @@ MR opened / updated
         ▼
   GitLab pipeline
         │
-   ┌────┴──────────────────────────────────────┐
-   ▼                    ▼                       ▼
-mrinspect (Go)    mrinspect (TypeScript)   superpowers layer
-  │                    │                        │
-  ├─ loads profile     ├─ loads profile         ├─ /code-review:code-review
-  ├─ composes prompt   ├─ composes prompt       ├─ /security-review
-  ├─ calls AI          ├─ calls AI              └─ /pr-review-toolkit:review-pr
-  ├─ self-reflection   ├─ self-reflection            (5 parallel sub-agents)
-  └─ posts 1 MR comment└─ posts 1 MR comment   posts up to 3 MR comments
+   ┌────┴───────────────────────────┐
+   ▼                                ▼
+mrinspect (Go)              superpowers layer
+  │                                │
+  ├─ loads profile                 ├─ /code-review:code-review
+  ├─ composes prompt               ├─ /security-review
+  ├─ calls AI                      └─ /pr-review-toolkit:review-pr
+  ├─ self-reflection                    (5 parallel sub-agents)
+  └─ posts 1 MR comment            posts up to 3 MR comments
 ```
 
-**Layer 1a — mrinspect Go binary**
+**Layer 1 — mrinspect Go binary**
 Resolves the service name to a system project (`projects/registry.yaml`), loads the matching YAML + Markdown review standards, and composes a context-aware prompt. Calls the configured AI provider (OpenAI by default) with retry and exponential backoff. Optionally runs a self-reflection second pass where the AI validates its own review against the project standards. Posts one structured MR comment. Follows SOLID principles — all collaborators are wired via interfaces in `internal/interfaces/`; `cmd/mrinspect/main.go` is the composition root.
-
-**Layer 1b — mrinspect TypeScript runner**
-Same project loading, prompt composition, AI provider, and self-reflection logic as the Go binary — implemented in TypeScript following SOLID principles. Runs via `npx tsx review.ts` with no compile step required. Uses `node:22` in CI (no pre-built Docker image needed). Ideal when you prefer a no-build setup or want to extend the reviewer in TypeScript.
 
 **Layer 2 — superpowers**
 Installs Claude Code CLI and the superpowers plugin, then runs three skills in sequence:
@@ -44,7 +41,6 @@ Go review notes carry the stable `<!-- mrinspect:review -->` marker. On a rerun,
 | Layer | Image | Posts | Requires |
 |---|---|---|---|
 | mrinspect (Go) | `mrinspect:latest` | 1 structured MR comment | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
-| mrinspect (TypeScript) | `node:22` | 1 structured MR comment | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
 | superpowers | `node:22` (Claude Code CLI) | Up to 3 MR comments | `ANTHROPIC_API_KEY`, `GITLAB_TOKEN` |
 
 ## Single mode flow

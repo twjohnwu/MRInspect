@@ -66,9 +66,9 @@ make build        # compiles to ./bin/mrinspect
 | Document | Answers |
 |---|---|
 | [Architecture](docs/us/architecture.md) | What runs on each review layer, and how a single-mode or multi-lane review flows from MR to posted comment |
-| [Installation and build](docs/us/installation.md) | What to install, how to build the Go binary, the Docker image, and the TypeScript runner, and how to run a review locally |
+| [Installation and build](docs/us/installation.md) | What to install, how to build the Go binary and Docker image, and how to run a review locally |
 | [Configuration](docs/us/configuration.md) | Which AI provider to select, which secrets to set, and what every environment variable does |
 | [Integration](docs/us/integration.md) | How another repository triggers MRInspect from GitLab CI or GitHub Actions |
 | [Project system](docs/us/project-system.md) | How a team defines its own review standards, resource sets, and lanes under `projects/` |
-| [Development](docs/us/development.md) | Where each package lives, and which Make and npm commands build, test, and lint the code |
+| [Development](docs/us/development.md) | Where each package lives, and which Make commands build, test, and lint the code |
 | [設計決策記錄](docs/decisions_log.md) | Why the design went the way it did (Traditional Chinese) |

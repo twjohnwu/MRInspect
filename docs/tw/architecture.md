@@ -12,22 +12,19 @@ MR opened / updated
         ▼
   GitLab pipeline
         │
-   ┌────┴──────────────────────────────────────┐
-   ▼                    ▼                       ▼
-mrinspect (Go)    mrinspect (TypeScript)   superpowers layer
-  │                    │                        │
-  ├─ loads profile     ├─ loads profile         ├─ /code-review:code-review
-  ├─ composes prompt   ├─ composes prompt       ├─ /security-review
-  ├─ calls AI          ├─ calls AI              └─ /pr-review-toolkit:review-pr
-  ├─ self-reflection   ├─ self-reflection            (5 parallel sub-agents)
-  └─ posts 1 MR comment└─ posts 1 MR comment   posts up to 3 MR comments
+   ┌────┴───────────────────────────┐
+   ▼                                ▼
+mrinspect (Go)              superpowers layer
+  │                                │
+  ├─ loads profile                 ├─ /code-review:code-review
+  ├─ composes prompt               ├─ /security-review
+  ├─ calls AI                      └─ /pr-review-toolkit:review-pr
+  ├─ self-reflection                    (5 parallel sub-agents)
+  └─ posts 1 MR comment            posts up to 3 MR comments
 ```
 
-**第 1a 層 — mrinspect Go 執行檔**
+**第 1 層 — mrinspect Go 執行檔**
 把服務名稱解析成對應的 system project（`projects/registry.yaml`），載入相符的 YAML 與 Markdown 審查標準，組出帶有情境的 prompt。接著呼叫設定好的 AI provider（預設為 OpenAI），並帶重試與指數退避。可選擇再跑一次 self-reflection，讓 AI 依專案標準檢查自己的審查結果。最後貼出一則結構化的 MR 留言。整體遵循 SOLID 原則——所有協作元件都透過 `internal/interfaces/` 的介面接起來，`cmd/mrinspect/main.go` 是 composition root。
-
-**第 1b 層 — mrinspect TypeScript runner**
-專案載入、prompt 組裝、AI provider 與 self-reflection 的邏輯都和 Go 執行檔相同，以 TypeScript 依 SOLID 原則實作。用 `npx tsx review.ts` 執行，不需要編譯步驟。CI 上使用 `node:22`（不需要預先建好的 Docker image）。如果你偏好免建置的環境，或想用 TypeScript 擴充 reviewer，這一層最適合。
 
 **第 2 層 — superpowers**
 安裝 Claude Code CLI 與 superpowers plugin，然後依序跑三個 skill：
@@ -44,7 +41,6 @@ Go 審查留言帶有固定的 `<!-- mrinspect:review -->` 標記。重跑時，
 | 層 | Image | 貼出 | 需要 |
 |---|---|---|---|
 | mrinspect (Go) | `mrinspect:latest` | 1 則結構化 MR 留言 | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
-| mrinspect (TypeScript) | `node:22` | 1 則結構化 MR 留言 | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
 | superpowers | `node:22` (Claude Code CLI) | 最多 3 則 MR 留言 | `ANTHROPIC_API_KEY`, `GITLAB_TOKEN` |
 
 ## Single 模式流程

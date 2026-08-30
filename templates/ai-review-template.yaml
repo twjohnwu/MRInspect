@@ -189,42 +189,6 @@ stages:
       allow_failure: true
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LAYER 1b — TypeScript script runner (no Go binary required)
-#
-# Drop-in alternative to .mrinspect-go-review that runs TypeScript directly via
-# `tsx` — no compile step.  Uses the same projects/ directory and env vars as
-# the Go binary, with support for all three AI providers (anthropic/gemini/openai).
-#
-# Usage: extend this hidden job instead of .mrinspect-go-review:
-#
-#   my-ts-review:
-#     extends: .mrinspect-ts-review
-#     variables:
-#       MRI_SERVICE_NAME: my-service
-#       AI_PROVIDER: anthropic
-# ══════════════════════════════════════════════════════════════════════════════
-.mrinspect-ts-review:
-  stage: ai-review
-  image: node:22
-  before_script:
-    - npm install --frozen-lockfile --quiet
-  script:
-    - npx tsx review.ts
-  variables:
-    PROJECTS_DIR: ./projects
-  artifacts:
-    paths:
-      - mrinspect-metrics.json
-    when: always
-    expire_in: 7 days
-  allow_failure: true
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_PIPELINE_SOURCE == "trigger"'
-    - when: manual
-      allow_failure: true
-
-# ══════════════════════════════════════════════════════════════════════════════
 # LAYER 2 — superpowers (Claude Code CLI + superpowers plugin)
 #
 # What it does:

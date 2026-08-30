@@ -1,6 +1,6 @@
 # 開發
 
-程式碼放在哪裡，以及各個 runner 提供哪些建置、測試與 lint 指令。
+每個套件放在哪裡，以及哪些 Make 指令負責建置、測試與 lint。
 
 [English](../us/development.md)
 
@@ -27,21 +27,7 @@ mrinspect/
 │   ├── validator/        # Input validation, env var access (implements IReviewValidator)
 │   ├── errors/           # Error categorization, MR comment generation
 │   └── logger/           # JSON logging + metrics collection
-├── review.ts             # TypeScript entry point
-├── src/
-│   ├── ai/               # AnthropicProvider, GeminiProvider, OpenAIProvider
-│   ├── config/           # ReviewConfig (loadConfig)
-│   ├── diff/             # GitDiffFetcher, ApiDiffFetcher
-│   ├── gitlab/           # GitLabClient
-│   ├── project/          # YamlProjectLoader
-│   ├── prompt/           # PromptComposer
-│   ├── review/           # MRReviewer (orchestrator)
-│   ├── error/            # ErrorHandler
-│   ├── interfaces/       # All interface types (DIP)
-│   ├── factory.ts        # Composition root — wires all dependencies
-│   └── types.ts          # Shared types
-├── tests/                # Jest test suite
-├── projects/             # Review projects (shared by both runners)
+├── projects/             # Review projects
 │   ├── registry.yaml     # Service-name → system-directory mapping
 │   ├── resources.yaml    # Named RAG resource sets
 │   ├── lanes.yaml        # Canonical ordered review lanes
@@ -51,14 +37,10 @@ mrinspect/
 ├── docs/                 # Design and architecture documentation
 ├── templates/            # GitLab CI reusable template
 ├── Dockerfile            # Multi-stage Go build
-├── Makefile              # Go build targets
-├── package.json          # TypeScript dependencies
-└── tsconfig.json         # TypeScript compiler config
+└── Makefile              # Go build targets
 ```
 
 ## Makefile 與指令
-
-### Go（Makefile）
 
 | 指令 | 說明 |
 |---|---|
@@ -69,12 +51,3 @@ mrinspect/
 | `make lint-lane-ids` | 禁止 `internal/` 與 `cmd/` 底下非測試的 Go 檔以 lane-ID 字串字面值做分支 |
 | `make docker` | 建置 Docker image `mrinspect:latest` |
 | `make clean` | 移除 `./bin` 的建置產物 |
-
-### TypeScript（npm）
-
-| 指令 | 說明 |
-|---|---|
-| `npm install` | 安裝相依套件 |
-| `npm test` | 跑 Jest 測試 |
-| `npx tsc --noEmit` | 只做型別檢查，不輸出檔案 |
-| `npx tsx review.ts` | 直接執行 TypeScript reviewer |

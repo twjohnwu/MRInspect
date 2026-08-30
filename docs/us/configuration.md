@@ -1,12 +1,12 @@
 # Configuration
 
-Which AI backend to select, which secrets to store, and every environment variable the runners read.
+Which AI backend to select, which secrets to store, and every environment variable MRInspect reads.
 
 [繁體中文版](../tw/configuration.md)
 
 ## AI providers
 
-Both runners support three AI backends. Select one via `AI_PROVIDER`:
+MRInspect supports three AI backends. Select one via `AI_PROVIDER`:
 
 | Provider | `AI_PROVIDER` value | Default model | Key variable |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Set these in your CI/CD secrets store before use:
 
 | Variable | Required by | Description |
 |---|---|---|
-| `AI_PROVIDER_KEY` | mrinspect (Go + TypeScript) | API key for the selected AI provider (Gemini / Anthropic / OpenAI) |
+| `AI_PROVIDER_KEY` | mrinspect | API key for the selected AI provider (Gemini / Anthropic / OpenAI) |
 | `ANTHROPIC_API_KEY` | superpowers | Anthropic API key (Claude Code CLI always uses Anthropic) |
 | `GITLAB_TOKEN` | all layers | GitLab token with `api` and `write_repository` scopes |
 
@@ -33,7 +33,7 @@ Set these in your CI/CD secrets store before use:
 ## Full variable reference
 
 <details>
-<summary>mrinspect runner variables (Go + TypeScript; Go-only variables noted)</summary>
+<summary>mrinspect variables</summary>
 
 | Variable | Default | Description |
 |---|---|---|

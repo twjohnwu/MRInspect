@@ -1,6 +1,6 @@
 # Development
 
-Where the code lives and which build, test, and lint commands each runner provides.
+Where each package lives, and which Make commands build, test, and lint the code.
 
 [繁體中文版](../tw/development.md)
 
@@ -27,21 +27,7 @@ mrinspect/
 │   ├── validator/        # Input validation, env var access (implements IReviewValidator)
 │   ├── errors/           # Error categorization, MR comment generation
 │   └── logger/           # JSON logging + metrics collection
-├── review.ts             # TypeScript entry point
-├── src/
-│   ├── ai/               # AnthropicProvider, GeminiProvider, OpenAIProvider
-│   ├── config/           # ReviewConfig (loadConfig)
-│   ├── diff/             # GitDiffFetcher, ApiDiffFetcher
-│   ├── gitlab/           # GitLabClient
-│   ├── project/          # YamlProjectLoader
-│   ├── prompt/           # PromptComposer
-│   ├── review/           # MRReviewer (orchestrator)
-│   ├── error/            # ErrorHandler
-│   ├── interfaces/       # All interface types (DIP)
-│   ├── factory.ts        # Composition root — wires all dependencies
-│   └── types.ts          # Shared types
-├── tests/                # Jest test suite
-├── projects/             # Review projects (shared by both runners)
+├── projects/             # Review projects
 │   ├── registry.yaml     # Service-name → system-directory mapping
 │   ├── resources.yaml    # Named RAG resource sets
 │   ├── lanes.yaml        # Canonical ordered review lanes
@@ -51,14 +37,10 @@ mrinspect/
 ├── docs/                 # Design and architecture documentation
 ├── templates/            # GitLab CI reusable template
 ├── Dockerfile            # Multi-stage Go build
-├── Makefile              # Go build targets
-├── package.json          # TypeScript dependencies
-└── tsconfig.json         # TypeScript compiler config
+└── Makefile              # Go build targets
 ```
 
 ## Makefile and scripts
-
-### Go (Makefile)
 
 | Command | Description |
 |---|---|
@@ -69,12 +51,3 @@ mrinspect/
 | `make lint-lane-ids` | Forbid lane-ID string-literal branching in non-test Go files under `internal/` and `cmd/` |
 | `make docker` | Build Docker image `mrinspect:latest` |
 | `make clean` | Remove `./bin` build artifacts |
-
-### TypeScript (npm)
-
-| Command | Description |
-|---|---|
-| `npm install` | Install dependencies |
-| `npm test` | Run Jest test suite |
-| `npx tsc --noEmit` | Type-check without emitting files |
-| `npx tsx review.ts` | Run TypeScript reviewer directly |

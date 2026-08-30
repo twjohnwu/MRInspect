@@ -65,3 +65,10 @@ specific decision is later reversed.
 - **為什麼錯**：public 工具的預設值要按最不受信任的部署環境設計。diff 可能含未被偵測的 credential、customer data、internal URL，而 CI log 的可見範圍與保存期不在本工具控制內——「文件有警語」補救不了預設行為。外部安全審視意見同樣指出這個 default 站不住。
 - **現在做法**：預設不 dump；`MRI_REVIEW_DUMP_ENABLED=true`（精確字串）才開。預設失敗路徑保留驗證錯誤原因、標題清單、清洗前後長度，另補 prompt/response 的 sha256 前 12 碼供對帳。舊變數直接移除、不留相容層（上線僅數日、無外部使用者）。
 - **學到什麼**：可觀測性與資料外洩是同一個開關的兩面；除錯便利靠 opt-in，不靠預設。
+
+## 5. 雙實作（Go＋TypeScript）→ Go 單一實作
+
+- **最初想法**：Go binary 之外保留 TypeScript runner 作為「免編譯、node 直跑」的替代路徑，兩邊共用 projects/ 與 env 介面。
+- **為什麼錯**：能力早已不對等——RAG、multi-lane、diff 縮減、佔比表都只在 Go 端，但文件把兩者並列，讀者會誤以為完整 parity；每個 Go 修復都要多做一次「要不要回移 TS」的判斷。官方 image 發佈後，「免編譯」的存在理由也消失了——拉 image 比 npm install 更快。
+- **現在做法**：移除 review.ts、src/、TS 測試與 npm 工具鏈；CI 只剩 Go job；template 移除 Layer 1b。Go 為唯一實作。
+- **學到什麼**：第二實作的維護稅是每次改動都付的隱形成本；當它的差異化理由被更好的分發方式取代，就該退場，而不是掛著誤導定位。

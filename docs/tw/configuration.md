@@ -1,12 +1,12 @@
 # 設定
 
-要選哪個 AI backend、要存哪些密鑰，以及 runner 會讀取的每一個環境變數。
+要選哪個 AI backend、要存哪些密鑰，以及 MRInspect 會讀取的每一個環境變數。
 
 [English](../us/configuration.md)
 
 ## AI provider
 
-兩個 runner 都支援三種 AI backend，用 `AI_PROVIDER` 選擇：
+MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 
 | Provider | `AI_PROVIDER` 值 | 預設模型 | 金鑰變數 |
 |---|---|---|---|
@@ -22,7 +22,7 @@
 
 | 變數 | 誰需要 | 說明 |
 |---|---|---|
-| `AI_PROVIDER_KEY` | mrinspect (Go + TypeScript) | 選定 AI provider 的 API 金鑰（Gemini / Anthropic / OpenAI） |
+| `AI_PROVIDER_KEY` | mrinspect | 選定 AI provider 的 API 金鑰（Gemini / Anthropic / OpenAI） |
 | `ANTHROPIC_API_KEY` | superpowers | Anthropic API 金鑰（Claude Code CLI 一律使用 Anthropic） |
 | `GITLAB_TOKEN` | 所有層 | 具備 `api` 與 `write_repository` scope 的 GitLab token |
 
@@ -33,7 +33,7 @@
 ## 完整變數對照
 
 <details>
-<summary>mrinspect runner 變數（Go + TypeScript；僅 Go 適用者另行標註）</summary>
+<summary>mrinspect 變數</summary>
 
 | 變數 | 預設值 | 說明 |
 |---|---|---|

@@ -1,13 +1,12 @@
 # 安裝與建置
 
-需要先裝什麼、各個 runner 怎麼建置，以及如何在自己的機器上跑一次審查。
+需要先裝什麼、如何建置 MRInspect，以及如何在自己的機器上跑一次審查。
 
 [English](../us/installation.md)
 
 ## 前置需求
 
-- Go 1.23+（Go 執行檔需要）
-- Node.js 22+（TypeScript runner 需要）
+- Go 1.23+
 - Docker（Go 容器化部署需要）
 - Claude Code CLI — 只有 superpowers 層需要：`npm install -g @anthropic-ai/claude-code`
 
@@ -31,17 +30,7 @@ docker build -t mrinspect:dev .
 
 官方 release image 會發布到 GHCR。這個 Docker image 採多階段建置：Go 執行檔在 `golang:1.23-alpine` 裡編譯，再複製進 `alpine:3.20` 的 runtime image（約 15 MB）。`projects/` 目錄會被烤進 image 的 `/app/projects/`。
 
-## TypeScript runner
-
-```bash
-cd mrinspect
-npm install       # one-time dependency install (no build step)
-npm test          # run Jest test suite
-```
-
 ## 在本機執行
-
-**Go 執行檔：**
 
 ```bash
 AI_PROVIDER_KEY=your-key \
@@ -49,16 +38,6 @@ GITLAB_TOKEN=your-token \
 CI_PROJECT_ID=123 \
 CI_MERGE_REQUEST_IID=45 \
   ./bin/mrinspect
-```
-
-**TypeScript runner（不需要 Docker）：**
-
-```bash
-AI_PROVIDER_KEY=your-key \
-GITLAB_TOKEN=your-token \
-CI_PROJECT_ID=123 \
-CI_MERGE_REQUEST_IID=45 \
-  npx tsx review.ts
 ```
 
 ## `mrinspect index`

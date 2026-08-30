@@ -1,6 +1,6 @@
 # MRInspect — Claude Code Context
 
-AI-powered GitLab MR review tool. Two independent runners (Go binary + TypeScript) share the same projects and post structured review comments to MRs. A separate superpowers layer runs Claude Code CLI skills on top.
+AI-powered GitLab MR review tool implemented as a Go binary that posts structured review comments to MRs. A separate superpowers layer runs Claude Code CLI skills on top.
 
 ---
 
@@ -32,21 +32,7 @@ mrinspect/
 │   ├── validator/    # Input validation, env var access (implements IReviewValidator)
 │   ├── errors/       # Error categorization, MR comment generation
 │   └── logger/       # JSON logging + metrics collection
-├── review.ts         # TypeScript entry point (npx tsx review.ts)
-├── src/              # TypeScript source
-│   ├── ai/           # AnthropicProvider, GeminiProvider, OpenAIProvider
-│   ├── config/       # loadConfig() — reads env vars, returns Config
-│   ├── diff/         # GitDiffFetcher (local git), ApiDiffFetcher (cross-repo)
-│   ├── gitlab/       # GitLabClient — MR details, diff, post note
-│   ├── project/      # YamlProjectLoader — registry.yaml + system dirs
-│   ├── prompt/       # PromptComposer — assembles AI prompt from project docs
-│   ├── review/       # MRReviewer — SOLID orchestrator (no new inside)
-│   ├── error/        # ErrorHandler — posts errors back to MR
-│   ├── interfaces/   # All interfaces (IAIProvider, IGitLabClient, etc.)
-│   ├── factory.ts    # Composition root — wires all deps, returns MRReviewer
-│   └── types.ts      # Config, AIProviderName, shared types
-├── tests/            # Jest tests
-├── projects/         # Review projects (shared by both runners)
+├── projects/         # Review projects
 │   ├── registry.yaml # service-name → system-dir mapping
 │   ├── resources.yaml# Named RAG resource sets
 │   ├── lanes.yaml    # Canonical ordered review lanes
@@ -55,35 +41,23 @@ mrinspect/
 │   └── <system>/     # system.yaml + .md docs + optional lanes.yaml overlay
 ├── templates/        # GitLab CI reusable template
 ├── Dockerfile        # Multi-stage Go build
-├── Makefile          # Go build targets
-├── package.json      # TypeScript deps (tsx, jest, ts-jest, etc.)
-└── tsconfig.json     # outDir: ./dist-scripts, rootDir: .
+└── Makefile          # Go build targets
 ```
 
 ---
 
 ## Build & Test Commands
 
-### Go
-
 ```bash
 make build              # → ./bin/mrinspect
 make test               # go test ./...
+make lint               # golangci-lint run
 make docker             # builds mrinspect:latest
-```
-
-### TypeScript
-
-```bash
-npm install             # one-time (node_modules is gitignored)
-npm test                # Jest suite
-npx tsc --noEmit        # type-check
-npx tsx review.ts       # run reviewer directly
 ```
 
 ---
 
-## Go Architecture (SOLID)
+## Architecture (SOLID)
 
 - **Interfaces** live in `internal/interfaces/` — `IGitLabClient`, `IDiffFetcher`, `IProjectLoader`, `IPromptComposer`, `IReviewValidator`, `IErrorHandler`
 - **`MRInspectReviewer`** (`internal/reviewer/reviewer.go`) is the orchestrator — holds only interface fields, no concrete pointer types (except `*logger.Logger` for metrics lifecycle)
@@ -94,16 +68,6 @@ npx tsx review.ts       # run reviewer directly
 
 ---
 
-## TypeScript Architecture (SOLID)
-
-- **Interfaces** live in `src/interfaces/` — `IAIProvider`, `IGitLabClient`, `IDiffFetcher`, `IProjectLoader`, `IPromptComposer`, `IReviewValidator`
-- **`MRReviewer`** (`src/review/MRReviewer.ts`) is the orchestrator — receives all deps via constructor, contains no `new` calls
-- **`factory.ts`** is the composition root — the only place that calls `new` and wires deps together
-- **AI providers** are interchangeable via `IAIProvider`; selected by `config.aiProvider`
-- **`loadConfig()`** reads all env vars and throws early with clear messages if required vars are missing
-
----
-
 ## CI Job Names
 
 Reusable review jobs are defined in `templates/ai-review-template.yaml`; the repository pipeline also defines its RAG index job in `.gitlab-ci.yml`:
@@ -111,12 +75,11 @@ Reusable review jobs are defined in `templates/ai-review-template.yaml`; the rep
 | Job | What it runs |
 |---|---|
 | `.mrinspect-go-review` | Go binary (`mrinspect:latest` Docker image) |
-| `.mrinspect-ts-review` | TypeScript runner (`node:22`, `npx tsx review.ts`) |
 | `.superpowers-review` | Claude Code CLI + superpowers plugin |
-| `.mrinspect-full` | All three layers in parallel |
+| `.mrinspect-full` | Both layers in parallel |
 | `index` | Builds `rag-index/mrinspect-rag.sqlite` on schedules, pushes to `main` that change `_shared` or either sample-system resource directory, or manual runs; publishes it for 21 days |
 
-Callers use `extends: .mrinspect-go-review` (or `-ts-review`, `-full`, etc.).
+Callers use `extends: .mrinspect-go-review` (or `.mrinspect-full` for both layers).
 
 ---
 
@@ -131,7 +94,7 @@ Callers use `extends: .mrinspect-go-review` (or `-ts-review`, `-full`, etc.).
 7. Multi mode names configuration degradations when lane files are missing, invalid, or have no enabled lane; lane prompt failures remain named lane failures rather than silently switching templates
 8. Single-review project documents still come from `projects/<system>/*.md` and `projects/_shared/*.md`; multi-lane documents enter only through selected resource sets
 
-Both runners use the same `projects/` directory. In CI the Go binary bakes projects into the Docker image; the TypeScript runner reads them from the working directory (`PROJECTS_DIR` defaults to `./projects`).
+The Go binary uses the `projects/` directory. In CI, projects are baked into the Docker image; local runs read `PROJECTS_DIR`, which defaults to `./projects`.
 
 ---
 
@@ -164,15 +127,5 @@ Cross-repo trigger mode uses `MRI_PROJECT_ID`, `MRI_MR_IID`, `MRI_SOURCE_BRANCH`
 ## Test Patterns
 
 - Table-driven tests mirror Go conventions
-- `assertValidationCode(fn, 'CODE')` helper checks `(error as ValidationError).code` — do not use `toThrow('CODE')` since the code is not in the message string
-- Project tests (`tests/projectLoader.test.ts`) use the real `projects/` directory — no mocks
-- Config tests (`tests/config.test.ts`) use a `withEnv()` helper to isolate env var state per test
-
----
-
-## Gitignored
-
-```
-node_modules/
-dist-scripts/
-```
+- Shared test doubles live in `internal/testfake/`
+- Integration tests use the `integration` build tag and run via `make test-integration`
