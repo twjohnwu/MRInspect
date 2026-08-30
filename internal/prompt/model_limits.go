@@ -14,6 +14,7 @@ var DefaultModelLimits = map[string]int{
 	"claude-sonnet-5":            1_000_000,
 	"gemini-2.5-pro":             1_000_000,
 	"gemini-3.1-pro-preview":     1_048_576,
+	"gemini-3.6-flash":           1_048_576,
 	"gpt-5":                      360_000,
 	"gpt-5.6":                    1_000_000,
 }
