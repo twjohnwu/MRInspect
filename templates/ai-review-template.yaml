@@ -62,9 +62,9 @@
 #
 #   # Layer 2 — superpowers skills (requires Claude Code installed locally)
 #   claude /plugin install superpowers@claude-plugins-official && claude /reload-plugins
-#   claude --print "Run /code-review:code-review for MR !45 in project 123. GITLAB_TOKEN=xxx"
-#   claude --print "Run /security-review for MR !45. GITLAB_TOKEN=xxx"
-#   claude --print "Run /pr-review-toolkit:review-pr for MR !45. GITLAB_TOKEN=xxx"
+#   export GITLAB_TOKEN=xxx
+#   claude --print "Run /code-review:code-review for MR !45 in project 123. Output only the finished review as markdown." > review.md
+#   curl --fail -sS --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --data-urlencode "body@review.md" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
 
 stages:
   - ai-review
@@ -142,7 +142,7 @@ stages:
     - mrinspect
   variables:
     # ── Provider (anthropic | gemini | openai) ─────────────────────────────
-    AI_PROVIDER: gemini
+    AI_PROVIDER: openai
     AI_PROVIDER_KEY: $AI_PROVIDER_KEY       # Gemini / Anthropic / OpenAI key
 
     # ── GitLab authentication ─────────────────────────────────────────────
@@ -301,42 +301,63 @@ stages:
 
     # ── Skill 1: Full code review ──────────────────────────────────────────
     - |
-      claude --print "
+      if claude --print "
         Use the /code-review:code-review skill to review MR !${CI_MERGE_REQUEST_IID}
         in GitLab project ${CI_PROJECT_ID}.
         Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
-        After generating the review, post it as an MR note:
-          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
-          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
-      "
+        Output ONLY the finished review as markdown, with no posting and no preamble.
+      " > review-code.md; then
+        if [ -s review-code.md ]; then
+          curl --fail -sS --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --data-urlencode "body@review-code.md" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+        else
+          echo "Code review generation produced an empty file; skipping MR note."
+        fi
+      else
+        echo "Code review generation failed; skipping MR note."
+      fi
 
     # ── Skill 2: Security review ───────────────────────────────────────────
     - |
-      claude --print "
+      if claude --print "
         Use the /security-review skill on MR !${CI_MERGE_REQUEST_IID}
         in project ${CI_PROJECT_ID}.
+        Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
         Focus on: OWASP Top 10, secrets/credentials exposure, dependency CVEs,
         SQL/command injection, authentication bypass.
-        Post findings as an MR note:
-          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
-          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
-      "
+        Output ONLY the finished review as markdown, with no posting and no preamble.
+      " > review-security.md; then
+        if [ -s review-security.md ]; then
+          curl --fail -sS --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --data-urlencode "body@review-security.md" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+        else
+          echo "Security review generation produced an empty file; skipping MR note."
+        fi
+      else
+        echo "Security review generation failed; skipping MR note."
+      fi
 
     # ── Skill 3: Multi-agent PR review toolkit ─────────────────────────────
     - |
-      claude --print "
+      if claude --print "
         Use the /pr-review-toolkit:review-pr skill on MR !${CI_MERGE_REQUEST_IID}
         in project ${CI_PROJECT_ID}.
+        Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
         Dispatch all sub-agents in parallel:
           • code-reviewer         — style, conventions, logic bugs
           • type-design-analyzer  — type safety, encapsulation, invariants
           • silent-failure-hunter — swallowed errors, unsafe fallbacks
           • comment-analyzer      — comment accuracy, documentation rot
           • pr-test-analyzer      — test coverage gaps, missing edge cases
-        Aggregate all sub-agent findings into a single consolidated comment and post it:
-          POST ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes
-          Header: PRIVATE-TOKEN: ${GITLAB_TOKEN}
-      "
+        Aggregate all sub-agent findings into a single consolidated review.
+        Output ONLY the finished review as markdown, with no posting and no preamble.
+      " > review-toolkit.md; then
+        if [ -s review-toolkit.md ]; then
+          curl --fail -sS --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --data-urlencode "body@review-toolkit.md" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+        else
+          echo "PR review toolkit generation produced an empty file; skipping MR note."
+        fi
+      else
+        echo "PR review toolkit generation failed; skipping MR note."
+      fi
   variables:
     # Claude Code requires an Anthropic key regardless of which AI_PROVIDER
     # the mrinspect layer uses.
@@ -388,16 +409,25 @@ stages:
       if [ "$REVIEW_LAYER" = "mrinspect" ]; then
         mrinspect
       else
-        claude --print "
+        if claude --print "
           Run /code-review:code-review, /security-review, and
           /pr-review-toolkit:review-pr for MR !${CI_MERGE_REQUEST_IID}
           in project ${CI_PROJECT_ID}.
-          Post each result as a separate MR note using GITLAB_TOKEN.
           Service: ${MRI_SERVICE_NAME} (${MRI_SERVICE_TYPE}).
-        "
+          Generate one consolidated review covering all three skills.
+          Output ONLY the finished review as markdown, with no posting and no preamble.
+        " > review-superpowers.md; then
+          if [ -s review-superpowers.md ]; then
+            curl --fail -sS --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --data-urlencode "body@review-superpowers.md" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+          else
+            echo "Consolidated superpowers review generation produced an empty file; skipping MR note."
+          fi
+        else
+          echo "Consolidated superpowers review generation failed; skipping MR note."
+        fi
       fi
   variables:
-    AI_PROVIDER: gemini
+    AI_PROVIDER: openai
     AI_PROVIDER_KEY: $AI_PROVIDER_KEY
     ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
     GITLAB_TOKEN: $GITLAB_TOKEN
