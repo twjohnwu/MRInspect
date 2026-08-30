@@ -221,20 +221,27 @@ func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff 
 // production and offline evaluation. Callers decide the mode; this helper does
 // not read process-global mode configuration.
 func (r *MRInspectReviewer) generateReviewForExplicitMode(ctx context.Context, mode EvalMode, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, error) {
+	content, footer, _, err := r.generateReviewForExplicitModeWithStatus(ctx, mode, codeDiff, changes, mr)
+	return content, footer, err
+}
+
+func (r *MRInspectReviewer) generateReviewForExplicitModeWithStatus(ctx context.Context, mode EvalMode, codeDiff string, changes []gitlab.Change, mr gitlab.MergeRequest) (string, footerAggregation, bool, error) {
 	switch mode {
 	case EvalModeSingle:
 		content, err := r.generateReview(ctx, codeDiff, mr)
-		return content, footerAggregation{}, err
+		return content, footerAggregation{}, false, err
 	case EvalModeReflect:
 		content, err := r.generateReview(ctx, codeDiff, mr)
+		reflectApplied := false
 		if err == nil {
-			content = r.selfReflect(ctx, content)
+			content, reflectApplied = r.selfReflectWithStatus(ctx, content)
 		}
-		return content, footerAggregation{}, err
+		return content, footerAggregation{}, reflectApplied, err
 	case EvalModeMulti:
-		return r.generateMultiReview(ctx, codeDiff, changes, mr)
+		content, footer, err := r.generateMultiReview(ctx, codeDiff, changes, mr)
+		return content, footer, false, err
 	default:
-		return "", footerAggregation{}, fmt.Errorf("unsupported eval mode %q", mode)
+		return "", footerAggregation{}, false, fmt.Errorf("unsupported eval mode %q", mode)
 	}
 }
 
@@ -723,20 +730,25 @@ func (r *MRInspectReviewer) callAI(ctx context.Context, reviewPrompt string) (st
 }
 
 func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) string {
+	reflected, _ := r.selfReflectWithStatus(ctx, review)
+	return reflected
+}
+
+func (r *MRInspectReviewer) selfReflectWithStatus(ctx context.Context, review string) (string, bool) {
 	loadedProject, err := r.loadServiceProject()
 	if err != nil {
-		return review
+		return review, false
 	}
 	reflectPrompt := r.prompt.ComposeSelfReflectionPrompt(loadedProject, review)
 	r.logSelfReflectPromptBreakdown(review, reflectPrompt)
 	result, err := r.callAI(ctx, reflectPrompt)
 	if err != nil {
 		r.log.Warn("self-reflection failed", "error", err)
-		return review
+		return review, false
 	}
 	if strings.Contains(result, "REVIEW VALIDATED") {
 		r.log.Info("self-reflection: review validated")
-		return review
+		return review, true
 	}
 
 	// Never adopt a reflection result that has not been re-validated: a
@@ -747,11 +759,11 @@ func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) stri
 	if err := r.validator.ValidateReviewContent(cleaned); err != nil {
 		r.log.Warn("self-reflection produced an invalid review; keeping original", "error", err.Error())
 		r.dumpForensics(dumpsEnabled, "Response", "self-reflection", result)
-		return review
+		return review, false
 	}
 
 	r.log.Info("self-reflection: review updated")
-	return cleaned
+	return cleaned, true
 }
 
 func (r *MRInspectReviewer) postReview(ctx context.Context, content string) error {

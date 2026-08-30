@@ -618,3 +618,78 @@ func TestS10_CIGuard(t *testing.T) {
 		t.Errorf("CIGuard refused explicit CI opt-in: %v", err)
 	}
 }
+
+func TestReflectReport_NotesReflectionDegradation(t *testing.T) {
+	configureEvalTestEnv(t)
+	cfg, err := config.LoadForEval()
+	if err != nil {
+		t.Fatalf("LoadForEval: %v", err)
+	}
+	cfg.SelfReflection = true
+	reflectFailure := errors.New("reflect provider unavailable")
+	provider := &testfake.FakeProvider{Responses: []testfake.ProviderResponse{
+		{Output: evalReviewText("reflect")},
+		{Err: reflectFailure},
+	}}
+	fixture := loadEvalFixture(t)
+	results := evalrun.RunModes(context.Background(), fixture, []reviewer.EvalMode{reviewer.EvalModeReflect},
+		func(reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+			return newEvalReviewer(cfg, &testfake.FakeGitLabClient{}, provider, false, ""), nil
+		})
+	if len(results) != 1 {
+		t.Fatalf("RunModes result count = %d, want 1", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("reflect mode unexpectedly failed instead of degrading: %v", results[0].Err)
+	}
+
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err = evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC),
+		Provider:    "fake",
+		Model:       "fake-model",
+		Fixtures: []evalrun.FixtureReport{{
+			Fixture: fixture,
+			Modes:   []evalrun.ModeReport{{Result: results[0]}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if !strings.Contains(string(report), "reflection not applied (degraded)") {
+		t.Errorf("reflect report missing degradation note after %v:\n%s", reflectFailure, report)
+	}
+}
+
+func TestWriteReport_PreservesFailureStageChain(t *testing.T) {
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	providerErr := errors.New("provider unavailable")
+	modeErr := fmt.Errorf("multi-lane fan-out failed: %w", providerErr)
+	stageErr := fmt.Errorf("generate review stage: %w", modeErr)
+	err := evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 30, 13, 0, 0, 0, time.UTC),
+		Provider:    "fake",
+		Model:       "fake-model",
+		Fixtures: []evalrun.FixtureReport{{
+			Fixture: evalrun.Fixture{Name: "01-failure.diff"},
+			Modes: []evalrun.ModeReport{{Result: evalrun.ModeResult{
+				Mode: reviewer.EvalModeMulti,
+				Err:  stageErr,
+			}}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if want := "generate review stage: multi-lane fan-out failed: provider unavailable"; !strings.Contains(string(report), want) {
+		t.Errorf("failure cell lost stage context; want %q in:\n%s", want, report)
+	}
+}

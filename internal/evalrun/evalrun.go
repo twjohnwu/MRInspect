@@ -103,10 +103,19 @@ func WriteReport(path string, report Report) error {
 		for _, modeReport := range fixtureReport.Modes {
 			fmt.Fprintf(&rendered, "### %s\n\n", modeReport.Result.Mode)
 			if modeReport.Result.Err != nil {
-				fmt.Fprintf(&rendered, "Mode failed: %s\n\n", rootCause(modeReport.Result.Err))
+				fullErr := rootCause(modeReport.Result.Err)
+				leafErr := innermostCause(modeReport.Result.Err)
+				fmt.Fprintf(&rendered, "Mode failed: %s\n", leafErr)
+				if fullErr.Error() != leafErr.Error() {
+					fmt.Fprintf(&rendered, "Failure context: %s\n", fullErr)
+				}
+				rendered.WriteString("\n")
 			} else {
 				rendered.WriteString(strings.TrimSpace(modeReport.Result.Outcome.ReviewText))
 				rendered.WriteString("\n\n")
+				if modeReport.Result.Mode == reviewer.EvalModeReflect && !modeReport.Result.Outcome.ReflectApplied {
+					rendered.WriteString("> reflection not applied (degraded)\n\n")
+				}
 				if breakdown := firstPromptBreakdown(modeReport.PromptBreakdown); breakdown != "" {
 					rendered.WriteString(breakdown)
 					rendered.WriteString("\n\n")
@@ -188,6 +197,10 @@ func CIGuard() error {
 }
 
 func rootCause(err error) error {
+	return err
+}
+
+func innermostCause(err error) error {
 	for {
 		cause := errors.Unwrap(err)
 		if cause == nil {
@@ -356,16 +369,22 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 	}
 	fixtureReports := make([]FixtureReport, 0, len(fixtures))
 	usage := UsageSummary{}
+	metricsBase, persistModeMetrics := os.LookupEnv("AI_REVIEW_METRICS_FILE")
+	persistModeMetrics = persistModeMetrics && strings.TrimSpace(metricsBase) != ""
 
 	for _, fixture := range fixtures {
 		var runLogs []*logger.Logger
 		var promptLogs []*bytes.Buffer
 		var closers []io.Closer
-		results := RunModes(ctx, fixture, modes, func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+		factory := func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
 			modeCfg := cfg
 			modeCfg.SelfReflection = mode == reviewer.EvalModeReflect
 			promptLog := &bytes.Buffer{}
-			runLog := logger.NewWithWriter(slog.LevelDebug, "", promptLog)
+			metricsFile := ""
+			if persistModeMetrics {
+				metricsFile = fmt.Sprintf("%s.%s.%s.json", metricsBase, fixture.Name, mode)
+			}
+			runLog := logger.NewWithWriter(slog.LevelDebug, metricsFile, promptLog)
 			promptLogs = append(promptLogs, promptLog)
 			runLogs = append(runLogs, runLog)
 
@@ -402,14 +421,23 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 				ModelLimits:      modelLimits,
 			})
 			return r, nil
-		})
+		}
 
-		modeReports := make([]ModeReport, 0, len(results))
-		for i, result := range results {
-			metrics := runLogs[i].MetricsSnapshot()
+		modeReports := make([]ModeReport, 0, len(modes))
+		for _, mode := range modes {
+			results := RunModes(ctx, fixture, []reviewer.EvalMode{mode}, factory)
+			result := results[0]
+			runLog := runLogs[len(runLogs)-1]
+			promptLog := promptLogs[len(promptLogs)-1]
+			if persistModeMetrics {
+				if err := runLog.SaveMetrics(); err != nil && log != nil {
+					log.Warn("failed to save eval mode metrics", "fixture", fixture.Name, "mode", mode, "error", err)
+				}
+			}
+			metrics := runLog.MetricsSnapshot()
 			modeReports = append(modeReports, ModeReport{
 				Result:          result,
-				PromptBreakdown: promptLogs[i].String(),
+				PromptBreakdown: promptLog.String(),
 				Metrics:         metrics,
 			})
 			tokens, unknown := summarizeMetrics(metrics)
@@ -458,7 +486,6 @@ func warnSkippedFixture(log *logger.Logger, name, reason string, err error) {
 type diffFile struct {
 	oldPath   string
 	newPath   string
-	headerAt  int
 	diffStart int
 }
 
@@ -470,42 +497,43 @@ func synthesizeChanges(data []byte) []gitlab.Change {
 	}
 	files := make([]diffFile, 0)
 	for i := firstDiffLine; i+1 < len(lines); i++ {
-		oldPath, ok := diffPath(lines[i].text, "--- a/")
+		oldPath, ok := diffPath(lines[i].text, "--- ", "a/")
 		if !ok {
 			continue
 		}
-		newPath, ok := diffPath(lines[i+1].text, "+++ b/")
+		newPath, ok := diffPath(lines[i+1].text, "+++ ", "b/")
 		if !ok {
 			continue
 		}
 		files = append(files, diffFile{
 			oldPath:   oldPath,
 			newPath:   newPath,
-			headerAt:  lines[i].start,
 			diffStart: lines[i+1].end,
 		})
 		i++
 	}
 
 	changes := make([]gitlab.Change, 0, len(files))
-	for i, file := range files {
+	for _, file := range files {
 		diffEnd := len(data)
-		if i+1 < len(files) {
-			diffEnd = files[i+1].headerAt
-			for _, line := range lines {
-				if line.start < file.diffStart || line.start >= diffEnd {
-					continue
-				}
-				if bytes.HasPrefix(line.text, []byte("diff --git ")) {
-					diffEnd = line.start
-					break
-				}
+		for _, line := range lines {
+			if line.start < file.diffStart {
+				continue
+			}
+			if bytes.HasPrefix(line.text, []byte("diff --git ")) || bytes.HasPrefix(line.text, []byte("--- ")) {
+				diffEnd = line.start
+				break
 			}
 		}
+		newFile := file.oldPath == "" && file.newPath != ""
+		deletedFile := file.oldPath != "" && file.newPath == ""
 		changes = append(changes, gitlab.Change{
-			OldPath: file.oldPath,
-			NewPath: file.newPath,
-			Diff:    string(data[file.diffStart:diffEnd]),
+			OldPath:     file.oldPath,
+			NewPath:     file.newPath,
+			Diff:        string(data[file.diffStart:diffEnd]),
+			NewFile:     newFile,
+			DeletedFile: deletedFile,
+			RenamedFile: !newFile && !deletedFile && file.oldPath != file.newPath,
 		})
 	}
 	return changes
@@ -537,9 +565,16 @@ func splitLines(data []byte) []diffLine {
 	return lines
 }
 
-func diffPath(line []byte, prefix string) (string, bool) {
-	if !bytes.HasPrefix(line, []byte(prefix)) || len(line) == len(prefix) {
+func diffPath(line []byte, headerPrefix, pathPrefix string) (string, bool) {
+	if !bytes.HasPrefix(line, []byte(headerPrefix)) || len(line) == len(headerPrefix) {
 		return "", false
 	}
-	return string(line[len(prefix):]), true
+	path := line[len(headerPrefix):]
+	if bytes.Equal(path, []byte("/dev/null")) {
+		return "", true
+	}
+	if !bytes.HasPrefix(path, []byte(pathPrefix)) || len(path) == len(pathPrefix) {
+		return "", false
+	}
+	return string(path[len(pathPrefix):]), true
 }

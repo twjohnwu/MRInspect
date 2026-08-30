@@ -74,6 +74,12 @@ func main() {
 			logLevel = slog.LevelDebug
 		}
 		log := logger.New(logLevel, cfg.MetricsFile)
+		v := validator.New(cfg)
+		rag.RegisterBuiltinSources(rag.BuiltinSourcesConfig{GitLab: rag.GitLabSourceConfig{
+			APIBase: cfg.GitLabAPIBase, Token: cfg.GitLabToken, ProjectID: v.GetProjectID(),
+			PackageName: "rag-index", ArtifactRef: v.GetTargetBranch(), ArtifactJob: "rag-index",
+			StoreName: "mrinspect-rag.sqlite",
+		}})
 		if err := evalrun.RunWithConfig(ctx, *fixturesDir, *reportPath, cfg, log); err != nil {
 			log.Error("evaluation failed", "error", err)
 			os.Exit(1)

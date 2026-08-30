@@ -78,7 +78,7 @@ func (p *GeminiProvider) Generate(ctx context.Context, prompt string, opts Gener
 	if resp != nil && resp.UsageMetadata != nil {
 		usage = &logger.TokenUsage{
 			InputTokens:  int64(resp.UsageMetadata.PromptTokenCount),
-			OutputTokens: int64(resp.UsageMetadata.CandidatesTokenCount),
+			OutputTokens: int64(resp.UsageMetadata.CandidatesTokenCount + resp.UsageMetadata.ThoughtsTokenCount),
 		}
 	}
 	p.log.LogAIAPICall("gemini", "generateContent", dur, true, nil, usage)

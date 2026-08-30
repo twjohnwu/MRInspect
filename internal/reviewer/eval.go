@@ -25,10 +25,10 @@ type EvalInput struct {
 
 // EvalOutcome returns generated review data without posting it to GitLab.
 type EvalOutcome struct {
-	ReviewText        string
-	BreakdownSections []Section
-	Degraded          bool
-	Mode              EvalMode
+	ReviewText     string
+	ReflectApplied bool
+	Degraded       bool
+	Mode           EvalMode
 }
 
 // RunForEval generates an offline review from caller-owned MR data. It bypasses
@@ -39,11 +39,12 @@ func (r *MRInspectReviewer) RunForEval(ctx context.Context, mode EvalMode, input
 		Title:       input.Title,
 		Description: input.Description,
 	}
-	content, footer, err := r.generateReviewForExplicitMode(ctx, mode, input.Diff, input.Changes, mr)
+	content, footer, reflectApplied, err := r.generateReviewForExplicitModeWithStatus(ctx, mode, input.Diff, input.Changes, mr)
 	outcome := EvalOutcome{
-		ReviewText: content,
-		Degraded:   footer.degradedToSingle,
-		Mode:       mode,
+		ReviewText:     content,
+		ReflectApplied: reflectApplied,
+		Degraded:       footer.degradedToSingle,
+		Mode:           mode,
 	}
 	if err != nil {
 		return outcome, err
