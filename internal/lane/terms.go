@@ -29,15 +29,18 @@ func Terms(changes []gitlab.Change) []string {
 			return collector.terms
 		}
 
-		for _, line := range strings.Split(change.Diff, "\n") {
-			if !isChangedLine(line) {
-				continue
-			}
-			if collector.add(line[1:]) {
-				return collector.terms
-			}
+		if collector.addDiff(change.Diff) {
+			return collector.terms
 		}
 	}
+	return collector.terms
+}
+
+// TermsFromDiff extracts retrieval terms from a rendered unified diff using
+// the same normalization, filtering, ordering, and cap as Terms.
+func TermsFromDiff(diff string) []string {
+	collector := newTermCollector()
+	collector.addDiff(diff)
 	return collector.terms
 }
 
@@ -70,6 +73,32 @@ func (c *termCollector) add(text string) bool {
 		}
 	}
 	return false
+}
+
+func (c *termCollector) addDiff(diff string) bool {
+	for _, line := range strings.Split(diff, "\n") {
+		if path, ok := changedPath(line); ok && c.add(path) {
+			return true
+		}
+		if isChangedLine(line) && c.add(line[1:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func changedPath(line string) (string, bool) {
+	if !strings.HasPrefix(line, "+++ ") && !strings.HasPrefix(line, "--- ") {
+		return "", false
+	}
+	path := strings.TrimSpace(line[4:])
+	if path == "/dev/null" {
+		return "", false
+	}
+	if strings.HasPrefix(path, "a/") || strings.HasPrefix(path, "b/") {
+		path = path[2:]
+	}
+	return path, true
 }
 
 func isChangedLine(line string) bool {

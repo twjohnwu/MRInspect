@@ -58,6 +58,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 	}
 
 	diffTokenEst := chunk.TokenEst(input.Diff)
+	composer := prompt.NewComposer()
 	results := make([]LaneResult, len(input.Lanes))
 	var group errgroup.Group
 	concurrency := 4
@@ -87,7 +88,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 		group.Go(func() error {
 			results[index] = executeLaneWithOptions(
 				ctx,
-				composeInput(input, declaration, lane.budget),
+				composeInput(input, declaration, lane.budget, composer),
 				input.Provider,
 				input.Attempts,
 				ai.GenerateOptions{Model: lane.model},
@@ -121,11 +122,12 @@ func preflightLanes(input FanoutInput) ([]preparedLane, error) {
 	return prepared, nil
 }
 
-func composeInput(input FanoutInput, declaration Lane, budget int) ComposeInput {
+func composeInput(input FanoutInput, declaration Lane, budget int, composer *prompt.Composer) ComposeInput {
 	return ComposeInput{
 		Lane:             declaration,
 		Terms:            input.Terms,
 		Budget:           budget,
+		Composer:         composer,
 		ResourceRegistry: input.ResourceRegistry,
 		Retriever:        input.Retriever,
 		FullLoader:       input.FullLoader,

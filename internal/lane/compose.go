@@ -25,6 +25,7 @@ type ComposeInput struct {
 	Lane             Lane
 	Terms            []string
 	Budget           int // zero preserves unbudgeted composition
+	Composer         *prompt.Composer
 	ResourceRegistry resources.Registry
 	Retriever        rag.Retriever
 	FullLoader       rag.FullLoader
@@ -76,7 +77,7 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 
 	basePrompt := ""
 	if input.Budget > 0 {
-		resourceFree, err := prompt.NewComposer().ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+		resourceFree, err := input.Composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
 			Project:      input.Project,
 			Diff:         input.Diff,
 			MergeRequest: input.MergeRequest,
@@ -112,7 +113,7 @@ func Compose(ctx context.Context, input ComposeInput) (ComposeResult, error) {
 // document, and the diff. Every value is measured from data already
 // produced by this composition; nothing here is recomputed independently.
 func buildLaneBreakdown(ctx context.Context, input ComposeInput, preamble []byte, chunks []rag.Chunk, fullDocs []rag.FullDoc) ([]Section, error) {
-	metadataOnly, err := prompt.NewComposer().ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+	metadataOnly, err := input.Composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
 		Project:      input.Project,
 		MergeRequest: input.MergeRequest,
 	})
@@ -179,9 +180,8 @@ func composeLanePrompt(
 	basePrompt string,
 	degraded *[]string,
 ) (prompt.LaneComposeResult, []rag.Chunk, []rag.FullDoc, error) {
-	composer := prompt.NewComposer()
 	if input.Budget == 0 {
-		composed, err := composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+		composed, err := input.Composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
 			Project:         input.Project,
 			Diff:            input.Diff,
 			MergeRequest:    input.MergeRequest,
@@ -217,7 +217,7 @@ func composeLanePrompt(
 		kept[evicted.DeclarationOrder] = false
 	}
 	keptDocs, keptChunks := survivingResources(fullDocs, chunks, kept)
-	composed, err := composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
+	composed, err := input.Composer.ComposeLanePrompt(ctx, prompt.LaneComposeInput{
 		Project:         input.Project,
 		Diff:            input.Diff,
 		MergeRequest:    input.MergeRequest,

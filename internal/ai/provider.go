@@ -22,18 +22,20 @@ type Provider interface {
 
 func NewProvider(cfg config.Config, log *logger.Logger) (Provider, error) {
 	pcfg := cfg.Providers[cfg.AIProvider]
+	var provider Provider
 	switch cfg.AIProvider {
 	case config.ProviderAnthropic:
-		return NewAnthropicProvider(cfg.AIProviderKey, pcfg, log), nil
+		provider = NewAnthropicProvider(cfg.AIProviderKey, pcfg, log)
 	case config.ProviderGemini:
 		p, err := NewGeminiProvider(context.Background(), cfg.AIProviderKey, pcfg, log)
 		if err != nil {
 			return nil, fmt.Errorf("NewProvider: %s: %w", cfg.AIProvider, err)
 		}
-		return p, nil
+		provider = p
 	case config.ProviderOpenAI:
-		return NewOpenAIProvider(cfg.AIProviderKey, pcfg, log), nil
+		provider = NewOpenAIProvider(cfg.AIProviderKey, pcfg, log)
 	default:
 		return nil, fmt.Errorf("NewProvider: unknown provider %q", cfg.AIProvider)
 	}
+	return WithRetry(provider, cfg.API), nil
 }

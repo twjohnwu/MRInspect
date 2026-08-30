@@ -10,6 +10,7 @@ import (
 
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/project"
+	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/chunk"
 	"mrinspect/internal/rag/resources"
@@ -43,6 +44,7 @@ func composeTestInput(t *testing.T, lane Lane, terms []string, registry resource
 	return ComposeInput{
 		Lane:             lane,
 		Terms:            terms,
+		Composer:         prompt.NewComposer(),
 		ResourceRegistry: registry,
 		Project: project.LoadedProject{
 			System:              project.SystemProject{Name: "Compose Test System"},

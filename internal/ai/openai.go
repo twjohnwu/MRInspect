@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"time"
 
@@ -70,10 +69,23 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string, opts Gener
 		"max_output_tokens": maxTokens,
 	}
 
-	text, err := p.callWithRetry(ctx, reqBody)
+	text, status, durationMs, usage, err := p.doRequest(ctx, reqBody)
 	if err != nil {
+		p.log.LogAIAPICall("openai", "responses", durationMs, false, err, usage)
 		return "", fmt.Errorf("openai Generate: %w", err)
 	}
+	if status == http.StatusTooManyRequests || status >= http.StatusInternalServerError {
+		err := fmt.Errorf("HTTP %d", status)
+		p.log.LogAIAPICall("openai", "responses", durationMs, false, err, usage)
+		return "", fmt.Errorf("openai Generate: %w", err)
+	}
+	if status >= http.StatusBadRequest {
+		err := fmt.Errorf("openai API error HTTP %d", status)
+		p.log.LogAIAPICall("openai", "responses", durationMs, false, err, usage)
+		return "", withoutRetry(fmt.Errorf("openai Generate: %w", err))
+	}
+
+	p.log.LogAIAPICall("openai", "responses", durationMs, true, nil, usage)
 	return text, nil
 }
 
@@ -87,51 +99,6 @@ type openaiResponse struct {
 		InputTokens  int64 `json:"input_tokens"`
 		OutputTokens int64 `json:"output_tokens"`
 	} `json:"usage"`
-}
-
-func (p *OpenAIProvider) callWithRetry(ctx context.Context, reqBody map[string]any) (string, error) {
-	const maxAttempts = 3
-	const baseDelayMs = 1000
-	const maxDelayMs = 10000
-
-	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(math.Min(
-				float64(baseDelayMs)*math.Pow(2, float64(attempt-1)),
-				maxDelayMs,
-			)) * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
-		text, status, durationMs, usage, err := p.doRequest(ctx, reqBody)
-
-		if err != nil {
-			p.log.LogAIAPICall("openai", "responses", durationMs, false, err, usage)
-			lastErr = err
-			continue
-		}
-
-		if status == 429 || status >= 500 {
-			lastErr = fmt.Errorf("HTTP %d", status)
-			p.log.LogAIAPICall("openai", "responses", durationMs, false, lastErr, usage)
-			continue
-		}
-
-		if status >= 400 {
-			lastErr = fmt.Errorf("openai API error HTTP %d", status)
-			p.log.LogAIAPICall("openai", "responses", durationMs, false, lastErr, usage)
-			return "", lastErr
-		}
-
-		p.log.LogAIAPICall("openai", "responses", durationMs, true, nil, usage)
-		return text, nil
-	}
-	return "", fmt.Errorf("openai: exceeded retry attempts: %w", lastErr)
 }
 
 func (p *OpenAIProvider) doRequest(ctx context.Context, reqBody map[string]any) (text string, statusCode int, durationMs int64, usage *logger.TokenUsage, err error) {

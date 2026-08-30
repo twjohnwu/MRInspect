@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"
 
+	"mrinspect/internal/lane"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
 	_ "mrinspect/internal/rag/sqlite"
@@ -61,27 +61,32 @@ func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (review
 		return state, fmt.Errorf("create RAG retriever: %w", err)
 	}
 	defer retriever.Close()
-	terms := retrievalTerms(diff)
-	for _, set := range p.config.ResourceSets {
+	terms := lane.TermsFromDiff(diff)
+	if err := retrieveResourceSets(ctx, retriever, p.config.ResourceSets, terms, &state); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+func retrieveResourceSets(ctx context.Context, retriever rag.Retriever, sets []resources.Set, terms []string, state *reviewer.ReviewRAGState) error {
+	for _, set := range sets {
 		if set.Mode != resources.ModeRetrieval {
 			continue
 		}
 		chunksBefore := len(state.Chunks)
-		for _, term := range terms {
-			result, err := retriever.Retrieve(ctx, rag.Query{Terms: []string{term}, SetRef: set.Name, Intent: "review", TopK: 5})
-			if err != nil {
-				return state, fmt.Errorf("retrieve resource set %q: %w", set.Name, err)
-			}
-			state.Chunks = append(state.Chunks, result.Chunks...)
-			state.Degraded = append(state.Degraded, result.Degraded...)
+		result, err := retriever.Retrieve(ctx, rag.Query{Terms: terms, SetRef: set.Name, Intent: "review", TopK: 5})
+		if err != nil {
+			return fmt.Errorf("retrieve resource set %q: %w", set.Name, err)
 		}
+		state.Chunks = append(state.Chunks, result.Chunks...)
+		state.Degraded = append(state.Degraded, result.Degraded...)
 		if len(state.Chunks) == chunksBefore {
 			chunks, skipped := directPathChunks(set)
 			state.Chunks = append(state.Chunks, chunks...)
 			state.SkippedFiles += skipped
 		}
 	}
-	return state, nil
+	return nil
 }
 
 // NewProductionReviewDependencies constructs the production adapters used by
@@ -114,26 +119,6 @@ func loadStoreProvenance(ctx context.Context, path string, state *reviewer.Revie
 	}
 	defer db.Close()
 	return db.QueryRowContext(ctx, `SELECT built_at, resources_sha256 FROM schema_meta WHERE id = 1`).Scan(&state.Store.BuiltAt, &state.ResourcesSHA256)
-}
-
-func retrievalTerms(diff string) []string {
-	fields := strings.FieldsFunc(diff, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_')
-	})
-	terms := make([]string, 0, len(fields))
-	seen := make(map[string]struct{}, len(fields))
-	for _, field := range fields {
-		field = strings.ToLower(field)
-		if len(field) < 2 {
-			continue
-		}
-		if _, ok := seen[field]; ok {
-			continue
-		}
-		seen[field] = struct{}{}
-		terms = append(terms, field)
-	}
-	return terms
 }
 
 // directPathChunks covers a store assembled from an explicit file path. The

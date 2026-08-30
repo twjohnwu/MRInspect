@@ -167,3 +167,21 @@ index 1111111..2222222 100644
 		}
 	})
 }
+
+func TestTermsFromDiff_UsesTermsExtractor(t *testing.T) {
+	const rendered = `--- a/internal/payment/batchProcessor.go
++++ b/internal/payment/batchProcessor.go
+@@ -1 +1 @@
+-if the oldHandler != nil {}
++if the retryHandler != nil {}
+`
+	change := gitlab.Change{
+		OldPath: "internal/payment/batchProcessor.go",
+		NewPath: "internal/payment/batchProcessor.go",
+		Diff:    rendered,
+	}
+
+	if got, want := TermsFromDiff(rendered), Terms([]gitlab.Change{change}); !slices.Equal(got, want) {
+		t.Errorf("TermsFromDiff() = %v, want Terms() result %v", got, want)
+	}
+}
