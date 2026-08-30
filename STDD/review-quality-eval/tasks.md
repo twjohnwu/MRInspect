@@ -61,7 +61,7 @@ language: zh-TW
   與 `Run` 共用生成路徑；reviewer 既有全測試回歸
 - Verification command: `go test ./internal/evalrun/ -run 'TestS03_OfflineIsolation|TestS04_ThreeModes' -count=1 -v`
 
-## T5 `[ ]` `S-06,S-08,S-10` [NEW] 報告、預算、CI 防護
+## T5 `[x]` `S-06,S-08,S-10` [NEW] 報告、預算、CI 防護
 
 - 檔案：`internal/evalrun/evalrun.go`（report writer、budget、guard）、
   `cmd/mrinspect/main.go`（PathEval 分支＋旗標＋CI 防護）＋

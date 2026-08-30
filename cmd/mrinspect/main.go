@@ -11,6 +11,7 @@ import (
 	"mrinspect/internal/config"
 	"mrinspect/internal/diff"
 	mrerrors "mrinspect/internal/errors"
+	"mrinspect/internal/evalrun"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/interfaces"
 	"mrinspect/internal/logger"
@@ -46,6 +47,38 @@ func main() {
 			slog.Error("index error", "error", err)
 		}
 		os.Exit(exitCode)
+	}
+	if path == ragcmd.PathEval {
+		if err := evalrun.CIGuard(); err != nil {
+			slog.Error("evaluation refused", "error", err)
+			os.Exit(1)
+		}
+		flags := flag.NewFlagSet("eval", flag.ContinueOnError)
+		fixturesDir := flags.String("fixtures", "eval/fixtures", "directory containing evaluation fixtures")
+		reportPath := flags.String("report", "eval/REPORT.md", "evaluation report output path")
+		if err := flags.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
+			slog.Error("evaluation arguments error", "error", err)
+			os.Exit(1)
+		}
+
+		cfg, err := config.LoadForEval()
+		if err != nil {
+			slog.Error("evaluation configuration error", "error", err)
+			os.Exit(1)
+		}
+		logLevel := slog.LevelInfo
+		if cfg.LogLevel == "debug" {
+			logLevel = slog.LevelDebug
+		}
+		log := logger.New(logLevel, cfg.MetricsFile)
+		if err := evalrun.RunWithConfig(ctx, *fixturesDir, *reportPath, cfg, log); err != nil {
+			log.Error("evaluation failed", "error", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	cfg, err := config.Load()

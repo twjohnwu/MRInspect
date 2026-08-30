@@ -3,17 +3,31 @@ package evalrun
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"mrinspect/internal/ai"
+	"mrinspect/internal/config"
+	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/logger"
+	"mrinspect/internal/project"
+	"mrinspect/internal/prompt"
+	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/resources"
+	"mrinspect/internal/ragwire"
 	"mrinspect/internal/reviewer"
+	"mrinspect/internal/validator"
 )
 
 var ErrNoValidFixtures = errors.New("no valid fixtures")
@@ -37,6 +51,179 @@ type ModeResult struct {
 	Mode    reviewer.EvalMode
 	Outcome reviewer.EvalOutcome
 	Err     error
+}
+
+// Report is the complete input needed to render one qualitative eval report.
+type Report struct {
+	GeneratedAt time.Time
+	Provider    string
+	Model       string
+	Fixtures    []FixtureReport
+}
+
+// FixtureReport groups all mode-runs belonging to one fixture.
+type FixtureReport struct {
+	Fixture Fixture
+	Modes   []ModeReport
+}
+
+// ModeReport carries one result together with its writer-captured prompt logs
+// and independently collected token metrics.
+type ModeReport struct {
+	Result          ModeResult
+	PromptBreakdown string
+	Metrics         logger.Metrics
+}
+
+// UsageSummary is the known token lower bound for one eval invocation.
+type UsageSummary struct {
+	TotalTokens       int64
+	UsageUnknownCalls int
+}
+
+// WriteReport atomically renders report to path.
+func WriteReport(path string, report Report) error {
+	var rendered strings.Builder
+	rendered.WriteString("# MRInspect Review Quality Evaluation\n\n")
+	fmt.Fprintf(&rendered, "Generated: %s\n\n", report.GeneratedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&rendered, "Provider: `%s`\n\n", report.Provider)
+	fmt.Fprintf(&rendered, "Model: `%s`\n\n", report.Model)
+	rendered.WriteString("Fixtures: ")
+	fixtureNames := make([]string, 0, len(report.Fixtures))
+	for _, fixtureReport := range report.Fixtures {
+		fixtureNames = append(fixtureNames, "`"+fixtureReport.Fixture.Name+"`")
+	}
+	rendered.WriteString(strings.Join(fixtureNames, ", "))
+	rendered.WriteString("\n\n")
+
+	for _, fixtureReport := range report.Fixtures {
+		fmt.Fprintf(&rendered, "## %s\n\n", fixtureReport.Fixture.Name)
+		var subtotal int64
+		unknownCalls := 0
+		for _, modeReport := range fixtureReport.Modes {
+			fmt.Fprintf(&rendered, "### %s\n\n", modeReport.Result.Mode)
+			if modeReport.Result.Err != nil {
+				fmt.Fprintf(&rendered, "Mode failed: %s\n\n", rootCause(modeReport.Result.Err))
+			} else {
+				rendered.WriteString(strings.TrimSpace(modeReport.Result.Outcome.ReviewText))
+				rendered.WriteString("\n\n")
+				if breakdown := firstPromptBreakdown(modeReport.PromptBreakdown); breakdown != "" {
+					rendered.WriteString(breakdown)
+					rendered.WriteString("\n\n")
+				}
+			}
+
+			modeTokens, modeUnknown := summarizeMetrics(modeReport.Metrics)
+			subtotal += modeTokens
+			unknownCalls += modeUnknown
+		}
+
+		if unknownCalls > 0 {
+			fmt.Fprintf(&rendered, "Token subtotal: ≥%d\n\n", subtotal)
+		} else {
+			fmt.Fprintf(&rendered, "Token subtotal: %d\n\n", subtotal)
+		}
+		rendered.WriteString("### 人工評語\n\n")
+	}
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(rendered.String()), 0o644); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write report temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("publish report: %w", err)
+	}
+	return nil
+}
+
+// SummarizeBudget logs usage and the optional MRI_DAILY_TOKEN_BUDGET comparison.
+func SummarizeBudget(log *logger.Logger, usage UsageSummary) error {
+	knownTokens := usage.TotalTokens
+	if knownTokens < 0 {
+		knownTokens = 0
+	}
+	usageText := strconv.FormatInt(knownTokens, 10)
+	if usage.UsageUnknownCalls > 0 {
+		usageText = "≥" + usageText
+	}
+
+	rawBudget, configured := os.LookupEnv("MRI_DAILY_TOKEN_BUDGET")
+	trimmedBudget := strings.TrimSpace(rawBudget)
+	if !configured || trimmedBudget == "" || trimmedBudget == "0" {
+		if log != nil {
+			log.Info("eval token usage", "usage", usageText, "usageUnknownCalls", usage.UsageUnknownCalls)
+		}
+		return nil
+	}
+
+	budget, err := strconv.ParseUint(trimmedBudget, 10, 64)
+	if err != nil || budget == 0 {
+		if log != nil {
+			log.Warn("invalid MRI_DAILY_TOKEN_BUDGET; budget comparison disabled", "value", rawBudget)
+			log.Info("eval token usage", "usage", usageText, "usageUnknownCalls", usage.UsageUnknownCalls)
+		}
+		return nil
+	}
+
+	percent := uint64(float64(knownTokens) / float64(budget) * 100)
+	line := fmt.Sprintf("%s / %d (%d%%)", usageText, budget, percent)
+	if log != nil {
+		if uint64(knownTokens) > budget {
+			log.Warn("eval token budget exceeded", "summary", line, "usage", usageText, "budget", budget, "percent", fmt.Sprintf("%d%%", percent))
+		} else {
+			log.Info("eval token budget", "summary", line, "usage", usageText, "budget", budget, "percent", fmt.Sprintf("%d%%", percent))
+		}
+	}
+	return nil
+}
+
+// CIGuard refuses accidental eval execution in CI unless explicitly opted in.
+func CIGuard() error {
+	if os.Getenv("CI") == "true" && os.Getenv("MRI_EVAL_ALLOW_CI") != "true" {
+		return errors.New("evaluation is disabled in CI; set MRI_EVAL_ALLOW_CI=true to opt in")
+	}
+	return nil
+}
+
+func rootCause(err error) error {
+	for {
+		cause := errors.Unwrap(err)
+		if cause == nil {
+			return err
+		}
+		err = cause
+	}
+}
+
+func firstPromptBreakdown(captured string) string {
+	decoder := json.NewDecoder(strings.NewReader(captured))
+	for {
+		var record struct {
+			Message string `json:"msg"`
+		}
+		if err := decoder.Decode(&record); err != nil {
+			break
+		}
+		if strings.Contains(record.Message, "| Section | Tokens | % of total |") {
+			return strings.TrimSpace(record.Message)
+		}
+	}
+	if strings.Contains(captured, "| Section | Tokens | % of total |") {
+		return strings.TrimSpace(captured)
+	}
+	return ""
+}
+
+func summarizeMetrics(metrics logger.Metrics) (int64, int) {
+	var total int64
+	for _, call := range metrics.APICalls {
+		if call.Usage != nil {
+			total += call.Usage.InputTokens + call.Usage.OutputTokens
+		}
+	}
+	return total, metrics.UsageUnknownCalls
 }
 
 // RunModes executes each requested mode with a freshly constructed reviewer.
@@ -131,10 +318,123 @@ func LoadFixtures(dir string, log *logger.Logger) ([]Fixture, error) {
 }
 
 func Run(fixturesDir, reportPath string, log *logger.Logger) error {
-	if _, err := LoadFixtures(fixturesDir, log); err != nil {
+	fixtures, err := LoadFixtures(fixturesDir, log)
+	if err != nil {
 		return err
 	}
-	return errors.New("not implemented")
+	cfg, err := config.LoadForEval()
+	if err != nil {
+		return err
+	}
+	return runLoaded(context.Background(), fixtures, reportPath, cfg, log)
+}
+
+// RunWithConfig executes the offline eval workflow with command-loaded config.
+func RunWithConfig(ctx context.Context, fixturesDir, reportPath string, cfg config.Config, log *logger.Logger) error {
+	fixtures, err := LoadFixtures(fixturesDir, log)
+	if err != nil {
+		return err
+	}
+	return runLoaded(ctx, fixtures, reportPath, cfg, log)
+}
+
+func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger) error {
+	repoRoot := "."
+	resourceRegistry, err := resources.Load(repoRoot, "")
+	if err != nil && log != nil {
+		log.Warn("failed to load RAG resource sets", "error", err)
+	}
+	modelLimits, err := prompt.ModelLimitsFromEnv()
+	if err != nil {
+		return fmt.Errorf("model limits configuration: %w", err)
+	}
+
+	modes := []reviewer.EvalMode{
+		reviewer.EvalModeSingle,
+		reviewer.EvalModeMulti,
+		reviewer.EvalModeReflect,
+	}
+	fixtureReports := make([]FixtureReport, 0, len(fixtures))
+	usage := UsageSummary{}
+
+	for _, fixture := range fixtures {
+		var runLogs []*logger.Logger
+		var promptLogs []*bytes.Buffer
+		var closers []io.Closer
+		results := RunModes(ctx, fixture, modes, func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+			modeCfg := cfg
+			modeCfg.SelfReflection = mode == reviewer.EvalModeReflect
+			promptLog := &bytes.Buffer{}
+			runLog := logger.NewWithWriter(slog.LevelDebug, "", promptLog)
+			promptLogs = append(promptLogs, promptLog)
+			runLogs = append(runLogs, runLog)
+
+			provider, err := ai.NewProvider(modeCfg, runLog)
+			if err != nil {
+				return nil, err
+			}
+			v := validator.New(modeCfg)
+			gitlabClient := gitlab.NewClient(modeCfg, runLog)
+			promptComposer := prompt.NewComposer()
+			r := reviewer.New(
+				modeCfg,
+				gitlabClient,
+				provider,
+				nil,
+				project.NewLoader(modeCfg.Projects),
+				promptComposer,
+				v,
+				mrerrors.NewHandler(modeCfg, runLog),
+				runLog,
+			)
+			productionRAG := ragwire.NewProductionReviewDependencies(modeCfg, ragwire.ReviewPathConfig{
+				ResolverConfig: rag.DefaultResolverConfig(),
+				ResourceSets:   resourceRegistry.Sets,
+				Composer:       promptComposer,
+			})
+			closers = append(closers, productionRAG.Retriever)
+			r.SetRAGReviewPath(productionRAG.ReviewPath)
+			r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{
+				RepoRoot:         repoRoot,
+				ResourceRegistry: resourceRegistry,
+				Retriever:        productionRAG.Retriever,
+				FullLoader:       productionRAG.FullLoader,
+				ModelLimits:      modelLimits,
+			})
+			return r, nil
+		})
+
+		modeReports := make([]ModeReport, 0, len(results))
+		for i, result := range results {
+			metrics := runLogs[i].MetricsSnapshot()
+			modeReports = append(modeReports, ModeReport{
+				Result:          result,
+				PromptBreakdown: promptLogs[i].String(),
+				Metrics:         metrics,
+			})
+			tokens, unknown := summarizeMetrics(metrics)
+			usage.TotalTokens += tokens
+			usage.UsageUnknownCalls += unknown
+		}
+		for _, closer := range closers {
+			if err := closer.Close(); err != nil && log != nil {
+				log.Warn("failed to clean up resolved RAG store", "error", err)
+			}
+		}
+		fixtureReports = append(fixtureReports, FixtureReport{Fixture: fixture, Modes: modeReports})
+	}
+
+	providerName := string(cfg.AIProvider)
+	model := cfg.Providers[cfg.AIProvider].Model
+	if err := WriteReport(reportPath, Report{
+		GeneratedAt: time.Now().UTC(),
+		Provider:    providerName,
+		Model:       model,
+		Fixtures:    fixtureReports,
+	}); err != nil {
+		return err
+	}
+	return SummarizeBudget(log, usage)
 }
 
 func isFixtureName(name string) bool {

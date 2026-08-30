@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mrinspect/internal/config"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/evalrun"
+	"mrinspect/internal/gitlab"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
@@ -407,4 +409,212 @@ func newEvalReviewer(cfg config.Config, gitlabClient *testfake.FakeGitLabClient,
 
 func evalReviewText(mode string) string {
 	return fmt.Sprintf("## Code Review: %s\n### Findings\nNo blocking issue in this fixture. %s\n### Verdict\nNeeds Minor Changes\n", mode, strings.Repeat("mode-specific evidence. ", 6))
+}
+
+// TestS06_ReportGeneration verifies REQ-03 / S-06 renders complete partial-failure reports and publishes them atomically.
+func TestS06_ReportGeneration(t *testing.T) {
+	configureEvalTestEnv(t)
+	modes := []reviewer.EvalMode{
+		reviewer.EvalModeSingle,
+		reviewer.EvalModeMulti,
+		reviewer.EvalModeReflect,
+	}
+	fixtures := []evalrun.Fixture{
+		{
+			Name: "01-alpha.diff",
+			Diff: []byte("--- a/alpha.go\n+++ b/alpha.go\n@@ -1 +1 @@\n-old\n+new\n"),
+		},
+		{
+			Name: "02-beta.diff",
+			Diff: []byte("--- a/beta.go\n+++ b/beta.go\n@@ -1 +1 @@\n-old\n+new\n"),
+		},
+	}
+	injected := errors.New("injected fixture/mode failure")
+	fixtureReports := make([]evalrun.FixtureReport, 0, len(fixtures))
+
+	for fixtureIndex, fixture := range fixtures {
+		fixturePath := []string{"alpha.go", "beta.go"}[fixtureIndex]
+		fixture.Changes = []gitlab.Change{{
+			OldPath: fixturePath,
+			NewPath: fixturePath,
+			Diff:    string(fixture.Diff),
+		}}
+		var runLogs []*logger.Logger
+		var promptLogs []*bytes.Buffer
+		results := evalrun.RunModes(context.Background(), fixture, modes,
+			func(mode reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) {
+				cfg, err := config.LoadForEval()
+				if err != nil {
+					return nil, err
+				}
+				cfg.SelfReflection = mode == reviewer.EvalModeReflect
+				promptLog := &bytes.Buffer{}
+				runLog := logger.NewWithWriter(slog.LevelDebug, "", promptLog)
+				promptLogs = append(promptLogs, promptLog)
+				runLogs = append(runLogs, runLog)
+				provider := &testfake.FakeProvider{DefaultResponse: testfake.ProviderResponse{
+					Output: evalReviewText(fmt.Sprintf("review-%s-%s", fixture.Name, mode)),
+				}}
+				brokenMulti := fixtureIndex == 1 && mode == reviewer.EvalModeMulti
+				if brokenMulti {
+					provider.DefaultResponse = testfake.ProviderResponse{Err: injected}
+				}
+				r := reviewer.New(
+					cfg,
+					&testfake.FakeGitLabClient{},
+					provider,
+					nil,
+					project.NewLoader(cfg.Projects),
+					prompt.NewComposer(),
+					validator.New(cfg),
+					mrerrors.NewHandler(cfg, runLog),
+					runLog,
+				)
+				if brokenMulti {
+					r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{RepoRoot: t.TempDir()})
+				}
+				return r, nil
+			})
+
+		modeReports := make([]evalrun.ModeReport, 0, len(results))
+		for i, result := range results {
+			if result.Err != nil {
+				runLogs[i].LogAIAPICall("fake", "generate", 1, false, result.Err, nil)
+			} else {
+				runLogs[i].LogAIAPICall("fake", "generate", 1, true, nil, &logger.TokenUsage{
+					InputTokens:  100,
+					OutputTokens: 50,
+				})
+			}
+			modeReports = append(modeReports, evalrun.ModeReport{
+				Result:          result,
+				PromptBreakdown: promptLogs[i].String(),
+				Metrics:         runLogs[i].MetricsSnapshot(),
+			})
+		}
+		fixtureReports = append(fixtureReports, evalrun.FixtureReport{Fixture: fixture, Modes: modeReports})
+	}
+
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err := evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 30, 10, 0, 0, 0, time.UTC),
+		Provider:    "fake-provider",
+		Model:       "fake-model",
+		Fixtures:    fixtureReports,
+	})
+	if err != nil {
+		t.Errorf("WriteReport: %v", err)
+	}
+	reportBytes, readErr := os.ReadFile(reportPath)
+	if readErr != nil {
+		t.Errorf("read completed report: %v", readErr)
+	}
+	report := string(reportBytes)
+	for _, want := range []string{
+		"# MRInspect Review Quality Evaluation",
+		"2026-08-30T10:00:00Z",
+		"fake-provider",
+		"fake-model",
+		"Fixtures: `01-alpha.diff`, `02-beta.diff`",
+		"## 01-alpha.diff",
+		"## 02-beta.diff",
+		"review-01-alpha.diff-single",
+		"review-01-alpha.diff-multi",
+		"review-01-alpha.diff-reflect",
+		"review-02-beta.diff-single",
+		"review-02-beta.diff-reflect",
+		"Mode failed: injected fixture/mode failure",
+		"Token subtotal: 450",
+		"Token subtotal: ≥300",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report does not contain %q", want)
+		}
+	}
+	if got := strings.Count(report, "| Section | Tokens | % of total |"); got != 5 {
+		t.Errorf("prompt-breakdown table count = %d, want 5 successful mode-runs", got)
+	}
+	for _, mode := range modes {
+		if got := strings.Count(report, "### "+string(mode)+"\n"); got != len(fixtures) {
+			t.Errorf("%s mode section count = %d, want %d", mode, got, len(fixtures))
+		}
+	}
+	if got := strings.Count(report, "### 人工評語\n\n"); got != len(fixtures) {
+		t.Errorf("empty 人工評語 field count = %d, want %d", got, len(fixtures))
+	}
+	if _, statErr := os.Stat(reportPath + ".tmp"); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("atomic report temp file remains after WriteReport: %v", statErr)
+	}
+	if report != "" && (!strings.HasSuffix(report, "\n") || !strings.Contains(report, "## 02-beta.diff")) {
+		t.Error("published report appears incomplete")
+	}
+}
+
+// TestS08_BudgetWarning verifies REQ-05 / S-08 parses the budget defensively and reports an honest lower bound without returning an error.
+func TestS08_BudgetWarning(t *testing.T) {
+	tests := []struct {
+		name          string
+		value         string
+		wantParseWarn bool
+		wantBudget    bool
+	}{
+		{name: "unset", value: ""},
+		{name: "zero", value: "0"},
+		{name: "malformed", value: "abc", wantParseWarn: true},
+		{name: "negative", value: "-5", wantParseWarn: true},
+		{name: "trimmed budget", value: " 1000 ", wantBudget: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MRI_DAILY_TOKEN_BUDGET", tt.value)
+			if tt.name == "unset" {
+				if err := os.Unsetenv("MRI_DAILY_TOKEN_BUDGET"); err != nil {
+					t.Fatalf("unset MRI_DAILY_TOKEN_BUDGET: %v", err)
+				}
+			}
+			var logs bytes.Buffer
+			log := logger.NewWithWriter(slog.LevelDebug, "", &logs)
+			err := evalrun.SummarizeBudget(log, evalrun.UsageSummary{
+				TotalTokens:       1500,
+				UsageUnknownCalls: 1,
+			})
+			if err != nil {
+				t.Errorf("SummarizeBudget returned error and would affect exit behavior: %v", err)
+			}
+			output := logs.String()
+			if !strings.Contains(output, "≥1500") {
+				t.Errorf("usage output does not preserve lower-bound marker: %s", output)
+			}
+			warned := strings.Contains(output, `"level":"WARN"`)
+			if tt.wantBudget {
+				if !warned || !strings.Contains(output, "1000") || !strings.Contains(output, "150%") {
+					t.Errorf("over-budget Warn does not contain ≥1500 / 1000 (150%%): %s", output)
+				}
+				return
+			}
+			if strings.Contains(output, "150%") || strings.Contains(output, `"budget"`) {
+				t.Errorf("disabled budget output contains a budget comparison: %s", output)
+			}
+			if warned != tt.wantParseWarn {
+				t.Errorf("Warn presence = %t, want %t; output: %s", warned, tt.wantParseWarn, output)
+			}
+		})
+	}
+}
+
+// TestS10_CIGuard verifies REQ-01 / S-10 requires an explicit opt-in before eval may run in CI.
+func TestS10_CIGuard(t *testing.T) {
+	t.Setenv("CI", "true")
+	t.Setenv("MRI_EVAL_ALLOW_CI", "")
+	if err := evalrun.CIGuard(); err == nil {
+		t.Fatal("CIGuard allowed CI execution without explicit opt-in")
+	} else if !strings.Contains(err.Error(), "MRI_EVAL_ALLOW_CI=true") {
+		t.Errorf("CIGuard refusal does not name the opt-in: %v", err)
+	}
+
+	t.Setenv("MRI_EVAL_ALLOW_CI", "true")
+	if err := evalrun.CIGuard(); err != nil {
+		t.Errorf("CIGuard refused explicit CI opt-in: %v", err)
+	}
 }
