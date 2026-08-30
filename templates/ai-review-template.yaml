@@ -85,13 +85,16 @@ stages:
 .mrinspect-go-review:
   stage: ai-review
   variables:
-    MRINSPECT_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+    MRINSPECT_IMAGE_TAG: "v0.1.0"
   # Image contains the compiled mrinspect binary and the projects/ directory.
-  # Build your own with: docker build -t registry.example.com/mrinspect:${CI_COMMIT_SHORT_SHA} .
-  # To explicitly opt out of pinning, set MRINSPECT_IMAGE_TAG: "latest" (and publish :latest).
+  # Official images are published to ghcr.io/twjohnwu/mrinspect by the release workflow.
+  # Build locally with: docker build -t mrinspect:dev .
+  # To opt into the moving release tag, set MRINSPECT_IMAGE_TAG: "latest".
   # Known limitation: pull_policy: always depends on the runner's allowed_pull_policies,
   # which is outside this repo; the immutable tag is the primary mechanism, not pull policy.
-  image: registry.example.com/mrinspect:${MRINSPECT_IMAGE_TAG}
+  image:
+    name: ghcr.io/twjohnwu/mrinspect:${MRINSPECT_IMAGE_TAG}
+    entrypoint: [""]
   script:
     - |
       # ── Debug: show available variables ───────────────────────────────────
@@ -249,13 +252,13 @@ stages:
 #     • no native module compatibility issues (unlike alpine's musl libc)
 #   For faster pipelines, replace with a custom image that pre-installs
 #   @anthropic-ai/claude-code and the superpowers plugin:
-#     image: registry.example.com/claude-code-superpowers:latest
+#     image: your-registry.example.com/claude-code-superpowers:latest
 # ══════════════════════════════════════════════════════════════════════════════
 .superpowers-review:
   stage: ai-review
   # node:22 — git pre-installed, glibc compatible, no extra apk/apt step needed.
   # To speed up pipelines: build a custom image with claude-code + superpowers
-  # pre-installed and set image: registry.example.com/claude-code-superpowers:latest
+  # pre-installed and set image: your-registry.example.com/claude-code-superpowers:latest
   image: node:22
   before_script:
     - npm install -g @anthropic-ai/claude-code --quiet
@@ -394,9 +397,13 @@ stages:
   stage: ai-review
   parallel:
     matrix:
-      - REVIEW_LAYER: [mrinspect, superpowers]
+      - REVIEW_LAYER: [mrinspect]
+        MRI_JOB_IMAGE: ["ghcr.io/twjohnwu/mrinspect:v0.1.0"]
+      - REVIEW_LAYER: [superpowers]
+        MRI_JOB_IMAGE: ["node:22"]
   image:
-    name: $([[ "$REVIEW_LAYER" == "mrinspect" ]] && echo "registry.example.com/mrinspect:latest" || echo "node:22")
+    name: "$MRI_JOB_IMAGE"
+    entrypoint: [""]
   before_script:
     - |
       if [ "$REVIEW_LAYER" = "superpowers" ]; then

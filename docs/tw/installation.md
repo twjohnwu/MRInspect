@@ -19,17 +19,17 @@ cd mrinspect
 make build        # compiles to ./bin/mrinspect
 ```
 
-## 建置並推送 Docker image
+## 使用 Docker image
 
 ```bash
-make docker       # builds mrinspect:latest locally
+# Pull the official release image:
+docker pull ghcr.io/twjohnwu/mrinspect:v0.1.0
 
-# Tag and push to your registry:
-docker build -t registry.example.com/mrinspect:latest .
-docker push registry.example.com/mrinspect:latest
+# Or build a development image locally:
+docker build -t mrinspect:dev .
 ```
 
-這個 Docker image 採多階段建置：Go 執行檔在 `golang:1.23-alpine` 裡編譯，再複製進 `alpine:3.20` 的 runtime image（約 15 MB）。`projects/` 目錄會被烤進 image 的 `/app/projects/`。
+官方 release image 會發布到 GHCR。這個 Docker image 採多階段建置：Go 執行檔在 `golang:1.23-alpine` 裡編譯，再複製進 `alpine:3.20` 的 runtime image（約 15 MB）。`projects/` 目錄會被烤進 image 的 `/app/projects/`。
 
 ## TypeScript runner
 

@@ -1,18 +1,42 @@
 # Integration
 
-Three ways for another repository to start an MRInspect review: a GitLab `include`, a cross-repo pipeline trigger, or a GitHub Actions workflow.
+Four ways for another repository to start an MRInspect review: the published image, a mirrored GitLab `include`, a cross-repo pipeline trigger, or a GitHub Actions workflow.
 
 [繁體中文版](../tw/integration.md)
 
-## Option A — GitLab `include` (same GitLab instance, recommended)
+## Option A — Published image (fastest)
 
-Include the reusable template and extend the job:
+Add this job to the target repository's `.gitlab-ci.yml`, and set `AI_PROVIDER_KEY` and `GITLAB_TOKEN` as CI/CD variables.
+
+```yaml
+ai-review:
+  stage: test
+  image:
+    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    entrypoint: [""]
+  script:
+    - mrinspect
+  variables:
+    AI_PROVIDER: openai
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY   # GitLab CI/CD variable
+    GITLAB_TOKEN: $GITLAB_TOKEN         # GitLab CI/CD variable (api scope)
+    MRI_SERVICE_NAME: my-service
+    MRI_SERVICE_TYPE: backend
+    PROJECTS_DIR: /app/projects
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true
+```
+
+## Option B — GitLab mirror and `include`
+
+First import or mirror the GitHub repository into your own GitLab instance via **Project → New project → Import project → Repository by URL**. Then include the reusable template and extend the job:
 
 ```yaml
 # your-repo/.gitlab-ci.yml
 
 include:
-  - project: 'twjohnwu/MRInspect'
+  - project: 'your-group/mrinspect'   # your GitLab copy, not the GitHub repo
     ref: main
     file: 'templates/ai-review-template.yaml'
 
@@ -22,6 +46,8 @@ ai-review:
     MRI_SERVICE_NAME: my-service
     MRI_SERVICE_TYPE: backend  # backend | frontend | ai | iac
 ```
+
+Warning: `include: project:` cannot point at GitHub; it must reference a project on the same GitLab instance.
 
 To run only one layer:
 
@@ -42,7 +68,7 @@ ai-review-superpowers:
     MRI_SERVICE_NAME: my-service
 ```
 
-## Option B — GitLab pipeline trigger (cross-repo, works from any Git host)
+## Option C — GitLab pipeline trigger (cross-repo, works from any Git host)
 
 1. In the mrinspect project: `Settings → CI/CD → Pipeline triggers` → create a trigger token.
 2. Store the token as `MRINSPECT_TRIGGER_TOKEN` in your calling repo's CI/CD variables.
@@ -72,7 +98,7 @@ trigger-ai-review:
 
 Replace `<MRINSPECT_PROJECT_ID>` with the numeric project ID of your mrinspect deployment.
 
-## Option C — GitHub Actions trigger
+## Option D — GitHub Actions trigger
 
 Store `MRINSPECT_TRIGGER_TOKEN` and `GITLAB_PROJECT_ID` as GitHub repository secrets, then add a workflow step:
 

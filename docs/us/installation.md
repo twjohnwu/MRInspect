@@ -19,17 +19,17 @@ cd mrinspect
 make build        # compiles to ./bin/mrinspect
 ```
 
-## Build and push the Docker image
+## Use the Docker image
 
 ```bash
-make docker       # builds mrinspect:latest locally
+# Pull the official release image:
+docker pull ghcr.io/twjohnwu/mrinspect:v0.1.0
 
-# Tag and push to your registry:
-docker build -t registry.example.com/mrinspect:latest .
-docker push registry.example.com/mrinspect:latest
+# Or build a development image locally:
+docker build -t mrinspect:dev .
 ```
 
-The Docker image is a multi-stage build: the Go binary is compiled in `golang:1.23-alpine` and copied into an `alpine:3.20` runtime image (~15 MB). The `projects/` directory is baked into the image at `/app/projects/`.
+Official release images are published to GHCR. The Docker image is a multi-stage build: the Go binary is compiled in `golang:1.23-alpine` and copied into an `alpine:3.20` runtime image (~15 MB). The `projects/` directory is baked into the image at `/app/projects/`.
 
 ## TypeScript runner
 

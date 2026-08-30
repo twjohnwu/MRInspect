@@ -13,11 +13,13 @@ test:
 
 mrinspect:
   stage: ai-review
-  image: registry.example.com/mrinspect:latest
+  image:
+    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    entrypoint: [""]
   script:
     - mrinspect
   variables:
-    AI_PROVIDER: gemini
+    AI_PROVIDER: openai
     AI_PROVIDER_KEY: $AI_PROVIDER_KEY
     GITLAB_TOKEN: $GITLAB_TOKEN
     PROJECTS_DIR: /app/projects

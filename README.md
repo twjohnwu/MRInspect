@@ -8,21 +8,57 @@ AI-powered merge request code review for GitLab, powered by Claude, Gemini, or O
 
 ## Quickstart
 
-Build the Go binary:
+Choose either the published image or a reusable template mirrored to your GitLab instance.
+
+### Path A — pull the published image (fastest)
+
+Add this job to the target repository's `.gitlab-ci.yml`, and set `AI_PROVIDER_KEY` and `GITLAB_TOKEN` as CI/CD variables.
+
+```yaml
+ai-review:
+  stage: test
+  image:
+    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    entrypoint: [""]
+  script:
+    - mrinspect
+  variables:
+    AI_PROVIDER: openai
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY   # GitLab CI/CD variable
+    GITLAB_TOKEN: $GITLAB_TOKEN         # GitLab CI/CD variable (api scope)
+    MRI_SERVICE_NAME: my-service
+    MRI_SERVICE_TYPE: backend
+    PROJECTS_DIR: /app/projects
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true
+```
+
+### Path B — reuse the template via a GitLab mirror
+
+First import or mirror the GitHub repository into your own GitLab instance via **Project → New project → Import project → Repository by URL**, then add this configuration:
+
+```yaml
+include:
+  - project: 'your-group/mrinspect'   # your GitLab copy, not the GitHub repo
+    ref: main
+    file: 'templates/ai-review-template.yaml'
+
+ai-review:
+  extends: .mrinspect-go-review
+  variables:
+    MRI_SERVICE_NAME: my-service
+    MRI_SERVICE_TYPE: backend
+```
+
+Warning: `include: project:` cannot point at GitHub; it must reference a project on the same GitLab instance.
+
+### Build locally
 
 ```bash
 git clone https://github.com/twjohnwu/MRInspect
 cd mrinspect
 make build        # compiles to ./bin/mrinspect
-```
-
-Wire it into another repo's pipeline by including the reusable template:
-
-```yaml
-include:
-  - project: 'twjohnwu/MRInspect'
-    ref: main
-    file: 'templates/ai-review-template.yaml'
 ```
 
 ## Documentation

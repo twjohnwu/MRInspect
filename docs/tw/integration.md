@@ -1,18 +1,42 @@
 # 整合
 
-其他 repository 要啟動 MRInspect 審查有三種做法：GitLab `include`、跨 repo 的 pipeline trigger，或 GitHub Actions workflow。
+其他 repository 要啟動 MRInspect 審查有四種做法：已發布的 image、鏡像後的 GitLab `include`、跨 repo 的 pipeline trigger，或 GitHub Actions workflow。
 
 [English](../us/integration.md)
 
-## 做法 A — GitLab `include`（同一個 GitLab 實例，建議做法）
+## 做法 A — 已發布的 image（最快）
 
-引入可重用的 template 並延伸該 job：
+將此 job 加入目標 repository 的 `.gitlab-ci.yml`，並將 `AI_PROVIDER_KEY` 與 `GITLAB_TOKEN` 設為 CI/CD 變數。
+
+```yaml
+ai-review:
+  stage: test
+  image:
+    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    entrypoint: [""]
+  script:
+    - mrinspect
+  variables:
+    AI_PROVIDER: openai
+    AI_PROVIDER_KEY: $AI_PROVIDER_KEY   # GitLab CI/CD variable
+    GITLAB_TOKEN: $GITLAB_TOKEN         # GitLab CI/CD variable (api scope)
+    MRI_SERVICE_NAME: my-service
+    MRI_SERVICE_TYPE: backend
+    PROJECTS_DIR: /app/projects
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true
+```
+
+## 做法 B — GitLab mirror 與 `include`
+
+先透過 **Project → New project → Import project → Repository by URL**，將 GitHub repository 匯入或鏡像至你自己的 GitLab 實例。接著引入可重用的 template 並延伸該 job：
 
 ```yaml
 # your-repo/.gitlab-ci.yml
 
 include:
-  - project: 'twjohnwu/MRInspect'
+  - project: 'your-group/mrinspect'   # your GitLab copy, not the GitHub repo
     ref: main
     file: 'templates/ai-review-template.yaml'
 
@@ -22,6 +46,8 @@ ai-review:
     MRI_SERVICE_NAME: my-service
     MRI_SERVICE_TYPE: backend  # backend | frontend | ai | iac
 ```
+
+警告：`include: project:` 不能指向 GitHub；它必須參照同一個 GitLab 實例上的 project。
 
 只跑其中一層：
 
@@ -42,7 +68,7 @@ ai-review-superpowers:
     MRI_SERVICE_NAME: my-service
 ```
 
-## 做法 B — GitLab pipeline trigger（跨 repo，任何 Git host 都能用）
+## 做法 C — GitLab pipeline trigger（跨 repo，任何 Git host 都能用）
 
 1. 在 mrinspect 專案裡：`Settings → CI/CD → Pipeline triggers` → 建立一個 trigger token。
 2. 把該 token 以 `MRINSPECT_TRIGGER_TOKEN` 存進呼叫端 repo 的 CI/CD 變數。
@@ -72,7 +98,7 @@ trigger-ai-review:
 
 把 `<MRINSPECT_PROJECT_ID>` 換成你部署的 mrinspect 的數字 project ID。
 
-## 做法 C — GitHub Actions trigger
+## 做法 D — GitHub Actions trigger
 
 把 `MRINSPECT_TRIGGER_TOKEN` 與 `GITLAB_PROJECT_ID` 存成 GitHub repository secret，然後加上一個 workflow step：
 
