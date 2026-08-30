@@ -19,7 +19,7 @@ language: zh-TW
 - REFACTOR：SOLID/DRY 檢查（預期無事）
 - Verification command: `go test ./internal/ragcmd/ -run TestS01_EvalDispatch -count=1 -v`
 
-## T2 `[ ]` `S-02,S-05` [NEW] fixture loader 與防護
+## T2 `[x]` `S-02,S-05` [NEW] fixture loader 與防護
 
 - 檔案：`internal/evalrun/evalrun.go`（loader 部分）＋
   `internal/evalrun/evalrun_test.go`
