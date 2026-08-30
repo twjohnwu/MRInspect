@@ -52,7 +52,7 @@ mrinspect/
 make build              # → ./bin/mrinspect
 make test               # go test ./...
 make lint               # golangci-lint run
-make docker             # builds mrinspect:latest
+make docker             # builds the local Docker image
 ```
 
 ---
@@ -74,7 +74,7 @@ Reusable review jobs are defined in `templates/ai-review-template.yaml`; the rep
 
 | Job | What it runs |
 |---|---|
-| `.mrinspect-go-review` | Go binary (`mrinspect:latest` Docker image) |
+| `.mrinspect-go-review` | Go binary (`ghcr.io/twjohnwu/mrinspect:v0.1.0` Docker image) |
 | `.superpowers-review` | Claude Code CLI + superpowers plugin |
 | `.mrinspect-full` | Both layers in parallel |
 | `index` | Builds `rag-index/mrinspect-rag.sqlite` on schedules, pushes to `main` that change `_shared` or either sample-system resource directory, or manual runs; publishes it for 21 days |

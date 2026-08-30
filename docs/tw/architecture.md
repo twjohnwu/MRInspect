@@ -40,7 +40,7 @@ Go 審查留言帶有固定的 `<!-- mrinspect:review -->` 標記。重跑時，
 
 | 層 | Image | 貼出 | 需要 |
 |---|---|---|---|
-| mrinspect (Go) | `mrinspect:latest` | 1 則結構化 MR 留言 | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
+| mrinspect (Go) | `ghcr.io/twjohnwu/mrinspect:v0.1.0` | 1 則結構化 MR 留言 | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
 | superpowers | `node:22` (Claude Code CLI) | 最多 3 則 MR 留言 | `ANTHROPIC_API_KEY`, `GITLAB_TOKEN` |
 
 ## Single 模式流程

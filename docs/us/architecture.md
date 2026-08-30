@@ -40,7 +40,7 @@ Go review notes carry the stable `<!-- mrinspect:review -->` marker. On a rerun,
 
 | Layer | Image | Posts | Requires |
 |---|---|---|---|
-| mrinspect (Go) | `mrinspect:latest` | 1 structured MR comment | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
+| mrinspect (Go) | `ghcr.io/twjohnwu/mrinspect:v0.1.0` | 1 structured MR comment | `AI_PROVIDER_KEY`, `GITLAB_TOKEN` |
 | superpowers | `node:22` (Claude Code CLI) | Up to 3 MR comments | `ANTHROPIC_API_KEY`, `GITLAB_TOKEN` |
 
 ## Single mode flow
