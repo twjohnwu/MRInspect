@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
@@ -551,7 +552,7 @@ func (r *MRInspectReviewer) resolvedPromptBudget() (int, bool) {
 // logPromptBreakdown emits the always-on prompt-composition breakdown table
 // as one multi-line Info log (incident-proven observability: a per-section
 // token share, e.g. "diff = 93.6%", was what located a prior failure's root
-// cause). It is deliberately independent of MRI_REVIEW_DUMP_DISABLED.
+// cause). It is deliberately independent of the forensic dump gate.
 func (r *MRInspectReviewer) logPromptBreakdown(label string, sections []Section, laneID string, withBudget bool) {
 	table := BuildPromptBreakdown(sections)
 	total := 0
@@ -879,26 +880,38 @@ func (r *MRInspectReviewer) cleanResponse(response string) string {
 }
 
 // reviewDumpsEnabled reports whether failure-only prompt/response dumps are
-// enabled. Dumps are enabled by default; setting MRI_REVIEW_DUMP_DISABLED to
-// the exact string "true" turns them off. Any other value (1, yes, ...)
-// leaves dumps enabled. Callers read this once per run, not once per attempt.
+// enabled. Dumps are disabled by default; setting MRI_REVIEW_DUMP_ENABLED to
+// the exact string "true" turns them on. Callers read this once per run, not
+// once per attempt.
 func reviewDumpsEnabled() bool {
-	return os.Getenv("MRI_REVIEW_DUMP_DISABLED") != "true"
+	return os.Getenv("MRI_REVIEW_DUMP_ENABLED") == "true"
 }
 
 // logValidationFailure records forensics for a failed ValidateReviewContent
 // attempt: the headings the model actually wrote, and the response length
 // before/after cleanResponse. It never fires on a successful attempt.
 func (r *MRInspectReviewer) logValidationFailure(attempt int, reviewPrompt, rawResponse, cleaned string, validationErr error, dumpsEnabled bool) {
-	r.log.Warn("review validation failed",
+	fields := []any{
 		"attempt", attempt,
 		"headings", extractHeadings(rawResponse),
 		"responseLenBeforeClean", len(rawResponse),
 		"responseLenAfterClean", len(cleaned),
 		"error", validationErr.Error(),
-	)
+	}
+	if !dumpsEnabled {
+		fields = append(fields,
+			"promptSHA", sha256Prefix(reviewPrompt),
+			"responseSHA", sha256Prefix(rawResponse),
+		)
+	}
+	r.log.Warn("review validation failed", fields...)
 	r.dumpForensics(dumpsEnabled, "Prompt", fmt.Sprintf("attempt %d", attempt), reviewPrompt)
 	r.dumpForensics(dumpsEnabled, "Response", fmt.Sprintf("attempt %d", attempt), rawResponse)
+}
+
+func sha256Prefix(content string) string {
+	digest := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", digest)[:12]
 }
 
 // dumpForensics logs content wrapped in Start/End marker lines, gated by

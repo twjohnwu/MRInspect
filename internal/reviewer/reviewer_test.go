@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1002,101 +1003,95 @@ func reviewSectionsPresent(content string) error {
 	return errors.New("missing required sections")
 }
 
-// TestGenerateReview_FailedValidationLogsForensics verifies that a failed
-// ValidateReviewContent attempt is logged with the attempt number, the
-// headings the model actually wrote, and the response length before/after
-// cleanResponse — and that the prompt/response dump only appears for the
-// failed attempt, never for the successful one.
-func TestGenerateReview_FailedValidationLogsForensics(t *testing.T) {
-	unsetEnv(t, "MRI_REVIEW_DUMP_DISABLED")
-	badResponse := "Some preamble.\n# Bad Heading\n## Code Review\nno required sections here"
-	provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+// TestGenerateReview_FailedValidationForensics pins the opt-in dump policy
+// while retaining metadata-only observability when full dumps are disabled.
+func TestGenerateReview_FailedValidationForensics(t *testing.T) {
+	prompt := "TOP-SECRET-PROMPT-CONTENT"
+	badResponse := "Some preamble.\n# Bad Heading\n## Code Review\nTOP-SECRET-RESPONSE-CONTENT"
 	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
-	r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
+	retiredDumpEnv := "MRI_REVIEW_DUMP_" + "DISABLED"
 
-	content, err := r.generateReview(context.Background(), "diff --git a/a.go b/a.go", gitlab.MergeRequest{})
-	if err != nil {
-		t.Fatalf("generateReview: %v", err)
-	}
-	if !strings.Contains(content, "## Findings") {
-		t.Fatalf("generateReview returned %q, want the successful attempt's content", content)
-	}
+	t.Run("default logs hashes but no bodies", func(t *testing.T) {
+		unsetEnv(t, "MRI_REVIEW_DUMP_ENABLED")
+		unsetEnv(t, retiredDumpEnv)
+		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: prompt})
+		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
+			t.Fatalf("generateReview: %v", err)
+		}
+		logs := readWarnings()
+		for _, secret := range []string{prompt, "TOP-SECRET-RESPONSE-CONTENT"} {
+			if strings.Contains(logs, secret) {
+				t.Errorf("default warning log leaked %q: %q", secret, logs)
+			}
+		}
+		for _, field := range []string{
+			fmt.Sprintf(`"promptSHA":"%s"`, expectedSHA256Prefix(prompt)),
+			fmt.Sprintf(`"responseSHA":"%s"`, expectedSHA256Prefix(badResponse)),
+			`"error":"missing required sections"`,
+			`"headings":["# Bad Heading","## Code Review"]`,
+			fmt.Sprintf(`"responseLenBeforeClean":%d`, len(badResponse)),
+			fmt.Sprintf(`"responseLenAfterClean":%d`, len(r.cleanResponse(badResponse))),
+		} {
+			if !strings.Contains(logs, field) {
+				t.Errorf("default warning log missing %s: %q", field, logs)
+			}
+		}
+	})
 
-	logs := readWarnings()
-	if !strings.Contains(logs, `"attempt":1`) {
-		t.Errorf("warning log missing attempt number: %q", logs)
-	}
-	if !strings.Contains(logs, "# Bad Heading") || !strings.Contains(logs, "## Code Review") {
-		t.Errorf("warning log missing the headings the model actually wrote: %q", logs)
-	}
-	beforeLen := len(badResponse)
-	afterLen := len(r.cleanResponse(badResponse))
-	if beforeLen == afterLen {
-		t.Fatalf("test fixture invalid: cleanResponse did not shorten the bad response")
-	}
-	if !strings.Contains(logs, fmt.Sprintf(`"responseLenBeforeClean":%d`, beforeLen)) {
-		t.Errorf("warning log missing pre-clean length %d: %q", beforeLen, logs)
-	}
-	if !strings.Contains(logs, fmt.Sprintf(`"responseLenAfterClean":%d`, afterLen)) {
-		t.Errorf("warning log missing post-clean length %d: %q", afterLen, logs)
-	}
+	t.Run("enabled true logs prompt and response dumps", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_DUMP_ENABLED", "true")
+		unsetEnv(t, retiredDumpEnv)
+		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: prompt})
+		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
+			t.Fatalf("generateReview: %v", err)
+		}
+		logs := readWarnings()
+		for _, want := range []string{
+			"======== Prompt (attempt 1) Start ========",
+			"======== Response (attempt 1) Start ========",
+			prompt,
+			"TOP-SECRET-RESPONSE-CONTENT",
+		} {
+			if !strings.Contains(logs, want) {
+				t.Errorf("MRI_REVIEW_DUMP_ENABLED=true log missing %q: %q", want, logs)
+			}
+		}
+	})
 
-	promptStart1 := "======== Prompt (attempt 1) Start ========"
-	responseStart1 := "======== Response (attempt 1) Start ========"
-	if strings.Count(logs, promptStart1) != 1 {
-		t.Errorf("prompt dump for attempt 1 must appear exactly once, got log: %q", logs)
-	}
-	if strings.Count(logs, responseStart1) != 1 {
-		t.Errorf("response dump for attempt 1 must appear exactly once, got log: %q", logs)
-	}
-	if strings.Contains(logs, "attempt 2) Start") {
-		t.Errorf("successful attempt must never be dumped: %q", logs)
-	}
+	t.Run("old disabled variable alone has no effect", func(t *testing.T) {
+		unsetEnv(t, "MRI_REVIEW_DUMP_ENABLED")
+		t.Setenv(retiredDumpEnv, "true")
+		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: prompt})
+		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
+			t.Fatalf("generateReview: %v", err)
+		}
+		logs := readWarnings()
+		if strings.Contains(logs, "======== Prompt") || strings.Contains(logs, "======== Response") ||
+			strings.Contains(logs, prompt) || strings.Contains(logs, "TOP-SECRET-RESPONSE-CONTENT") {
+			t.Errorf("old disabled variable must not enable or expose dumps: %q", logs)
+		}
+	})
 }
 
-// TestGenerateReview_DumpDisabledByExactTrue pins the exact-match rule for
-// MRI_REVIEW_DUMP_DISABLED: only the literal string "true" disables dumps.
-func TestGenerateReview_DumpDisabledByExactTrue(t *testing.T) {
-	badResponse := "noise\n## Code Review\nno required sections here"
-	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
-
-	t.Run("true disables dumps", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_DUMP_DISABLED", "true")
-		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
-		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
-		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
-			t.Fatalf("generateReview: %v", err)
-		}
-		logs := readWarnings()
-		if strings.Contains(logs, "======== Prompt") || strings.Contains(logs, "======== Response") {
-			t.Errorf("MRI_REVIEW_DUMP_DISABLED=true must suppress dumps: %q", logs)
-		}
-	})
-
-	t.Run("1 does not disable dumps (exact match only)", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_DUMP_DISABLED", "1")
-		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
-		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: "compose prompt"})
-		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
-			t.Fatalf("generateReview: %v", err)
-		}
-		logs := readWarnings()
-		if !strings.Contains(logs, "======== Prompt (attempt 1) Start ========") || !strings.Contains(logs, "======== Response (attempt 1) Start ========") {
-			t.Errorf("MRI_REVIEW_DUMP_DISABLED=1 must NOT suppress dumps (exact-match rule): %q", logs)
-		}
-	})
+func expectedSHA256Prefix(content string) string {
+	digest := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", digest)[:12]
 }
 
 // TestSelfReflect_InvalidReflectionKeepsOriginal verifies that a reflection
 // result which fails ValidateReviewContent never replaces the original
 // review, while a valid updated reflection still is adopted (control).
 func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
-	unsetEnv(t, "MRI_REVIEW_DUMP_DISABLED")
 	original := validReviewBody
 	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
 
 	t.Run("garbage reflection keeps the original review", func(t *testing.T) {
-		provider := &sequencedProvider{responses: []string{"garbage, not a review at all"}}
+		unsetEnv(t, "MRI_REVIEW_DUMP_ENABLED")
+		invalidReflection := "TOP-SECRET-INVALID-REFLECTION"
+		provider := &sequencedProvider{responses: []string{invalidReflection}}
 		r, readWarnings := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
 
 		got := r.selfReflect(context.Background(), original)
@@ -1106,6 +1101,24 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 		logs := readWarnings()
 		if !strings.Contains(logs, `"level":"WARN"`) {
 			t.Errorf("expected a WARN log on invalid reflection: %q", logs)
+		}
+		if strings.Contains(logs, invalidReflection) || strings.Contains(logs, "======== Response (self-reflection)") {
+			t.Errorf("default self-reflection warning leaked response content: %q", logs)
+		}
+	})
+
+	t.Run("enabled true dumps invalid reflection", func(t *testing.T) {
+		t.Setenv("MRI_REVIEW_DUMP_ENABLED", "true")
+		invalidReflection := "TOP-SECRET-INVALID-REFLECTION"
+		provider := &sequencedProvider{responses: []string{invalidReflection}}
+		r, readWarnings := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
+
+		if got := r.selfReflect(context.Background(), original); got != original {
+			t.Errorf("selfReflect() = %q, want original review", got)
+		}
+		logs := readWarnings()
+		if !strings.Contains(logs, "======== Response (self-reflection) Start ========") || !strings.Contains(logs, invalidReflection) {
+			t.Errorf("enabled self-reflection dump missing marker or response: %q", logs)
 		}
 	})
 

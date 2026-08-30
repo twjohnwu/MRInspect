@@ -58,3 +58,10 @@ specific decision is later reversed.
 2. **為什麼錯**：實測事故資料（一次 126 檔／~1MB diff 的 review）顯示兩件事——超大輸入下模型會**省略**必要區段而非截斷（diff 佔 prompt >93% 時三次 attempt 同型失敗，降到 ~85% 即恢復）；而整趟拒絕讓大型重構 MR 完全得不到審查。截斷 hunk 也不可行：模型會對不存在的程式碼提 finding。
 3. **現在做法**：`internal/diffbudget` 檔案級剔除——先剔不可人審檔（lockfile／snapshot／generated 等 pattern 清單，config 可覆寫），再按檔案大小由大到小整檔剔除到符合 model-aware 預算（`MRI_DIFF_PROMPT_SHARE` × 模型 prompt 預算）；剔除清單在 prompt 與貼出的 review footer 雙處揭露；`MaxDiffSizeKB` 降為縮減後仍放不下的最終 backstop。
 4. **學到什麼**：退化門檻跟格式遵循有關、跟 context 上限無關——1M context 的模型一樣會在高佔比輸入下漏節，所以上限要按「佔 prompt 比例」縮放，不能釘固定 KB；「誠實的部分審查＋明示未審清單」勝過「全有或全無」。
+
+## 4. Dump 預設：從「開」反轉為「關」
+
+- **最初想法**：validation 失敗時預設把完整 prompt＋response dump 進 CI log，除錯零摩擦；敏感 repo 用 `MRI_REVIEW_DUMP_DISABLED=true` 自行關閉。
+- **為什麼錯**：public 工具的預設值要按最不受信任的部署環境設計。diff 可能含未被偵測的 credential、customer data、internal URL，而 CI log 的可見範圍與保存期不在本工具控制內——「文件有警語」補救不了預設行為。外部安全審視意見同樣指出這個 default 站不住。
+- **現在做法**：預設不 dump；`MRI_REVIEW_DUMP_ENABLED=true`（精確字串）才開。預設失敗路徑保留驗證錯誤原因、標題清單、清洗前後長度，另補 prompt/response 的 sha256 前 12 碼供對帳。舊變數直接移除、不留相容層（上線僅數日、無外部使用者）。
+- **學到什麼**：可觀測性與資料外洩是同一個開關的兩面；除錯便利靠 opt-in，不靠預設。
