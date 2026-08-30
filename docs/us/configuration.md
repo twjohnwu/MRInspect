@@ -32,6 +32,8 @@ Set these in your CI/CD secrets store before use:
 
 ## Full variable reference
 
+Any of the variables below can also be supplied via a `.env` file in the working directory. Values from `.env` only fill in variables that aren't already set — the process environment always wins. Never commit `.env`.
+
 <details>
 <summary>mrinspect variables</summary>
 

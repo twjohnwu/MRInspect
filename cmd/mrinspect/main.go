@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -26,6 +27,10 @@ import (
 )
 
 func main() {
+	for _, line := range config.LoadDotenv(".env") {
+		fmt.Fprintln(os.Stderr, "warning: malformed .env line:", line)
+	}
+
 	ctx := context.Background()
 	path, args := ragcmd.Dispatch(os.Args[1:])
 	if path == ragcmd.PathIndex {

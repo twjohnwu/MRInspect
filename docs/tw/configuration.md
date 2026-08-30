@@ -32,6 +32,8 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 
 ## 完整變數對照
 
+以下任何變數也可以透過工作目錄下的 `.env` 檔提供。`.env` 只會補上尚未設定的變數——process 環境變數一律優先。切勿把 `.env` 提交進版控。
+
 <details>
 <summary>mrinspect 變數</summary>
 
