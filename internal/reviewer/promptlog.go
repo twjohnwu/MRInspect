@@ -26,7 +26,7 @@ func splitDiffTrailer(codeDiff string) (diffText, trailerText string) {
 }
 
 func (r *MRInspectReviewer) mergedModelLimits() (map[string]int, error) {
-	limits, err := prompt.ModelLimitsFromEnv()
+	limits, err := prompt.ModelLimitsFromEnv(r.cfg.ModelLimits)
 	if err != nil {
 		limits = prompt.DefaultModelLimits
 	}

@@ -44,14 +44,15 @@ type BudgetFraming struct {
 // composition. OnSectionExcluded observes removal from the composition set;
 // it is deliberately separate from ComposeResult.Evicted reporting.
 type BudgetComposeInput struct {
-	Budget            int
-	Diff              []byte
-	DiffTokenEst      int
-	Metadata          []byte
-	MetadataTokenEst  int
-	Sections          []BudgetSection
-	Framing           BudgetFraming
-	OnSectionExcluded func(BudgetSection)
+	Budget                  int
+	Diff                    []byte
+	DiffTokenEst            int
+	Metadata                []byte
+	MetadataTokenEst        int
+	Sections                []BudgetSection
+	Framing                 BudgetFraming
+	OnSectionExcluded       func(BudgetSection)
+	NormativeEvictionPolicy string
 }
 
 // EvictedSection records one whole section removed during composition.
@@ -146,7 +147,7 @@ func ComposeWithBudget(input BudgetComposeInput) (ComposeResult, error) {
 			break
 		}
 	}
-	if result.NormativeEvicted && os.Getenv("MRI_RAG_ON_NORMATIVE_EVICTION") == "fail" {
+	if result.NormativeEvicted && input.NormativeEvictionPolicy == "fail" {
 		return result, fmt.Errorf("prompt composition rejected: normative section evicted")
 	}
 

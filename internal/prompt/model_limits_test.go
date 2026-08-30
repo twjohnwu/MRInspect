@@ -6,7 +6,7 @@ import (
 
 func TestModelLimits(t *testing.T) {
 	t.Run("env unset returns exactly DefaultModelLimits", func(t *testing.T) {
-		got, err := ModelLimitsFromEnv()
+		got, err := ModelLimitsFromEnv("")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -21,8 +21,7 @@ func TestModelLimits(t *testing.T) {
 	})
 
 	t.Run("env adds a new model and overrides an existing one", func(t *testing.T) {
-		t.Setenv("MRI_MODEL_LIMITS", "claude-sonnet-4-5-20250929:200000, claude-3-5-sonnet-20241022:150000")
-		got, err := ModelLimitsFromEnv()
+		got, err := ModelLimitsFromEnv("claude-sonnet-4-5-20250929:200000, claude-3-5-sonnet-20241022:150000")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -41,8 +40,7 @@ func TestModelLimits(t *testing.T) {
 	t.Run("malformed entries return a named error", func(t *testing.T) {
 		cases := []string{"foo", "bar:xyz", "baz:0", "baz:-5"}
 		for _, c := range cases {
-			t.Setenv("MRI_MODEL_LIMITS", c)
-			_, err := ModelLimitsFromEnv()
+			_, err := ModelLimitsFromEnv(c)
 			if err == nil {
 				t.Fatalf("expected error for entry %q, got nil", c)
 			}

@@ -170,13 +170,13 @@ func TestPostReview_FooterFlagsUnpinnedVersion(t *testing.T) {
 
 // TestRun_AllLanesFailedIsVisible verifies REQ-03 / S-12.
 func TestRun_AllLanesFailedIsVisible(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{
 		{id: "spec-conformance", enabled: true},
 		{id: "standards", enabled: true},
 		{id: "code-diff", enabled: true},
 	})
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	provider := newModeRoutingProvider()
 	provider.laneErrors = map[string]error{
 		"spec-conformance": errors.New("spec provider unavailable"),
@@ -218,8 +218,8 @@ func TestRun_AllLanesFailedIsVisible(t *testing.T) {
 
 // TestRun_MissingLaneConfigFallsBackToSingle verifies REQ-07 / S-27.
 func TestRun_MissingLaneConfigFallsBackToSingle(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	provider := newModeRoutingProvider()
 	r.ai = provider
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: t.TempDir(), ModelLimits: reviewerModelLimits()})
@@ -244,13 +244,13 @@ func TestRun_SelfReflectionOnlyInSingleMode(t *testing.T) {
 	t.Setenv("IS_SELF_REFLECTION", "true")
 
 	t.Run("multi skips reflection", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_MODE", "multi")
 		root := writeLaneFixture(t, []laneFixture{
 			{id: "spec-conformance", enabled: true},
 			{id: "standards", enabled: true},
 			{id: "code-diff", enabled: true},
 		})
 		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.ReviewMode = "multi"
 		r.cfg.SelfReflection = true
 		provider := newModeRoutingProvider()
 		r.ai = provider
@@ -264,8 +264,8 @@ func TestRun_SelfReflectionOnlyInSingleMode(t *testing.T) {
 	})
 
 	t.Run("single keeps reflection", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_MODE", "single")
 		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.ReviewMode = "single"
 		r.cfg.SelfReflection = true
 		provider := newModeRoutingProvider()
 		r.ai = provider
@@ -311,10 +311,10 @@ func TestRun_NormativeEvictionFailIsNotSwallowed(t *testing.T) {
 
 	for _, policy := range []string{"fail", "warn"} {
 		t.Run(policy, func(t *testing.T) {
-			t.Setenv("MRI_REVIEW_MODE", "multi")
-			t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", policy)
 			t.Setenv("MRI_PROMPT_BUDGET_FACTOR", "1")
 			r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+			r.cfg.ReviewMode = "multi"
+			r.cfg.RAGOnNormativeEviction = policy
 			provider := newModeRoutingProvider()
 			provider.laneResponses["spec-conformance"] = `{"laneId":"spec-conformance","findings":[{"title":"sibling-spec-result","severity":"low","rationale":"spec lane completed"}]}`
 			provider.laneResponses["normative-standards"] = `{"laneId":"normative-standards","findings":[{"title":"normative-standards-result","severity":"low","rationale":"normative lane completed"}]}`
@@ -361,13 +361,13 @@ func TestRun_NormativeEvictionFailIsNotSwallowed(t *testing.T) {
 
 // TestRun_NoEnabledLanesIsNotAnEmptyReview verifies REQ-07 / S-37.
 func TestRun_NoEnabledLanesIsNotAnEmptyReview(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{
 		{id: "spec-conformance", enabled: false},
 		{id: "standards", enabled: false},
 		{id: "code-diff", enabled: false},
 	})
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	provider := newModeRoutingProvider()
 	r.ai = provider
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{RepoRoot: root, ModelLimits: reviewerModelLimits()})
@@ -679,7 +679,6 @@ func unsetEnv(t *testing.T, key string) {
 }
 
 func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
 
 	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
@@ -722,6 +721,7 @@ func TestRun_CitationsVerifiedAgainstReceivedChunks(t *testing.T) {
 		return fmt.Sprintf(`{"laneId":"standards","findings":[{"title":"known citation","severity":"low","rationale":"matches the received standard","citations":[{"sourceId":%q}]},{"title":"unknown citation","severity":"low","rationale":"does not match a received standard","citations":[{"sourceId":"missing-source"}]}]}`, sourceID)
 	}
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	r.ai = provider
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
 		RepoRoot:         root,
@@ -766,7 +766,6 @@ func (r *setRefRetriever) Close() error { return nil }
 // how many, and a lane that declared a retrieval set but received nothing
 // is named as such rather than implied to have been consulted.
 func TestRun_ScopeReflectsActualContribution(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{
 		{id: "standards", enabled: true},
 		{id: "spec-conformance", enabled: true},
@@ -816,6 +815,7 @@ func TestRun_ScopeReflectsActualContribution(t *testing.T) {
 	}
 
 	r, gl := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	r.ai = provider
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{
 		RepoRoot:         root,
@@ -1040,10 +1040,10 @@ func TestGenerateReview_FailedValidationForensics(t *testing.T) {
 	})
 
 	t.Run("enabled true logs prompt and response dumps", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_DUMP_ENABLED", "true")
 		unsetEnv(t, retiredDumpEnv)
 		provider := &sequencedProvider{responses: []string{badResponse, validReviewBody}}
 		r, readWarnings := newForensicsFixture(t, provider, v, 2, fakeComposer{prompt: prompt})
+		r.cfg.ReviewDumpEnabled = true
 		if _, err := r.generateReview(context.Background(), "diff", gitlab.MergeRequest{}); err != nil {
 			t.Fatalf("generateReview: %v", err)
 		}
@@ -1108,10 +1108,10 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 	})
 
 	t.Run("enabled true dumps invalid reflection", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_DUMP_ENABLED", "true")
 		invalidReflection := "TOP-SECRET-INVALID-REFLECTION"
 		provider := &sequencedProvider{responses: []string{invalidReflection}}
 		r, readWarnings := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
+		r.cfg.ReviewDumpEnabled = true
 
 		if got := r.selfReflect(context.Background(), original); got != original {
 			t.Errorf("selfReflect() = %q, want original review", got)
@@ -1148,8 +1148,8 @@ func TestRun_GetMRChangesFailureDependsOnReviewMode(t *testing.T) {
 	changesErr := errors.New("changes API unavailable")
 
 	t.Run("single mode continues with local diff", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_MODE", "single")
 		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.ReviewMode = "single"
 		gl := &erroringChangesGitLab{fakeGitLab: &fakeGitLab{}, err: changesErr}
 		r.gitlab = gl
 
@@ -1162,8 +1162,8 @@ func TestRun_GetMRChangesFailureDependsOnReviewMode(t *testing.T) {
 	})
 
 	t.Run("multi mode reports the changes API failure", func(t *testing.T) {
-		t.Setenv("MRI_REVIEW_MODE", "multi")
 		r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+		r.cfg.ReviewMode = "multi"
 		gl := &erroringChangesGitLab{fakeGitLab: &fakeGitLab{}, err: changesErr}
 		r.gitlab = gl
 
@@ -1206,7 +1206,6 @@ func (g *changesGitLab) GetMRChanges(context.Context, string, string) (gitlab.MR
 }
 
 func TestRun_DroppedFilesDisclosedInFooter(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
 	provider := newModeRoutingProvider()
 	provider.laneResponders["standards"] = func(string) string {
@@ -1224,6 +1223,7 @@ func TestRun_DroppedFilesDisclosedInFooter(t *testing.T) {
 	}
 	cfg := config.Config{
 		AIProvider: config.ProviderGemini,
+		ReviewMode: "multi",
 		Providers: map[config.AIProvider]config.ProviderConfig{
 			config.ProviderGemini: {Model: "gemini-test", MaxTokens: 10},
 		},
@@ -1282,7 +1282,6 @@ func TestRun_DroppedFilesDisclosedInFooter(t *testing.T) {
 }
 
 func TestRun_UnderCapDropsNothingInFooter(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
 	provider := newModeRoutingProvider()
 	gl := &changesGitLab{
@@ -1294,6 +1293,7 @@ func TestRun_UnderCapDropsNothingInFooter(t *testing.T) {
 	}
 	cfg := config.Config{
 		AIProvider: config.ProviderGemini,
+		ReviewMode: "multi",
 		Providers: map[config.AIProvider]config.ProviderConfig{
 			config.ProviderGemini: {Model: "gemini-test", MaxTokens: 10},
 		},
@@ -1436,7 +1436,6 @@ func TestPromptBreakdown_SingleMode(t *testing.T) {
 // per enabled lane, naming its lane ID in the log fields and aggregating a
 // retrieval resource set's chunks into a single named row.
 func TestPromptBreakdown_MultiPerLane(t *testing.T) {
-	t.Setenv("MRI_REVIEW_MODE", "multi")
 	root := writeLaneFixture(t, []laneFixture{{id: "standards", enabled: true}})
 
 	lanesPath := filepath.Join(root, "projects", "lanes.yaml")
@@ -1469,6 +1468,7 @@ func TestPromptBreakdown_MultiPerLane(t *testing.T) {
 		return `{"laneId":"standards","findings":[]}`
 	}
 	r, _ := newReviewerFixture(t, fakeComposer{prompt: "single prompt"})
+	r.cfg.ReviewMode = "multi"
 	r.ai = provider
 	readLogs := installInfoLogRecorder(t, r)
 	r.SetMultiLaneReviewPath(MultiLaneReviewPath{

@@ -60,7 +60,15 @@ type Config struct {
 
 	Providers map[AIProvider]ProviderConfig
 
-	SelfReflection bool
+	SelfReflection    bool
+	ReviewMode        string
+	ReviewDumpEnabled bool
+
+	RAGOnNormativeEviction string
+	LaneConcurrency        string
+	LaneConcurrencySet     bool
+	DiffPromptShare        string
+	ModelLimits            string
 
 	Service   ServiceConfig
 	CrossRepo struct {
@@ -103,6 +111,7 @@ func load(requireGitLabToken bool) (Config, error) {
 	}
 
 	projectsDir := getEnv("PROJECTS_DIR", "./projects")
+	laneConcurrency, laneConcurrencySet := os.LookupEnv("MRI_LANE_CONCURRENCY")
 
 	cfg := Config{
 		AIProvider:    provider,
@@ -128,7 +137,14 @@ func load(requireGitLabToken bool) (Config, error) {
 			},
 		},
 
-		SelfReflection: getEnv("IS_SELF_REFLECTION", "false") == "true",
+		SelfReflection:         getEnv("IS_SELF_REFLECTION", "false") == "true",
+		ReviewMode:             getEnv("MRI_REVIEW_MODE", "single"),
+		ReviewDumpEnabled:      getEnv("MRI_REVIEW_DUMP_ENABLED", "false") == "true",
+		RAGOnNormativeEviction: getEnv("MRI_RAG_ON_NORMATIVE_EVICTION", "warn"),
+		LaneConcurrency:        laneConcurrency,
+		LaneConcurrencySet:     laneConcurrencySet,
+		DiffPromptShare:        os.Getenv("MRI_DIFF_PROMPT_SHARE"),
+		ModelLimits:            os.Getenv("MRI_MODEL_LIMITS"),
 
 		Service: ServiceConfig{
 			Name: getEnv("MRI_SERVICE_NAME", "unknown"),

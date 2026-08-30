@@ -409,7 +409,6 @@ func TestFanout_ConcurrencyCapped(t *testing.T) {
 		{name: "invalid value uses default", env: "abc", cap: 4},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("MRI_LANE_CONCURRENCY", test.env)
 			lanes := fanoutTestLanes(
 				"lane-one", "lane-two", "lane-three", "lane-four",
 				"lane-five", "lane-six", "lane-seven", "lane-eight",
@@ -424,6 +423,8 @@ func TestFanout_ConcurrencyCapped(t *testing.T) {
 			provider.arrived = arrived
 			provider.release = release
 			input := fanoutTestInput(t, lanes, provider, "CONCURRENCY-CAP-DIFF")
+			input.Concurrency = test.env
+			input.ConcurrencySet = true
 			type outcome struct {
 				result FanoutResult
 				err    error
@@ -489,7 +490,6 @@ func (l *recordingWarnLogger) contains(want string) bool {
 }
 
 func TestFanout_InvalidConcurrencyLogsFallback(t *testing.T) {
-	t.Setenv("MRI_LANE_CONCURRENCY", "abc")
 	lanes := fanoutTestLanes("lane-one", "lane-two", "lane-three", "lane-four", "lane-five")
 	arrived := make(chan struct{}, len(lanes))
 	release := make(chan struct{})
@@ -502,6 +502,8 @@ func TestFanout_InvalidConcurrencyLogsFallback(t *testing.T) {
 	provider.release = release
 	log := &recordingWarnLogger{}
 	input := fanoutTestInput(t, lanes, provider, "INVALID-CONCURRENCY-DIFF")
+	input.Concurrency = "abc"
+	input.ConcurrencySet = true
 	input.Logger = log
 	type outcome struct {
 		result FanoutResult

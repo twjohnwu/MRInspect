@@ -3,7 +3,6 @@ package lane
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 
 	"golang.org/x/sync/errgroup"
@@ -18,19 +17,22 @@ import (
 
 // FanoutInput contains the ordered lanes and shared inputs for one MR fan-out.
 type FanoutInput struct {
-	Lanes            []Lane
-	Terms            []string
-	ResourceRegistry resources.Registry
-	Retriever        rag.Retriever
-	FullLoader       rag.FullLoader
-	Project          project.LoadedProject
-	Diff             string
-	MergeRequest     gitlab.MergeRequest
-	Provider         ai.Provider
-	Attempts         int
-	GlobalModel      string
-	ModelLimits      map[string]int
-	Logger           WarningLogger
+	Lanes                   []Lane
+	Terms                   []string
+	ResourceRegistry        resources.Registry
+	Retriever               rag.Retriever
+	FullLoader              rag.FullLoader
+	Project                 project.LoadedProject
+	Diff                    string
+	MergeRequest            gitlab.MergeRequest
+	Provider                ai.Provider
+	Attempts                int
+	GlobalModel             string
+	ModelLimits             map[string]int
+	NormativeEvictionPolicy string
+	Concurrency             string
+	ConcurrencySet          bool
+	Logger                  WarningLogger
 }
 
 // WarningLogger is the minimal logging seam needed for fan-out configuration warnings.
@@ -62,7 +64,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 	results := make([]LaneResult, len(input.Lanes))
 	var group errgroup.Group
 	concurrency := 4
-	if raw, configured := os.LookupEnv("MRI_LANE_CONCURRENCY"); configured {
+	if raw, configured := input.Concurrency, input.ConcurrencySet; configured {
 		value, parseErr := strconv.Atoi(raw)
 		if parseErr == nil && value > 0 {
 			concurrency = value
@@ -124,16 +126,17 @@ func preflightLanes(input FanoutInput) ([]preparedLane, error) {
 
 func composeInput(input FanoutInput, declaration Lane, budget int, composer *prompt.Composer) ComposeInput {
 	return ComposeInput{
-		Lane:             declaration,
-		Terms:            input.Terms,
-		Budget:           budget,
-		Composer:         composer,
-		ResourceRegistry: input.ResourceRegistry,
-		Retriever:        input.Retriever,
-		FullLoader:       input.FullLoader,
-		Project:          input.Project,
-		Diff:             input.Diff,
-		MergeRequest:     input.MergeRequest,
+		Lane:                    declaration,
+		Terms:                   input.Terms,
+		Budget:                  budget,
+		NormativeEvictionPolicy: input.NormativeEvictionPolicy,
+		Composer:                composer,
+		ResourceRegistry:        input.ResourceRegistry,
+		Retriever:               input.Retriever,
+		FullLoader:              input.FullLoader,
+		Project:                 input.Project,
+		Diff:                    input.Diff,
+		MergeRequest:            input.MergeRequest,
 	}
 }
 

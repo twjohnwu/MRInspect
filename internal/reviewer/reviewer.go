@@ -3,7 +3,6 @@ package reviewer
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -208,7 +207,7 @@ func (r *MRInspectReviewer) generateReviewForMode(ctx context.Context, codeDiff 
 	if r.cfg.SelfReflection {
 		mode = EvalModeReflect
 	}
-	if os.Getenv("MRI_REVIEW_MODE") == "multi" {
+	if r.cfg.ReviewMode == "multi" {
 		mode = EvalModeMulti
 	}
 	return r.generateReviewForExplicitMode(ctx, mode, codeDiff, changes, mr)
@@ -280,7 +279,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 
 	changesResp, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
 	if err != nil {
-		if os.Getenv("MRI_REVIEW_MODE") == "multi" {
+		if r.cfg.ReviewMode == "multi" {
 			return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
 		}
 		r.log.Warn("GetMRChanges failed in single mode; skipping diff-size reduction", "error", err.Error())
@@ -344,6 +343,7 @@ func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change)
 	return diffbudget.Reduce(changes, diffbudget.Options{
 		ModelBudget:   budget,
 		MaxDiffSizeKB: r.cfg.Validation.MaxDiffSizeKB,
+		PromptShare:   r.cfg.DiffPromptShare,
 		Logger:        r.log,
 		InitialDiff:   codeDiff,
 		Render: func(kept []gitlab.Change, dropped []diffbudget.DroppedFile) (string, error) {
@@ -375,7 +375,7 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 
 	var reviewContent string
 	var lastErr error
-	dumpsEnabled := reviewDumpsEnabled()
+	dumpsEnabled := r.cfg.ReviewDumpEnabled
 	for attempt := 1; attempt <= r.cfg.Validation.AIRetryAttempts; attempt++ {
 		if attempt > 1 {
 			reviewPrompt = r.buildRetryPrompt(reviewPrompt, lastErr)
@@ -444,7 +444,7 @@ func (r *MRInspectReviewer) selfReflectWithStatus(ctx context.Context, review st
 	// Never adopt a reflection result that has not been re-validated: a
 	// garbage reflection would otherwise silently replace a valid review.
 	// Validate the cleaned reflection output before adopting it.
-	dumpsEnabled := reviewDumpsEnabled()
+	dumpsEnabled := r.cfg.ReviewDumpEnabled
 	cleaned := r.cleanResponse(result)
 	if err := r.validator.ValidateReviewContent(cleaned); err != nil {
 		r.log.Warn("self-reflection produced an invalid review; keeping original", "error", err.Error())

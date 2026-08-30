@@ -3,7 +3,6 @@ package reviewer
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -28,14 +27,6 @@ func (r *MRInspectReviewer) cleanResponse(response string) string {
 		return response[cutAt:]
 	}
 	return response
-}
-
-// reviewDumpsEnabled reports whether failure-only prompt/response dumps are
-// enabled. Dumps are disabled by default; setting MRI_REVIEW_DUMP_ENABLED to
-// the exact string "true" turns them on. Callers read this once per run, not
-// once per attempt.
-func reviewDumpsEnabled() bool {
-	return os.Getenv("MRI_REVIEW_DUMP_ENABLED") == "true"
 }
 
 // logValidationFailure records forensics for a failed ValidateReviewContent

@@ -93,7 +93,7 @@ func TestBudget_DiffIsNeverEvicted(t *testing.T) {
 		t.Fatal("NormativeEvicted = false; want prominent marker distinct from eviction records")
 	}
 
-	t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
+	input.NormativeEvictionPolicy = "fail"
 	if _, err := ComposeWithBudget(input); err == nil {
 		t.Fatal("strict normative-eviction mode succeeded; want explicit error")
 	}

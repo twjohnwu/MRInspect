@@ -358,7 +358,7 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 	if err != nil && log != nil {
 		log.Warn("failed to load RAG resource sets", "error", err)
 	}
-	modelLimits, err := prompt.ModelLimitsFromEnv()
+	modelLimits, err := prompt.ModelLimitsFromEnv(cfg.ModelLimits)
 	if err != nil {
 		return fmt.Errorf("model limits configuration: %w", err)
 	}

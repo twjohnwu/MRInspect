@@ -22,16 +22,17 @@ var (
 
 // ComposeInput contains the lane-specific and shared inputs needed to build one prompt.
 type ComposeInput struct {
-	Lane             Lane
-	Terms            []string
-	Budget           int // zero preserves unbudgeted composition
-	Composer         *prompt.Composer
-	ResourceRegistry resources.Registry
-	Retriever        rag.Retriever
-	FullLoader       rag.FullLoader
-	Project          project.LoadedProject
-	Diff             string
-	MergeRequest     gitlab.MergeRequest
+	Lane                    Lane
+	Terms                   []string
+	Budget                  int // zero preserves unbudgeted composition
+	NormativeEvictionPolicy string
+	Composer                *prompt.Composer
+	ResourceRegistry        resources.Registry
+	Retriever               rag.Retriever
+	FullLoader              rag.FullLoader
+	Project                 project.LoadedProject
+	Diff                    string
+	MergeRequest            gitlab.MergeRequest
 }
 
 // Section is one named, token-estimated component of a composed lane
@@ -193,10 +194,11 @@ func composeLanePrompt(
 
 	sections := budgetSections(fullDocs, chunks)
 	budgeted, err := prompt.ComposeWithBudget(prompt.BudgetComposeInput{
-		Sections:         sections,
-		Budget:           input.Budget,
-		Metadata:         []byte(basePrompt),
-		MetadataTokenEst: chunk.TokenEst(basePrompt),
+		Sections:                sections,
+		Budget:                  input.Budget,
+		Metadata:                []byte(basePrompt),
+		MetadataTokenEst:        chunk.TokenEst(basePrompt),
+		NormativeEvictionPolicy: input.NormativeEvictionPolicy,
 		Framing: prompt.BudgetFraming{
 			NonceOpenTemplate:  "\n\n<<<RESOURCE:%s>>>\n",
 			NonceCloseTemplate: "<<<END:%s>>>\n",

@@ -2,7 +2,6 @@ package prompt
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -24,23 +23,22 @@ var DefaultModelLimits = map[string]int{
 // registered with a token budget for multi-lane fan-out preflight (S-33).
 const modelLimitsEnvVar = "MRI_MODEL_LIMITS"
 
-// ModelLimitsFromEnv returns DefaultModelLimits merged with any entries from
-// the MRI_MODEL_LIMITS environment variable. The format is a comma-separated
+// ModelLimitsFromEnv returns DefaultModelLimits merged with the raw value of
+// MRI_MODEL_LIMITS captured by config.Load. The format is a comma-separated
 // list of "model-name:tokens" pairs, e.g.
 // "claude-sonnet-4-5-20250929:200000,gpt-5-mini:120000". Entries in the env
 // var override a default of the same model name and add new models
 // otherwise. A malformed pair (missing colon, or a non-positive/non-integer
 // token count) is a named error - it is never silently skipped, so a typo'd
 // override cannot silently reproduce the same operability defect it fixes.
-func ModelLimitsFromEnv() (map[string]int, error) {
+func ModelLimitsFromEnv(raw string) (map[string]int, error) {
 	merged := make(map[string]int, len(DefaultModelLimits))
 	for model, tokens := range DefaultModelLimits {
 		merged[model] = tokens
 	}
 
-	raw, ok := os.LookupEnv(modelLimitsEnvVar)
 	raw = strings.TrimSpace(raw)
-	if !ok || raw == "" {
+	if raw == "" {
 		return merged, nil
 	}
 

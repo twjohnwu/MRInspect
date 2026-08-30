@@ -2,7 +2,6 @@ package diffbudget
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -54,6 +53,8 @@ type Options struct {
 	// the MRI_DIFF_PROMPT_SHARE fraction on top of it to leave headroom for
 	// the rest of the prompt (instructions, resources, framing).
 	ModelBudget int
+	// PromptShare is the raw MRI_DIFF_PROMPT_SHARE value captured by config.Load.
+	PromptShare string
 	// MaxDiffSizeKB is the existing byte-size backstop
 	// (config.ValidationConfig.MaxDiffSizeKB). <= 0 disables this backstop.
 	MaxDiffSizeKB float64
@@ -76,7 +77,7 @@ func Reduce(changes []gitlab.Change, opts Options) ([]gitlab.Change, []DroppedFi
 	}
 
 	share := 0.85
-	if raw := os.Getenv("MRI_DIFF_PROMPT_SHARE"); raw != "" {
+	if raw := opts.PromptShare; raw != "" {
 		parsed, err := strconv.ParseFloat(raw, 64)
 		if err != nil || parsed <= 0 || parsed > 1 {
 			if opts.Logger != nil {

@@ -130,7 +130,7 @@ func main() {
 		diffFetcher = diff.NewFallbackDiffFetcher(localFetcher, apiFetcher, log)
 	}
 
-	modelLimits, err := prompt.ModelLimitsFromEnv()
+	modelLimits, err := prompt.ModelLimitsFromEnv(cfg.ModelLimits)
 	if err != nil {
 		log.Error("model limits configuration error", "error", err)
 		os.Exit(1)

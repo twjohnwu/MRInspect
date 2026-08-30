@@ -313,7 +313,6 @@ func TestCompose_PromptCarriesOutputContract(t *testing.T) {
 
 func TestCompose_BudgetEviction(t *testing.T) {
 	t.Run("non-normative sections evict under tiny budget", func(t *testing.T) {
-		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "warn")
 		registry := loadComposeResourceRegistry(t, `  - name: oversized-reference
     mode: retrieval
     paths: []
@@ -352,7 +351,6 @@ func TestCompose_BudgetEviction(t *testing.T) {
 	})
 
 	t.Run("normative eviction is a hard error", func(t *testing.T) {
-		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
 		registry := loadComposeResourceRegistry(t, `  - name: binding-standards
     mode: full
     paths: []
@@ -370,6 +368,7 @@ func TestCompose_BudgetEviction(t *testing.T) {
 		input := composeTestInput(t, declaration, []string{"budget"}, registry, "NORMATIVE-EVICTION-DIFF")
 		input.FullLoader = fullLoader
 		input.Budget = 4_000
+		input.NormativeEvictionPolicy = "fail"
 
 		_, err := Compose(context.Background(), input)
 		if err == nil || !strings.Contains(err.Error(), "normative section evicted") {
@@ -378,7 +377,6 @@ func TestCompose_BudgetEviction(t *testing.T) {
 	})
 
 	t.Run("zero budget disables budgeting", func(t *testing.T) {
-		t.Setenv("MRI_RAG_ON_NORMATIVE_EVICTION", "fail")
 		registry := loadComposeResourceRegistry(t, `  - name: zero-budget-full
     mode: full
     paths: []

@@ -19,7 +19,6 @@ func (r *warningRecorder) Warn(message string, _ ...any) {
 }
 
 func TestReduce_PassThroughUnderBudget(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "")
 	changes := []gitlab.Change{
 		{OldPath: "src/one.go", NewPath: "src/one.go", Diff: "@@ -1 +1 @@\n-old\n+new\n"},
 		{OldPath: "src/two.go", NewPath: "src/two.go", Diff: "@@ -2 +2 @@\n-before\n+after\n"},
@@ -38,7 +37,6 @@ func TestReduce_PassThroughUnderBudget(t *testing.T) {
 }
 
 func TestReduce_DropsNonReviewableFirst(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "")
 	realDiff := "@@ -1 +1 @@\n-old\n+new\n"
 	changes := []gitlab.Change{
 		{NewPath: "package-lock.json", Diff: strings.Repeat("lockfile filler line\n", 200)},
@@ -66,7 +64,6 @@ func TestReduce_DropsNonReviewableFirst(t *testing.T) {
 }
 
 func TestReduce_DropsLargestFirstNeverTruncates(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "")
 	smallDiff := strings.Repeat("s", 40)
 	mediumDiff := strings.Repeat("m", 160)
 	largeDiff := strings.Repeat("l", 400)
@@ -101,7 +98,6 @@ func TestReduce_DropsLargestFirstNeverTruncates(t *testing.T) {
 }
 
 func TestReduce_InvalidShareFallsBack(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "abc")
 	diff := strings.Repeat("x", 360)
 	// ASCII TokenEst is ceil(len/4), so this is 90 tokens: it fits a full
 	// 100-token model budget but exceeds the 85-token fallback share.
@@ -112,6 +108,7 @@ func TestReduce_InvalidShareFallsBack(t *testing.T) {
 	kept, dropped, err := Reduce([]gitlab.Change{{NewPath: "src/borderline.go", Diff: diff}}, Options{
 		ModelBudget:   100,
 		MaxDiffSizeKB: 300,
+		PromptShare:   "abc",
 	})
 	if err != nil {
 		t.Fatalf("Reduce: %v", err)
@@ -125,13 +122,13 @@ func TestReduce_InvalidShareFallsBack(t *testing.T) {
 }
 
 func TestReduce_ShareAboveOneFallsBackAndWarns(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "85")
 	diffText := strings.Repeat("x", 360)
 	log := &warningRecorder{}
 
 	kept, dropped, err := Reduce([]gitlab.Change{{NewPath: "src/borderline.go", Diff: diffText}}, Options{
 		ModelBudget:   100,
 		MaxDiffSizeKB: 300,
+		PromptShare:   "85",
 		Logger:        log,
 	})
 	if err != nil {
@@ -147,7 +144,6 @@ func TestReduce_ShareAboveOneFallsBackAndWarns(t *testing.T) {
 }
 
 func TestReduce_RenderedInitialDiffTriggersTokenReduction(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "1")
 	changes := []gitlab.Change{
 		{OldPath: "a.go", NewPath: "a.go", Diff: "x"},
 		{OldPath: "b.go", NewPath: "b.go", Diff: "y"},
@@ -161,6 +157,7 @@ func TestReduce_RenderedInitialDiffTriggersTokenReduction(t *testing.T) {
 	kept, dropped, err := Reduce(changes, Options{
 		ModelBudget:   100,
 		MaxDiffSizeKB: 300,
+		PromptShare:   "1",
 		InitialDiff:   initialDiff,
 		Render:        render,
 	})
@@ -180,7 +177,6 @@ func TestReduce_RenderedInitialDiffTriggersTokenReduction(t *testing.T) {
 }
 
 func TestReduce_PostReductionRenderedDiffFitsKBBackstop(t *testing.T) {
-	t.Setenv("MRI_DIFF_PROMPT_SHARE", "1")
 	changes := []gitlab.Change{
 		{OldPath: strings.Repeat("a", 300) + ".go", NewPath: strings.Repeat("a", 300) + ".go", Diff: "x"},
 		{OldPath: "b.go", NewPath: "b.go", Diff: "y"},
@@ -201,6 +197,7 @@ func TestReduce_PostReductionRenderedDiffFitsKBBackstop(t *testing.T) {
 	kept, dropped, err := Reduce(changes, Options{
 		ModelBudget:   10_000,
 		MaxDiffSizeKB: maxKB,
+		PromptShare:   "1",
 		InitialDiff:   initialDiff,
 		Render:        render,
 	})

@@ -3,7 +3,6 @@ package reviewer
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"mrinspect/internal/gitlab"
@@ -35,19 +34,22 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 	r.retrieveReviewRAG(ctx, codeDiff)
 
 	input := lane.FanoutInput{
-		Lanes:            registry.Lanes,
-		Terms:            lane.Terms(changes),
-		ResourceRegistry: r.multi.ResourceRegistry,
-		Retriever:        r.multi.Retriever,
-		FullLoader:       r.multi.FullLoader,
-		Project:          loadedProject,
-		Diff:             codeDiff,
-		MergeRequest:     mr,
-		Provider:         r.ai,
-		Attempts:         r.cfg.Validation.AIRetryAttempts,
-		GlobalModel:      r.cfg.Providers[r.cfg.AIProvider].Model,
-		ModelLimits:      r.multi.ModelLimits,
-		Logger:           r.log,
+		Lanes:                   registry.Lanes,
+		Terms:                   lane.Terms(changes),
+		ResourceRegistry:        r.multi.ResourceRegistry,
+		Retriever:               r.multi.Retriever,
+		FullLoader:              r.multi.FullLoader,
+		Project:                 loadedProject,
+		Diff:                    codeDiff,
+		MergeRequest:            mr,
+		Provider:                r.ai,
+		Attempts:                r.cfg.Validation.AIRetryAttempts,
+		GlobalModel:             r.cfg.Providers[r.cfg.AIProvider].Model,
+		ModelLimits:             r.multi.ModelLimits,
+		NormativeEvictionPolicy: r.cfg.RAGOnNormativeEviction,
+		Concurrency:             r.cfg.LaneConcurrency,
+		ConcurrencySet:          r.cfg.LaneConcurrencySet,
+		Logger:                  r.log,
 	}
 	fanout := r.multi.Fanout
 	if fanout == nil {
@@ -62,7 +64,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changes)
 	footer := aggregateLaneFooter(result.LaneResults)
 	footer = mergeLaneDegradations(footer, result.LaneResults, selectorDegraded)
-	if os.Getenv("MRI_RAG_ON_NORMATIVE_EVICTION") == "fail" {
+	if r.cfg.RAGOnNormativeEviction == "fail" {
 		if failure, ok := normativeEvictionFailure(result.Failures); ok {
 			renderInput.Findings = nil
 			renderInput.FailedLanes = []lane.LaneFailure{failure}
