@@ -21,6 +21,8 @@ const (
 	PathReview Path = iota
 	// PathIndex selects the RAG store indexing command (REQ-05).
 	PathIndex
+	// PathEval selects the review-quality evaluation command (REQ-01 / S-01).
+	PathEval
 )
 
 // Dispatch classifies command-line arguments and returns the selected path plus
@@ -28,6 +30,9 @@ const (
 func Dispatch(args []string) (path Path, rest []string) {
 	if len(args) > 0 && args[0] == "index" {
 		return PathIndex, args[1:]
+	}
+	if len(args) > 0 && args[0] == "eval" {
+		return PathEval, args[1:]
 	}
 	return PathReview, args
 }

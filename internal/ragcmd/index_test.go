@@ -27,6 +27,20 @@ func TestDispatch_BareArgsEntersReview(t *testing.T) {
 	}
 }
 
+// TestS01_EvalDispatch verifies REQ-01 / S-01: eval selects the evaluation
+// path while index and bare arguments preserve their existing dispatch paths.
+func TestS01_EvalDispatch(t *testing.T) {
+	if path, _ := Dispatch([]string{"eval"}); path != PathEval {
+		t.Errorf("Dispatch([eval]) path = %v, want eval path", path)
+	}
+	if path, _ := Dispatch([]string{"index"}); path != PathIndex {
+		t.Errorf("Dispatch([index]) path = %v, want index path", path)
+	}
+	if path, _ := Dispatch(nil); path != PathReview {
+		t.Errorf("Dispatch(nil) path = %v, want review path", path)
+	}
+}
+
 // TestIndex_ExitCodesAreDistinct verifies REQ-05 / S-20: each named index
 // outcome has a distinct returned exit code and explanatory message.
 func TestIndex_ExitCodesAreDistinct(t *testing.T) {

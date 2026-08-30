@@ -9,7 +9,7 @@ language: zh-TW
 三組各自獨立可驗收（loader／核心執行／報告與收尾），且 RED/GREEN 需
 分開 commit 以控制單次 codex dispatch 規模。
 
-## T1 `[ ]` `S-01` [MODIFY] eval 子命令分派
+## T1 `[x]` `S-01` [MODIFY] eval 子命令分派
 
 - 檔案：`internal/ragcmd/index.go`（`Dispatch`，:28-33 一帶）＋
   `internal/ragcmd/index_test.go`
