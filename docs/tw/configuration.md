@@ -62,6 +62,7 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `ANTHROPIC_MAX_TOKENS` | `4000` | Anthropic 的最大輸出 token 數 |
 | `GEMINI_MAX_TOKENS` | `8000` | Gemini 的最大輸出 token 數 |
 | `OPENAI_MAX_TOKENS` | `4000` | OpenAI 的最大輸出 token 數 |
+| `AI_PER_CALL_TIMEOUT_MS` | `120000` | 每次 AI provider 呼叫的逾時時間（毫秒）；逾時的單次嘗試會接續進入重試 |
 | `MRI_MODEL_LIMITS` | _(未設定)_ | Go runner：以逗號分隔的 `model:tokens` 項目，會疊在內建的 context-window 預設值之上；格式錯誤的項目（缺冒號、token 非正整數）會導致啟動失敗 |
 | `API_RETRY_ATTEMPTS` | `3` | API 重試次數 |
 | `API_RETRY_DELAY_MS` | `1000` | 初始重試延遲（毫秒） |

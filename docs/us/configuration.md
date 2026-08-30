@@ -62,6 +62,7 @@ Any of the variables below can also be supplied via a `.env` file in the working
 | `ANTHROPIC_MAX_TOKENS` | `4000` | Max output tokens for Anthropic |
 | `GEMINI_MAX_TOKENS` | `8000` | Max output tokens for Gemini |
 | `OPENAI_MAX_TOKENS` | `4000` | Max output tokens for OpenAI |
+| `AI_PER_CALL_TIMEOUT_MS` | `120000` | Per-attempt timeout for each AI provider call in milliseconds; a timed-out attempt proceeds to retry |
 | `MRI_MODEL_LIMITS` | _(unset)_ | Go runner: comma-separated `model:tokens` entries merged over the built-in context-window defaults; a malformed entry (missing colon, non-positive/non-integer tokens) fails startup |
 | `API_RETRY_ATTEMPTS` | `3` | Number of API retry attempts |
 | `API_RETRY_DELAY_MS` | `1000` | Initial retry delay in milliseconds |
