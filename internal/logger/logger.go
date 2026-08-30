@@ -2,6 +2,7 @@ package logger
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -9,12 +10,18 @@ import (
 )
 
 type APICallMetric struct {
-	Service    string `json:"service"`
-	Endpoint   string `json:"endpoint"`
-	DurationMs int64  `json:"durationMs"`
-	Success    bool   `json:"success"`
-	Error      string `json:"error,omitempty"`
-	Timestamp  int64  `json:"timestamp"`
+	Service    string      `json:"service"`
+	Endpoint   string      `json:"endpoint"`
+	DurationMs int64       `json:"durationMs"`
+	Success    bool        `json:"success"`
+	Error      string      `json:"error,omitempty"`
+	Timestamp  int64       `json:"timestamp"`
+	Usage      *TokenUsage `json:"usage,omitempty"`
+}
+
+type TokenUsage struct {
+	InputTokens  int64 `json:"inputTokens"`
+	OutputTokens int64 `json:"outputTokens"`
 }
 
 type StepMetric struct {
@@ -33,15 +40,16 @@ type ErrorMetric struct {
 }
 
 type Metrics struct {
-	StartTimeMs int64           `json:"startTimeMs"`
-	EndTimeMs   int64           `json:"endTimeMs,omitempty"`
-	MrID        int             `json:"mrId,omitempty"`
-	ProjectID   int             `json:"projectId,omitempty"`
-	Success     bool            `json:"success"`
-	TotalDurMs  int64           `json:"totalDurationMs,omitempty"`
-	APICalls    []APICallMetric `json:"apiCalls"`
-	Steps       []StepMetric    `json:"steps"`
-	Errors      []ErrorMetric   `json:"errors"`
+	StartTimeMs       int64           `json:"startTimeMs"`
+	EndTimeMs         int64           `json:"endTimeMs,omitempty"`
+	MrID              int             `json:"mrId,omitempty"`
+	ProjectID         int             `json:"projectId,omitempty"`
+	Success           bool            `json:"success"`
+	TotalDurMs        int64           `json:"totalDurationMs,omitempty"`
+	UsageUnknownCalls int             `json:"usageUnknownCalls,omitempty"`
+	APICalls          []APICallMetric `json:"apiCalls"`
+	Steps             []StepMetric    `json:"steps"`
+	Errors            []ErrorMetric   `json:"errors"`
 }
 
 type ReviewSummary struct {
@@ -64,7 +72,11 @@ type Logger struct {
 }
 
 func New(level slog.Level, metricsFile string) *Logger {
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	return NewWithWriter(level, metricsFile, os.Stdout)
+}
+
+func NewWithWriter(level slog.Level, metricsFile string, w io.Writer) *Logger {
+	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
 	return &Logger{
 		slog:        slog.New(handler),
 		metricsFile: metricsFile,
@@ -125,6 +137,64 @@ func (l *Logger) LogAPICall(service, endpoint string, durationMs int64, success 
 	l.metricsMu.Lock()
 	defer l.metricsMu.Unlock()
 	l.metrics.APICalls = append(l.metrics.APICalls, m)
+}
+
+func (l *Logger) LogAIAPICall(service, endpoint string, durationMs int64, success bool, err error, usage *TokenUsage) {
+	var recordedUsage *TokenUsage
+	if usage != nil {
+		usageCopy := *usage
+		recordedUsage = &usageCopy
+	}
+	m := APICallMetric{
+		Service:    service,
+		Endpoint:   endpoint,
+		DurationMs: durationMs,
+		Success:    success,
+		Timestamp:  time.Now().UnixMilli(),
+		Usage:      recordedUsage,
+	}
+	if err != nil {
+		m.Error = err.Error()
+	}
+
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
+	if usage == nil {
+		l.metrics.UsageUnknownCalls++
+	}
+	l.metrics.APICalls = append(l.metrics.APICalls, m)
+}
+
+// MetricsSnapshot returns the metrics collected by this logger.
+func (l *Logger) MetricsSnapshot() Metrics {
+	l.metricsMu.Lock()
+	defer l.metricsMu.Unlock()
+
+	metrics := l.metrics
+	metrics.APICalls = make([]APICallMetric, len(l.metrics.APICalls))
+	for i, call := range l.metrics.APICalls {
+		metrics.APICalls[i] = call
+		if call.Usage != nil {
+			usage := *call.Usage
+			metrics.APICalls[i].Usage = &usage
+		}
+	}
+	metrics.Steps = make([]StepMetric, len(l.metrics.Steps))
+	for i, step := range l.metrics.Steps {
+		metrics.Steps[i] = step
+		if step.DurationMs != nil {
+			durationMs := *step.DurationMs
+			metrics.Steps[i].DurationMs = &durationMs
+		}
+		if step.Metadata != nil {
+			metrics.Steps[i].Metadata = make(map[string]any, len(step.Metadata))
+			for key, value := range step.Metadata {
+				metrics.Steps[i].Metadata[key] = value
+			}
+		}
+	}
+	metrics.Errors = append([]ErrorMetric(nil), l.metrics.Errors...)
+	return metrics
 }
 
 func (l *Logger) LogError(errType, stage, category string, err error) {

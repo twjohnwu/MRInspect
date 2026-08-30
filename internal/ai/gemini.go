@@ -3,11 +3,12 @@ package ai
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"google.golang.org/genai"
 	"mrinspect/internal/config"
 	"mrinspect/internal/logger"
-	"google.golang.org/genai"
 )
 
 type GeminiProvider struct {
@@ -16,11 +17,29 @@ type GeminiProvider struct {
 	log    *logger.Logger
 }
 
-func NewGeminiProvider(ctx context.Context, key string, cfg config.ProviderConfig, log *logger.Logger) (*GeminiProvider, error) {
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+type GeminiOption func(*genai.ClientConfig)
+
+func WithGeminiBaseURL(baseURL string) GeminiOption {
+	return func(config *genai.ClientConfig) {
+		config.HTTPOptions.BaseURL = baseURL
+	}
+}
+
+func WithGeminiHTTPClient(client *http.Client) GeminiOption {
+	return func(config *genai.ClientConfig) {
+		config.HTTPClient = client
+	}
+}
+
+func NewGeminiProvider(ctx context.Context, key string, cfg config.ProviderConfig, log *logger.Logger, opts ...GeminiOption) (*GeminiProvider, error) {
+	clientConfig := &genai.ClientConfig{
 		APIKey:  key,
 		Backend: genai.BackendGeminiAPI,
-	})
+	}
+	for _, opt := range opts {
+		opt(clientConfig)
+	}
+	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("NewGeminiProvider: %w", err)
 	}
@@ -51,11 +70,18 @@ func (p *GeminiProvider) Generate(ctx context.Context, prompt string, opts Gener
 	dur := time.Since(start).Milliseconds()
 
 	if err != nil {
-		p.log.LogAPICall("gemini", "generateContent", dur, false, err)
+		p.log.LogAIAPICall("gemini", "generateContent", dur, false, err, nil)
 		return "", fmt.Errorf("gemini Generate: %w", err)
 	}
 
-	p.log.LogAPICall("gemini", "generateContent", dur, true, nil)
+	var usage *logger.TokenUsage
+	if resp != nil && resp.UsageMetadata != nil {
+		usage = &logger.TokenUsage{
+			InputTokens:  int64(resp.UsageMetadata.PromptTokenCount),
+			OutputTokens: int64(resp.UsageMetadata.CandidatesTokenCount),
+		}
+	}
+	p.log.LogAIAPICall("gemini", "generateContent", dur, true, nil, usage)
 
 	if resp == nil {
 		return "", fmt.Errorf("gemini Generate: nil response")

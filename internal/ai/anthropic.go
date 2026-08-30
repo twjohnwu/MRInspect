@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -17,8 +18,26 @@ type AnthropicProvider struct {
 	log    *logger.Logger
 }
 
-func NewAnthropicProvider(key string, cfg config.ProviderConfig, log *logger.Logger) *AnthropicProvider {
-	client := anthropic.NewClient(option.WithAPIKey(key))
+type AnthropicOption func(*[]option.RequestOption)
+
+func WithAnthropicBaseURL(baseURL string) AnthropicOption {
+	return func(options *[]option.RequestOption) {
+		*options = append(*options, option.WithBaseURL(baseURL))
+	}
+}
+
+func WithAnthropicHTTPClient(client *http.Client) AnthropicOption {
+	return func(options *[]option.RequestOption) {
+		*options = append(*options, option.WithHTTPClient(client))
+	}
+}
+
+func NewAnthropicProvider(key string, cfg config.ProviderConfig, log *logger.Logger, opts ...AnthropicOption) *AnthropicProvider {
+	clientOptions := []option.RequestOption{option.WithAPIKey(key)}
+	for _, opt := range opts {
+		opt(&clientOptions)
+	}
+	client := anthropic.NewClient(clientOptions...)
 	return &AnthropicProvider{client: client, cfg: cfg, log: log}
 }
 
@@ -43,11 +62,18 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string, opts Ge
 	dur := time.Since(start).Milliseconds()
 
 	if err != nil {
-		p.log.LogAPICall("anthropic", "messages", dur, false, err)
+		p.log.LogAIAPICall("anthropic", "messages", dur, false, err, nil)
 		return "", fmt.Errorf("anthropic Generate: %w", err)
 	}
 
-	p.log.LogAPICall("anthropic", "messages", dur, true, nil)
+	var usage *logger.TokenUsage
+	if !msg.JSON.Usage.IsMissing() && !msg.JSON.Usage.IsNull() {
+		usage = &logger.TokenUsage{
+			InputTokens:  msg.Usage.InputTokens,
+			OutputTokens: msg.Usage.OutputTokens,
+		}
+	}
+	p.log.LogAIAPICall("anthropic", "messages", dur, true, nil, usage)
 
 	if len(msg.Content) == 0 {
 		return "", fmt.Errorf("anthropic Generate: empty response")

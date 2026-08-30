@@ -18,18 +18,38 @@ const openaiAPIURL = "https://api.openai.com/v1/responses"
 
 type OpenAIProvider struct {
 	httpClient *http.Client
+	baseURL    string
 	apiKey     string
 	cfg        config.ProviderConfig
 	log        *logger.Logger
 }
 
-func NewOpenAIProvider(apiKey string, cfg config.ProviderConfig, log *logger.Logger) *OpenAIProvider {
-	return &OpenAIProvider{
+type OpenAIOption func(*OpenAIProvider)
+
+func WithOpenAIBaseURL(baseURL string) OpenAIOption {
+	return func(provider *OpenAIProvider) {
+		provider.baseURL = baseURL
+	}
+}
+
+func WithOpenAIHTTPClient(client *http.Client) OpenAIOption {
+	return func(provider *OpenAIProvider) {
+		provider.httpClient = client
+	}
+}
+
+func NewOpenAIProvider(apiKey string, cfg config.ProviderConfig, log *logger.Logger, opts ...OpenAIOption) *OpenAIProvider {
+	provider := &OpenAIProvider{
 		httpClient: &http.Client{Timeout: 60 * time.Second},
+		baseURL:    openaiAPIURL,
 		apiKey:     apiKey,
 		cfg:        cfg,
 		log:        log,
 	}
+	for _, opt := range opts {
+		opt(provider)
+	}
+	return provider
 }
 
 func (p *OpenAIProvider) Name() string { return "openai" }
@@ -63,6 +83,10 @@ type openaiResponse struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	} `json:"output"`
+	Usage *struct {
+		InputTokens  int64 `json:"input_tokens"`
+		OutputTokens int64 `json:"output_tokens"`
+	} `json:"usage"`
 }
 
 func (p *OpenAIProvider) callWithRetry(ctx context.Context, reqBody map[string]any) (string, error) {
@@ -84,71 +108,74 @@ func (p *OpenAIProvider) callWithRetry(ctx context.Context, reqBody map[string]a
 			}
 		}
 
-		text, status, err := p.doRequest(ctx, reqBody)
-		dur := time.Now().UnixMilli()
-		_ = dur
+		text, status, durationMs, usage, err := p.doRequest(ctx, reqBody)
 
 		if err != nil {
-			p.log.LogAPICall("openai", "responses", 0, false, err)
+			p.log.LogAIAPICall("openai", "responses", durationMs, false, err, usage)
 			lastErr = err
 			continue
 		}
 
 		if status == 429 || status >= 500 {
 			lastErr = fmt.Errorf("HTTP %d", status)
-			p.log.LogAPICall("openai", "responses", 0, false, lastErr)
+			p.log.LogAIAPICall("openai", "responses", durationMs, false, lastErr, usage)
 			continue
 		}
 
 		if status >= 400 {
 			lastErr = fmt.Errorf("openai API error HTTP %d", status)
-			p.log.LogAPICall("openai", "responses", 0, false, lastErr)
+			p.log.LogAIAPICall("openai", "responses", durationMs, false, lastErr, usage)
 			return "", lastErr
 		}
 
-		p.log.LogAPICall("openai", "responses", 0, true, nil)
+		p.log.LogAIAPICall("openai", "responses", durationMs, true, nil, usage)
 		return text, nil
 	}
 	return "", fmt.Errorf("openai: exceeded retry attempts: %w", lastErr)
 }
 
-func (p *OpenAIProvider) doRequest(ctx context.Context, reqBody map[string]any) (text string, statusCode int, err error) {
+func (p *OpenAIProvider) doRequest(ctx context.Context, reqBody map[string]any) (text string, statusCode int, durationMs int64, usage *logger.TokenUsage, err error) {
+	start := time.Now()
 	data, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", 0, err
+		return "", 0, time.Since(start).Milliseconds(), nil, err
 	}
 
-	start := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openaiAPIURL, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL, bytes.NewReader(data))
 	if err != nil {
-		return "", 0, err
+		return "", 0, time.Since(start).Milliseconds(), nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.httpClient.Do(req)
-	dur := time.Since(start).Milliseconds()
-	_ = dur
+	durationMs = time.Since(start).Milliseconds()
 	if err != nil {
-		return "", 0, err
+		return "", 0, durationMs, nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", resp.StatusCode, err
+		return "", resp.StatusCode, durationMs, nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", resp.StatusCode, nil
+		return "", resp.StatusCode, durationMs, nil, nil
 	}
 
 	var cr openaiResponse
 	if err := json.Unmarshal(body, &cr); err != nil {
-		return "", resp.StatusCode, fmt.Errorf("unmarshal response: %w", err)
+		return "", resp.StatusCode, durationMs, nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+	if cr.Usage != nil {
+		usage = &logger.TokenUsage{
+			InputTokens:  cr.Usage.InputTokens,
+			OutputTokens: cr.Usage.OutputTokens,
+		}
 	}
 	if len(cr.Output) == 0 || len(cr.Output[0].Content) == 0 {
-		return "", resp.StatusCode, fmt.Errorf("empty output in response")
+		return "", resp.StatusCode, durationMs, usage, fmt.Errorf("empty output in response")
 	}
-	return cr.Output[0].Content[0].Text, resp.StatusCode, nil
+	return cr.Output[0].Content[0].Text, resp.StatusCode, durationMs, usage, nil
 }

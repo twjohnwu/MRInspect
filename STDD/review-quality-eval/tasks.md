@@ -32,7 +32,7 @@ language: zh-TW
   `[]gitlab.Change`）
 - Verification command: `go test ./internal/evalrun/ -run 'TestS02_FixtureLoading|TestS05_EmptyFixturesGuard' -count=1 -v`
 
-## T3 `[ ]` `S-07` [MODIFY] usage 記錄與 provider 注入
+## T3 `[x]` `S-07` [MODIFY] usage 記錄與 provider 注入
 
 - 檔案：`internal/logger/logger.go`（`Usage *TokenUsage` 選用子結構、
   `NewWithWriter`）、`internal/ai/{openai,anthropic,gemini}.go`（usage
