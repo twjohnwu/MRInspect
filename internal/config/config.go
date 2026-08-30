@@ -33,10 +33,11 @@ type ProjectsConfig struct {
 }
 
 type APIConfig struct {
-	RetryAttempts   int
-	RetryDelayMs    int
-	MaxRetryDelayMs int
-	TimeoutMs       int
+	RetryAttempts    int
+	RetryDelayMs     int
+	MaxRetryDelayMs  int
+	TimeoutMs        int
+	PerCallTimeoutMs int
 }
 
 type ValidationConfig struct {
@@ -162,10 +163,11 @@ func load(requireGitLabToken bool) (Config, error) {
 		},
 
 		API: APIConfig{
-			RetryAttempts:   getEnvInt("API_RETRY_ATTEMPTS", 3),
-			RetryDelayMs:    getEnvInt("API_RETRY_DELAY_MS", 1000),
-			MaxRetryDelayMs: getEnvInt("API_MAX_RETRY_DELAY_MS", 10000),
-			TimeoutMs:       getEnvInt("API_TIMEOUT_MS", 30000),
+			RetryAttempts:    getEnvInt("API_RETRY_ATTEMPTS", 3),
+			RetryDelayMs:     getEnvInt("API_RETRY_DELAY_MS", 1000),
+			MaxRetryDelayMs:  getEnvInt("API_MAX_RETRY_DELAY_MS", 10000),
+			TimeoutMs:        getEnvInt("API_TIMEOUT_MS", 30000),
+			PerCallTimeoutMs: getEnvInt("AI_PER_CALL_TIMEOUT_MS", 120000),
 		},
 
 		Validation: ValidationConfig{

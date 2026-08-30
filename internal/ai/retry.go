@@ -9,6 +9,8 @@ import (
 	"mrinspect/internal/config"
 )
 
+const defaultPerCallTimeout = 120 * time.Second
+
 type retryProvider struct {
 	provider Provider
 	cfg      config.APIConfig
@@ -27,6 +29,10 @@ func (p *retryProvider) Generate(ctx context.Context, prompt string, opts Genera
 	if attempts < 1 {
 		attempts = 1
 	}
+	perCallTimeout := time.Duration(p.cfg.PerCallTimeoutMs) * time.Millisecond
+	if perCallTimeout <= 0 {
+		perCallTimeout = defaultPerCallTimeout
+	}
 
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -42,7 +48,9 @@ func (p *retryProvider) Generate(ctx context.Context, prompt string, opts Genera
 			}
 		}
 
-		output, err := p.provider.Generate(ctx, prompt, opts)
+		attemptCtx, cancel := context.WithTimeout(ctx, perCallTimeout)
+		output, err := p.provider.Generate(attemptCtx, prompt, opts)
+		cancel()
 		if err == nil {
 			return output, nil
 		}
