@@ -140,10 +140,9 @@ func main() {
 
 	r := reviewer.New(cfg, gitlabClient, aiProvider, diffFetcher,
 		projectLoader, promptComposer, v, errHandler, log)
-	productionRAG := ragwire.NewProductionReviewDependencies(cfg, ragwire.ReviewPathConfig{
+	productionRAG := ragwire.NewProductionReviewDependencies(ragwire.ReviewPathConfig{
 		ResolverConfig: rag.DefaultResolverConfig(),
 		ResourceSets:   resourceRegistry.Sets,
-		Composer:       promptComposer,
 	})
 	defer func() {
 		if err := productionRAG.Retriever.Close(); err != nil {

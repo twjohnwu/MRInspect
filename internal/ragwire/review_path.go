@@ -9,10 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"mrinspect/internal/config"
-	"mrinspect/internal/gitlab"
-	"mrinspect/internal/project"
-	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
 	_ "mrinspect/internal/rag/sqlite"
@@ -24,9 +20,6 @@ import (
 type ReviewPathConfig struct {
 	ResolverConfig rag.ResolverConfig
 	ResourceSets   []resources.Set
-	Project        project.LoadedProject
-	MergeRequest   gitlab.MergeRequest
-	Composer       *prompt.Composer
 }
 
 // ReviewPath is the production implementation of reviewer.RAGReviewPath.
@@ -91,17 +84,10 @@ func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (review
 	return state, nil
 }
 
-// NewProductionReviewPath is the main.go-facing hook. The configuration is
-// intentionally explicit so main can assemble it without reviewer importing
-// composition-root dependencies.
-func NewProductionReviewPath(cfg config.Config, reviewConfig ReviewPathConfig) reviewer.RAGReviewPath {
-	return NewProductionReviewDependencies(cfg, reviewConfig).ReviewPath
-}
-
 // NewProductionReviewDependencies constructs the production adapters used by
 // both reviewer modes. Construction stays lazy: store resolution and opening
 // happen only on the review path, never during process wiring.
-func NewProductionReviewDependencies(_ config.Config, reviewConfig ReviewPathConfig) ProductionReviewDependencies {
+func NewProductionReviewDependencies(reviewConfig ReviewPathConfig) ProductionReviewDependencies {
 	if reviewConfig.ResolverConfig.MaxBytes == 0 {
 		reviewConfig.ResolverConfig = rag.DefaultResolverConfig()
 	}

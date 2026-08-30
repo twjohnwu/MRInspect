@@ -63,13 +63,6 @@ func (v *Validator) GetTargetBranch() string {
 	return os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
 }
 
-func (v *Validator) GetServiceType() string {
-	if t := os.Getenv("MRI_SERVICE_TYPE"); t != "" {
-		return t
-	}
-	return "backend"
-}
-
 func (v *Validator) ValidateEnvironment() error {
 	required := []string{"AI_PROVIDER_KEY", "GITLAB_TOKEN"}
 	if v.IsRunningInCrossRepoMode() {

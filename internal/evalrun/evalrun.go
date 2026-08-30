@@ -406,10 +406,9 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 				mrerrors.NewHandler(modeCfg, runLog),
 				runLog,
 			)
-			productionRAG := ragwire.NewProductionReviewDependencies(modeCfg, ragwire.ReviewPathConfig{
+			productionRAG := ragwire.NewProductionReviewDependencies(ragwire.ReviewPathConfig{
 				ResolverConfig: rag.DefaultResolverConfig(),
 				ResourceSets:   resourceRegistry.Sets,
-				Composer:       promptComposer,
 			})
 			closers = append(closers, productionRAG.Retriever)
 			r.SetRAGReviewPath(productionRAG.ReviewPath)

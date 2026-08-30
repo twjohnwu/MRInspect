@@ -335,11 +335,6 @@ func normativeEvictionFailure(failures []lane.LaneFailure) (lane.LaneFailure, bo
 	return lane.LaneFailure{}, false
 }
 
-func (r *MRInspectReviewer) multiRenderInput(declarations []lane.Lane, result lane.FanoutResult, changes []gitlab.Change) lane.RenderInput {
-	renderInput, _ := r.multiRenderInputWithDegradations(declarations, result, changes)
-	return renderInput
-}
-
 func (r *MRInspectReviewer) multiRenderInputWithDegradations(declarations []lane.Lane, result lane.FanoutResult, changes []gitlab.Change) (lane.RenderInput, []namedLaneDegradation) {
 	laneOrder := make([]string, 0, len(declarations))
 	renderLanes := make([]lane.RenderLane, 0, len(declarations))
@@ -506,23 +501,8 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 // so an unconfigured model cannot turn this new stage into a new class of
 // failure for setups that worked before it existed.
 func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
-	limits, err := prompt.ModelLimitsFromEnv()
-	if err != nil {
-		r.log.Warn("invalid model limits configuration; using defaults", "error", err.Error())
-		limits = prompt.DefaultModelLimits
-	}
-	merged := make(map[string]int, len(limits)+len(r.multi.ModelLimits))
-	for model, tokens := range limits {
-		merged[model] = tokens
-	}
-	for model, tokens := range r.multi.ModelLimits {
-		merged[model] = tokens
-	}
-
-	model := r.cfg.Providers[r.cfg.AIProvider].Model
-	budget, err := prompt.PromptBudgetForModel(model, merged)
-	if err != nil {
-		r.log.Warn("diff budget unavailable; skipping diff-size reduction", "model", model, "error", err.Error())
+	budget, ok := r.budgetForModel(true)
+	if !ok {
 		return changes, nil, nil
 	}
 
@@ -554,12 +534,7 @@ func splitDiffTrailer(codeDiff string) (diffText, trailerText string) {
 	return codeDiff, ""
 }
 
-// resolvedPromptBudget mirrors reduceDiff's model-limit lookup (merged env
-// config and multi-lane overrides) without its warn-on-failure logging, so
-// breakdown logging can silently omit the budget field for a model with no
-// registered budget entry instead of duplicating a warning already emitted
-// by reduceDiff earlier in the same run.
-func (r *MRInspectReviewer) resolvedPromptBudget() (int, bool) {
+func (r *MRInspectReviewer) mergedModelLimits() (map[string]int, error) {
 	limits, err := prompt.ModelLimitsFromEnv()
 	if err != nil {
 		limits = prompt.DefaultModelLimits
@@ -571,8 +546,24 @@ func (r *MRInspectReviewer) resolvedPromptBudget() (int, bool) {
 	for model, tokens := range r.multi.ModelLimits {
 		merged[model] = tokens
 	}
-	budget, err := prompt.PromptBudgetForModel(r.cfg.Providers[r.cfg.AIProvider].Model, merged)
+	return merged, err
+}
+
+// budgetForModel centralizes the model-limit lookup. The reduction path warns
+// on invalid configuration or an unknown model; breakdown logging stays silent
+// because reduceDiff has already emitted those warnings for the same run.
+func (r *MRInspectReviewer) budgetForModel(warn bool) (int, bool) {
+	limits, limitsErr := r.mergedModelLimits()
+	if limitsErr != nil && warn {
+		r.log.Warn("invalid model limits configuration; using defaults", "error", limitsErr.Error())
+	}
+
+	model := r.cfg.Providers[r.cfg.AIProvider].Model
+	budget, err := prompt.PromptBudgetForModel(model, limits)
 	if err != nil {
+		if warn {
+			r.log.Warn("diff budget unavailable; skipping diff-size reduction", "model", model, "error", err.Error())
+		}
 		return 0, false
 	}
 	return budget, true
@@ -590,7 +581,7 @@ func (r *MRInspectReviewer) logPromptBreakdown(label string, sections []Section,
 	}
 	args := []any{"est", total}
 	if withBudget {
-		if budget, ok := r.resolvedPromptBudget(); ok {
+		if budget, ok := r.budgetForModel(false); ok {
 			args = append(args, "budget", budget)
 		}
 	}

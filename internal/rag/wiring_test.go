@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"mrinspect/internal/project"
-	"mrinspect/internal/prompt"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/rag/sqlite"
@@ -50,8 +48,6 @@ func TestProductionReviewPath_AssemblesStateForFooter(t *testing.T) {
 	path := ragwire.NewReviewPath(ragwire.ReviewPathConfig{
 		ResolverConfig: rag.DefaultResolverConfig(),
 		ResourceSets:   []resources.Set{{Name: "review", Mode: resources.ModeRetrieval}},
-		Project:        project.LoadedProject{System: project.SystemProject{Name: "fixture"}},
-		Composer:       prompt.NewComposer(),
 	})
 	state, err := path.RetrieveForReview(context.Background(), "needle change")
 	if err != nil {
