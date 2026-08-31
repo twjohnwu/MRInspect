@@ -81,7 +81,7 @@ language: zh-TW
   （加 `# mrinspect-fixture:` 檔頭）＋ `eval/fixtures/README.md`。
 - Verification command: `./bin/mrinspect eval --fixtures eval/fixtures --report /tmp/eval-smoke.md`（fake key 下預期在 provider 呼叫階段才失敗，loader 全過）
 
-## T7 `[ ]` [INFRA] docs 條目（S-09 之後）
+## T7 `[x]` [INFRA] docs 條目（S-09 之後）
 
 - 原因：文件工件；建議值依 S-09 實測校正，無獨立可測行為。
 - `docs/{us,tw}/configuration.md` 加 `MRI_DAILY_TOKEN_BUDGET`＋
