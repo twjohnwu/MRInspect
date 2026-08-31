@@ -127,16 +127,19 @@ func (r *MRInspectReviewer) multiRenderInputWithDegradations(declarations []lane
 	}
 
 	receivedChunks := make(map[string][]rag.Chunk, len(result.LaneResults))
+	resourceDegradations := make(map[string][]string, len(result.LaneResults))
 	for _, laneResult := range result.LaneResults {
 		receivedChunks[laneResult.LaneID] = laneResult.Chunks
+		resourceDegradations[laneResult.LaneID] = laneResult.Degraded
 	}
 
 	return lane.RenderInput{
-		Findings:       lane.Merge(laneOrder, result.LaneResults),
-		Lanes:          renderLanes,
-		FailedLanes:    result.Failures,
-		ReceivedChunks: receivedChunks,
-		Changes:        changes,
-		ChangedLines:   hunk.Build(changes),
+		Findings:             lane.Merge(laneOrder, result.LaneResults),
+		Lanes:                renderLanes,
+		FailedLanes:          result.Failures,
+		ReceivedChunks:       receivedChunks,
+		ResourceDegradations: resourceDegradations,
+		Changes:              changes,
+		ChangedLines:         hunk.Build(changes),
 	}, selectorDegraded
 }

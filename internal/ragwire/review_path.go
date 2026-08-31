@@ -46,7 +46,9 @@ type ProductionReviewDependencies struct {
 func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (reviewer.ReviewRAGState, error) {
 	resolution, err := p.store.resolve(ctx)
 	if err != nil {
-		return reviewer.ReviewRAGState{Degraded: degradedEntries(resolution.Degraded)}, nil
+		degraded := degradedEntries(resolution.Degraded)
+		degraded = append(degraded, fmt.Sprintf("store unavailable: %v", err))
+		return reviewer.ReviewRAGState{Degraded: degraded}, nil
 	}
 	state := reviewer.ReviewRAGState{
 		StorePresent:         true,

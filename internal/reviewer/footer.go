@@ -83,6 +83,9 @@ func (r *MRInspectReviewer) ragProvenanceFooter(aggregation footerAggregation) s
 	for _, evicted := range state.Composition.Evicted {
 		parts = append(parts, fmt.Sprintf("evicted section: %s", evicted.Name))
 	}
+	for _, degraded := range append(append([]string(nil), state.Degraded...), state.Composition.Degraded...) {
+		parts = append(parts, "degraded: "+strings.Join(strings.Fields(degraded), " "))
+	}
 	parts = append(parts, aggregation.laneEvictions...)
 	return "\n\n---\nRAG provenance: " + strings.Join(parts, "; ")
 }

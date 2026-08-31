@@ -41,6 +41,9 @@ func (r *MRInspectReviewer) RunForEval(ctx context.Context, mode EvalMode, input
 		Description: input.Description,
 	}
 	content, footer, status, err := r.generateReviewForExplicitModeWithStatus(ctx, mode, input.Diff, input.Changes, mr)
+	if err == nil && mode != EvalModeMulti && (len(r.rag.State.Degraded) > 0 || len(r.rag.State.Composition.Degraded) > 0) {
+		content += r.ragFooterWithAggregation(footer)
+	}
 	outcome := EvalOutcome{
 		ReviewText:     content,
 		ReflectApplied: status.reflectApplied,

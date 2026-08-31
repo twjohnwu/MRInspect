@@ -24,12 +24,13 @@ type RenderLane struct {
 
 // RenderInput contains the complete state needed to render a review.
 type RenderInput struct {
-	Findings       []MergedFinding
-	Lanes          []RenderLane
-	FailedLanes    []LaneFailure
-	ReceivedChunks map[string][]rag.Chunk
-	Changes        []gitlab.Change
-	ChangedLines   hunk.Lookup
+	Findings             []MergedFinding
+	Lanes                []RenderLane
+	FailedLanes          []LaneFailure
+	ReceivedChunks       map[string][]rag.Chunk
+	ResourceDegradations map[string][]string
+	Changes              []gitlab.Change
+	ChangedLines         hunk.Lookup
 }
 
 // Render renders a complete review markdown document.
@@ -57,7 +58,7 @@ func renderScope(output *strings.Builder, input RenderInput) {
 		if resourceSets == "" {
 			resourceSets = "none"
 		}
-		contribution := retrievalContribution(renderLane, input.ReceivedChunks)
+		contribution := retrievalContribution(renderLane, input.ReceivedChunks, input.ResourceDegradations)
 		fmt.Fprintf(output, "- **%s** — Resource sets: %s%s\n", laneID, resourceSets, contribution)
 	}
 	if len(input.Lanes) == 0 {
@@ -84,18 +85,21 @@ func renderScope(output *strings.Builder, input RenderInput) {
 // RenderInput.ReceivedChunks, so a full-mode-only lane could misreport as
 // "no content retrieved" here — known limitation, not addressed by this
 // annotation.
-func retrievalContribution(renderLane RenderLane, received map[string][]rag.Chunk) string {
+func retrievalContribution(renderLane RenderLane, received map[string][]rag.Chunk, degraded map[string][]string) string {
 	if len(renderLane.ResolvedResourceSets) == 0 {
 		return ""
 	}
+	contribution := "no content retrieved"
 	switch chunkCount := len(received[renderLane.Declaration.ID]); {
-	case chunkCount == 0:
-		return " (no content retrieved)"
 	case chunkCount == 1:
-		return " (1 chunk retrieved)"
-	default:
-		return fmt.Sprintf(" (%d chunks retrieved)", chunkCount)
+		contribution = "1 chunk retrieved"
+	case chunkCount > 1:
+		contribution = fmt.Sprintf("%d chunks retrieved", chunkCount)
 	}
+	if reasons := degraded[renderLane.Declaration.ID]; len(reasons) > 0 {
+		contribution += " — " + neutralizedJoin(reasons)
+	}
+	return " (" + contribution + ")"
 }
 
 func renderFindingsTable(output *strings.Builder, input RenderInput) {

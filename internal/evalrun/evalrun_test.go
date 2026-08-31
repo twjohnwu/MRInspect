@@ -17,9 +17,12 @@ import (
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/evalrun"
 	"mrinspect/internal/gitlab"
+	"mrinspect/internal/lane"
 	"mrinspect/internal/logger"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
+	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/testfake"
 	"mrinspect/internal/validator"
@@ -691,5 +694,129 @@ func TestWriteReport_PreservesFailureStageChain(t *testing.T) {
 	}
 	if want := "generate review stage: multi-lane fan-out failed: provider unavailable"; !strings.Contains(string(report), want) {
 		t.Errorf("failure cell lost stage context; want %q in:\n%s", want, report)
+	}
+}
+
+func TestWriteReport_SurfacesLaneStoreResolutionDegradation(t *testing.T) {
+	configureEvalTestEnv(t)
+	t.Setenv("MRI_SERVICE_NAME", "dough-service")
+	cfg, err := config.LoadForEval()
+	if err != nil {
+		t.Fatalf("LoadForEval: %v", err)
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	resourceRegistry, err := resources.Load(repoRoot, "")
+	if err != nil {
+		t.Fatalf("load resource registry: %v", err)
+	}
+	resolverFailure := errors.New("fake resolver failed")
+	retriever := &testfake.FakeRetriever{DefaultResponse: testfake.RetrieverResponse{
+		Result: rag.Result{Degraded: []string{"store unavailable: " + resolverFailure.Error()}},
+	}}
+	log := logger.NewWithWriter(slog.LevelDebug, "", io.Discard)
+	r := reviewer.New(
+		cfg,
+		&testfake.FakeGitLabClient{},
+		&testfake.FakeProvider{},
+		nil,
+		project.NewLoader(cfg.Projects),
+		prompt.NewComposer(),
+		validator.New(cfg),
+		mrerrors.NewHandler(cfg, log),
+		log,
+	)
+	r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{
+		RepoRoot:         repoRoot,
+		ResourceRegistry: resourceRegistry,
+		Retriever:        retriever,
+		ModelLimits:      map[string]int{cfg.Providers[cfg.AIProvider].Model: 1_000_000},
+		Fanout: func(ctx context.Context, _ lane.FanoutInput) (lane.FanoutResult, error) {
+			resolutionResult, retrieveErr := retriever.Retrieve(ctx, rag.Query{SetRef: "margherita-pizza-docs"})
+			if retrieveErr != nil {
+				return lane.FanoutResult{}, retrieveErr
+			}
+			return lane.FanoutResult{LaneResults: []lane.LaneResult{
+				{LaneID: "spec-conformance", Chunks: resolutionResult.Chunks, Degraded: resolutionResult.Degraded},
+				{LaneID: "standards"},
+				{LaneID: "code-diff"},
+			}}, nil
+		},
+	})
+	fixture := loadEvalFixture(t)
+	results := evalrun.RunModes(context.Background(), fixture, []reviewer.EvalMode{reviewer.EvalModeMulti},
+		func(reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) { return r, nil })
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("multi eval result = %#v, want one successful result", results)
+	}
+
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err = evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC),
+		Provider:    "fake",
+		Model:       "fake-model",
+		Fixtures: []evalrun.FixtureReport{{
+			Fixture: fixture,
+			Modes:   []evalrun.ModeReport{{Result: results[0]}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	want := "- **spec-conformance** — Resource sets: margherita-pizza-docs (no content retrieved — store unavailable: fake resolver failed)"
+	if !strings.Contains(string(report), want) {
+		t.Errorf("report missing lane store-resolution degradation line %q:\n%s", want, report)
+	}
+}
+
+type resolverFailureReviewPath struct{ reason string }
+
+func (p resolverFailureReviewPath) RetrieveForReview(context.Context, string) (reviewer.ReviewRAGState, error) {
+	return reviewer.ReviewRAGState{Degraded: []string{p.reason}}, nil
+}
+
+func TestWriteReport_SurfacesSingleModeStoreResolutionDegradation(t *testing.T) {
+	configureEvalTestEnv(t)
+	cfg, err := config.LoadForEval()
+	if err != nil {
+		t.Fatalf("LoadForEval: %v", err)
+	}
+	r := newEvalReviewer(cfg, &testfake.FakeGitLabClient{}, &testfake.FakeProvider{
+		DefaultResponse: testfake.ProviderResponse{Output: evalReviewText("single")},
+	}, false, "")
+	const reason = "store unavailable: fake resolver failed"
+	r.SetRAGReviewPath(resolverFailureReviewPath{reason: reason})
+	fixture := loadEvalFixture(t)
+	results := evalrun.RunModes(context.Background(), fixture, []reviewer.EvalMode{reviewer.EvalModeSingle},
+		func(reviewer.EvalMode) (*reviewer.MRInspectReviewer, error) { return r, nil })
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("single eval result = %#v, want one successful result", results)
+	}
+
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err = evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC),
+		Provider:    "fake",
+		Model:       "fake-model",
+		Fixtures: []evalrun.FixtureReport{{
+			Fixture: fixture,
+			Modes:   []evalrun.ModeReport{{Result: results[0]}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if !strings.Contains(string(report), reason) {
+		t.Errorf("single-mode report missing store-resolution degradation %q:\n%s", reason, report)
 	}
 }

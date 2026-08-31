@@ -2,10 +2,13 @@ package ragwire
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"mrinspect/internal/lane"
+	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/testfake"
@@ -59,5 +62,23 @@ func TestRetrieveResourceSets_BatchesLaneTermsPerSet(t *testing.T) {
 	}
 	if slices.Contains(terms, "itemtopaz") {
 		t.Errorf("terms = %v, want term beyond cap absent", terms)
+	}
+}
+
+func TestReviewPath_StoreResolutionFailureNamesReason(t *testing.T) {
+	resolverFailure := errors.New("fake resolver failed")
+	path := &ReviewPath{
+		store: newResolvedStore(rag.ResolverConfig{}, func(context.Context, rag.ResolverConfig) (rag.StoreResolution, error) {
+			return rag.StoreResolution{}, resolverFailure
+		}),
+	}
+
+	state, err := path.RetrieveForReview(context.Background(), "diff")
+	if err != nil {
+		t.Fatalf("RetrieveForReview: %v", err)
+	}
+	want := "store unavailable: " + resolverFailure.Error()
+	if !slices.ContainsFunc(state.Degraded, func(entry string) bool { return strings.Contains(entry, want) }) {
+		t.Errorf("Degraded = %#v, want named store resolution failure %q", state.Degraded, want)
 	}
 }
