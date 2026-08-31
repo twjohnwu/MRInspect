@@ -30,7 +30,9 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 		"IS_SELF_REFLECTION",
 		"LOG_LEVEL",
 		"MAX_FILES_CHANGED",
+		"MRI_DAILY_TOKEN_BUDGET",
 		"MRI_DIFF_PROMPT_SHARE",
+		"MRI_EVAL_ALLOW_CI",
 		"MRI_LANE_CONCURRENCY",
 		"MRI_MODEL_LIMITS",
 		"MRI_PROMPT_BUDGET_FACTOR",
@@ -50,7 +52,6 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 	// Excluded CI variables are injected by GitLab or the cross-repository trigger contract,
 	// rather than being user-settable application configuration.
 	// AI_REVIEW_METRICS_FILE is a debug/evaluation output path, not production configuration.
-	// MRI_DAILY_TOKEN_BUDGET and MRI_EVAL_ALLOW_CI apply only to the offline eval command.
 	// MRI_RAG_BACKEND, MRI_RAG_ENABLED, and embedding switches are internal extension controls;
 	// sqlite is the only production backend, so users should not configure them.
 	// MRINSPECT_IMAGE_TAG belongs to the reusable CI template and is absent from this example.

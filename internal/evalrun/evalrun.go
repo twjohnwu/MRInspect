@@ -156,7 +156,6 @@ func WriteReport(path string, report Report) error {
 		} else {
 			fmt.Fprintf(&rendered, "Token subtotal: %d\n\n", subtotal)
 		}
-		rendered.WriteString("### 人工評語\n\n")
 	}
 
 	tmpPath := path + ".tmp"

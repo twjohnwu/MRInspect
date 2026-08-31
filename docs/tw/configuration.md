@@ -56,6 +56,8 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數。預設值 0.8 也吸收了估算器實測約 11% 的系統性低估。 |
 | `MRI_DIFF_PROMPT_SHARE` | `0.85` | 有效模型 prompt 預算中 diff 可佔用的比例；超額的 diff 會整檔剔除（先剔不可人審 pattern，再依大小由大到小剔除；hunk 永不截斷），剔除清單會同時揭露於 prompt 與 review footer。無效值會退回預設值。實測事故資料顯示 diff 佔 prompt 超過約 93% 時，模型會省略必要區段；降到約 85% 即恢復格式遵循——上限依模型預算比例縮放，而非固定 KB 值。 |
 | `MRI_REVIEW_DUMP_ENABLED` | _(未設定)_ | 設為精確字串 `true` 才會在 review 驗證失敗時把 failure-only 的 prompt/response dump 寫入 CI job log。預設關閉：預設的失敗 log 只帶驗證錯誤原因、找到的標題清單、清洗前後長度，以及 prompt 與 response 的 sha256 前 12 碼——絕不含內容。僅在除錯時開啟，且僅限 diff 不含敏感值的 repo。 |
+| `MRI_DAILY_TOKEN_BUDGET` | _(未設定；停用)_ | 離線 eval 的預算對照。以單次執行的 token 總量和每日預算比較，不保留跨執行狀態；usage 未知的呼叫會讓總量成為帶 `≥` 的下限，超過預算只記錄 Warn。建議值為每日 `2500000` tokens，推導自每日 20 次 review × 高情境 100k input + 8k output tokens ≈ 216 萬，再加上餘裕。定價研究取回日期為 2026-08-30；實測校準中，一輪 9 次 small-diff review 共使用 ≥79.5k tokens，每次約 6–10k，因此 250 萬是安全上限。 |
+| `MRI_EVAL_ALLOW_CI` | _(未設定)_ | 設為精確字串 `true` 才允許在 CI 內執行 `mrinspect eval`，以防意外產生三倍模式花費。 |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5` | 覆寫 Anthropic 模型 |
 | `GEMINI_MODEL` | `gemini-3.1-pro-preview` | 覆寫 Gemini 模型。既有帳號可覆寫回 `gemini-2.5-pro`；free-tier API 金鑰對 3.1 Pro 的配額為零，因此請改用 `gemini-2.5-flash`。 |
 | `OPENAI_MODEL` | `gpt-5.6` | 覆寫 OpenAI 模型 |

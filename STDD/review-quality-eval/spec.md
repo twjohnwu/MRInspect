@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-08-30
-approved_fingerprint: 6b70049105522961a12b4007f2a31f06c12ad79f11e39a2f5a5f51e53b31a0e8
+approved_fingerprint: 6957f9faa87ba65f2b55da3e9415400921bdf012322955ceef11c94cf9234b44
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -74,8 +74,8 @@ repo 已公開內容）由 S-09 人工確認，不設機器 gate。
 eval 結束時 atomic write（temp＋rename）產出報告：標頭（產生時間、
 provider/model、fixtures 清單）＋每 fixture 一節：(a) 三個 mode-run 的
 review 全文或失敗摘要（部分失敗記為該格的錯誤說明，不整趟中斷），
-(b) 各 mode-run 的 prompt 佔比表，(c) token 用量小計，(d) 留白的
-「人工評語」欄，(e) multi 降級標註（如有）。報告公開、commit 進 repo
+(b) 各 mode-run 的 prompt 佔比表，(c) token 用量小計，(d) multi
+降級標註（如有）。報告公開、commit 進 repo
 ——裁決依據：fixtures 限定取自本已公開 repo 的歷史內容，無新增洩漏面
 （見 Adjudications）。佔比表的取得依賴 **logger writer seam**：
 `logger.New` 增加可注入 `io.Writer` 的建構變體，eval 據此擷取佔比表
@@ -162,7 +162,7 @@ S-09 之後）。研究已得的上界參考：20 審/日 ×（100k in＋8k out�
   設定為失敗）
 - WHEN 報告寫出
 - THEN 報告含標頭、每 fixture 一節、三 mode-run 全文或失敗摘要、
-  佔比表（經 writer seam 擷取）、token 小計、人工評語空欄；寫入為
+  佔比表（經 writer seam 擷取）、token 小計；寫入為
   temp＋rename
 - Test mapping: `internal/evalrun/evalrun_test.go::TestS06_ReportGeneration`
 - Verification command: `go test ./internal/evalrun/ -run TestS06_ReportGeneration -count=1 -v`
@@ -262,3 +262,4 @@ S-09 之後）。研究已得的上界參考：20 審/日 ×（100k in＋8k out�
   狀態）與解析防呆缺失；hobbit 主張整條砍掉，**被使用者明示指示
   否決（保留變數）**；修訂為誠實的單次對照語意＋「≥」下限標示＋
   ParseUint 防呆，限制寫入 docs。
+- REQ-03: 修訂（2026-08-31）——使用者於 S-09 判讀時指示移除報告的「人工評語」欄；spec 與 S-06 同步修訂並重算 fingerprint。

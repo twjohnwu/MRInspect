@@ -542,9 +542,6 @@ func TestS06_ReportGeneration(t *testing.T) {
 			t.Errorf("%s mode section count = %d, want %d", mode, got, len(fixtures))
 		}
 	}
-	if got := strings.Count(report, "### 人工評語\n\n"); got != len(fixtures) {
-		t.Errorf("empty 人工評語 field count = %d, want %d", got, len(fixtures))
-	}
 	if _, statErr := os.Stat(reportPath + ".tmp"); !errors.Is(statErr, os.ErrNotExist) {
 		t.Errorf("atomic report temp file remains after WriteReport: %v", statErr)
 	}
