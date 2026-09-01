@@ -101,9 +101,14 @@ language: zh-TW
 
 ## Manual verification checklist
 
-- [ ] S-09：本機真 key 跑 `./bin/mrinspect eval`，確認 REPORT.md 完整、
+- [x] S-09：本機真 key 跑 `./bin/mrinspect eval`，確認 REPORT.md 完整、
   佔比表與 token 非零、review 品質可接受、fixtures curation 達標
   （三類涵蓋、無非公開內容）；隨後 T7 定稿建議值。
+  使用者判讀（2026-08-31）：「報告可讀 / review 品質可接受 / curation
+  達標」，並要求移除報告的「人工評語」欄（已於 spec REQ-03 修訂落實）。
+  最終實跑 2026-09-01（含 `.rag/` store）：9 modes ok / 0 failed、
+  664.2s、usage ≥82,456、usageUnknownCalls 6；檢索 lane 取得實際內容
+  （7/3、8/4、8 chunks），佔比表與 token 皆非零。
 
 ## Task 依賴
 

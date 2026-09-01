@@ -8,6 +8,9 @@ node_modules/
 # Local env file — never commit secrets
 .env
 
+# Local RAG store (built by `mrinspect index`)
+.rag/
+
 # Test artifacts
 mrinspect-metrics.json
 *.test
