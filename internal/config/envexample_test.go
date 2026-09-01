@@ -30,6 +30,7 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 		"IS_SELF_REFLECTION",
 		"LOG_LEVEL",
 		"MAX_FILES_CHANGED",
+		"MRI_AI_LOG_DIR",
 		"MRI_DAILY_TOKEN_BUDGET",
 		"MRI_DIFF_PROMPT_SHARE",
 		"MRI_EVAL_ALLOW_CI",

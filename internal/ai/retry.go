@@ -51,6 +51,18 @@ func (p *retryProvider) Generate(ctx context.Context, prompt string, opts Genera
 		attemptCtx, cancel := context.WithTimeout(ctx, perCallTimeout)
 		output, err := p.provider.Generate(attemptCtx, prompt, opts)
 		cancel()
+		entry := transcriptEntry{
+			Timestamp: time.Now().Format(time.RFC3339Nano),
+			Provider:  p.provider.Name(),
+			Model:     opts.Model,
+			Attempt:   attempt + 1,
+			Prompt:    prompt,
+			Response:  output,
+		}
+		if err != nil {
+			entry.Error = err.Error()
+		}
+		processTranscript.append(p.cfg.AILogDir, entry)
 		if err == nil {
 			return output, nil
 		}

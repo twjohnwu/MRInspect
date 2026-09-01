@@ -38,6 +38,7 @@ type APIConfig struct {
 	MaxRetryDelayMs  int
 	TimeoutMs        int
 	PerCallTimeoutMs int
+	AILogDir         string
 }
 
 type ValidationConfig struct {
@@ -168,6 +169,7 @@ func load(requireGitLabToken bool) (Config, error) {
 			MaxRetryDelayMs:  getEnvInt("API_MAX_RETRY_DELAY_MS", 10000),
 			TimeoutMs:        getEnvInt("API_TIMEOUT_MS", 30000),
 			PerCallTimeoutMs: getEnvInt("AI_PER_CALL_TIMEOUT_MS", 120000),
+			AILogDir:         os.Getenv("MRI_AI_LOG_DIR"),
 		},
 
 		Validation: ValidationConfig{
