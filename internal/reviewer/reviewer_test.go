@@ -1135,6 +1135,67 @@ func TestSelfReflect_InvalidReflectionKeepsOriginal(t *testing.T) {
 	})
 }
 
+func TestSelfReflectWithStatus_Outcomes(t *testing.T) {
+	original := validReviewBody
+	updated := "## Code Review\n## Findings\nnew finding\n## Verdict\nchanges requested"
+	providerFailure := errors.New("reflection provider unavailable")
+	v := configurableValidator{validateReviewContent: reviewSectionsPresent}
+
+	tests := []struct {
+		name        string
+		response    testfake.ProviderResponse
+		wantReview  string
+		wantApplied bool
+		wantChanged bool
+	}{
+		{
+			name:       "AI error is not applied",
+			response:   testfake.ProviderResponse{Err: providerFailure},
+			wantReview: original,
+		},
+		{
+			name:       "invalid rewrite is not applied",
+			response:   testfake.ProviderResponse{Output: "invalid rewrite"},
+			wantReview: original,
+		},
+		{
+			name:        "validated review is applied unchanged",
+			response:    testfake.ProviderResponse{Output: "REVIEW VALIDATED"},
+			wantReview:  original,
+			wantApplied: true,
+		},
+		{
+			name:        "verbatim valid review without sentinel is applied unchanged",
+			response:    testfake.ProviderResponse{Output: original},
+			wantReview:  original,
+			wantApplied: true,
+		},
+		{
+			name:        "valid rewrite is applied and changed",
+			response:    testfake.ProviderResponse{Output: updated},
+			wantReview:  updated,
+			wantApplied: true,
+			wantChanged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &testfake.FakeProvider{DefaultResponse: tt.response}
+			r, _ := newForensicsFixture(t, provider, v, 1, fakeComposer{prompt: "compose prompt"})
+
+			gotReview, gotApplied, gotChanged := r.selfReflectWithStatus(context.Background(), original)
+			if gotReview != tt.wantReview {
+				t.Errorf("selfReflectWithStatus review = %q, want %q", gotReview, tt.wantReview)
+			}
+			if gotApplied != tt.wantApplied || gotChanged != tt.wantChanged {
+				t.Errorf("selfReflectWithStatus status = (applied=%t, changed=%t), want (applied=%t, changed=%t)",
+					gotApplied, gotChanged, tt.wantApplied, tt.wantChanged)
+			}
+		})
+	}
+}
+
 type erroringChangesGitLab struct {
 	*fakeGitLab
 	err error

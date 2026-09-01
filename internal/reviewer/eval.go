@@ -28,6 +28,7 @@ type EvalInput struct {
 type EvalOutcome struct {
 	ReviewText     string
 	ReflectApplied bool
+	ReflectChanged bool
 	Degraded       bool
 	Mode           EvalMode
 }
@@ -47,6 +48,7 @@ func (r *MRInspectReviewer) RunForEval(ctx context.Context, mode EvalMode, input
 	outcome := EvalOutcome{
 		ReviewText:     content,
 		ReflectApplied: status.reflectApplied,
+		ReflectChanged: status.reflectChanged,
 		Degraded:       footer.degradedToSingle,
 		Mode:           mode,
 	}

@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-08-26
-approved_fingerprint: bcc3dba97affc1a6d46aa19c4d1f92116f140d8847d15c245270049d3a7aab44
+approved_fingerprint: 581fddbe3ad0b7c38c3ce9b10ee6c695d7a0770006e6a78e8e519bf53a4c9589
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -227,6 +227,11 @@ Verification command: `go test ./internal/reviewer/ -run TestRun_AllLanesFailedI
 選用：`file`、`line`、`endLine`、`category`、`suggestion`、`citations`、
 `summary`、`positives`、`notes`。
 
+`category` 的值域限定為 `correctness`、`concurrency`、`security`、`performance`、
+`testing`、`error-handling`、`maintainability`、`style`、`other`；解析時 trim＋
+轉小寫後查表，非空但不在清單內的值一律映為 `other`，空值保持空
+（2026-09-01 修訂，見 Adjudications）。
+
 **契約中沒有 `confidence`**：那是模型自報、無法驗證的分數，而 REQ-06 的渲染從頭到尾
 不輸出它——一個沒有讀者的數字。「跨 lane 一致代表更可信」由 `reportedBy` 列出多個
 lane id 直接呈現，不需要浮點數。
@@ -322,7 +327,7 @@ Verification command: `go test ./internal/lane/ -run TestParse_GivesUpAtConfigur
 **第一步，精確分組**（map 鍵，皆為相等比較）：
 1. **正規化後的 `file`**：去除前導 `./`、去除 diff 的 `a/` 與 `b/` 前綴、
    統一為 repo 根相對路徑、大小寫**不**折疊（Linux 檔名區分大小寫）
-2. **`category`**：缺漏時一律視為空字串——兩個都沒填會合併，一個填一個沒填則不合併
+2. **`category`**：使用解析層正規化後的值（見 REQ-04 值域）；`other` 與空字串**不參與分組**，各自獨立成群——未知類別彼此無語意關聯，誤併會吞掉其中一筆發現（2026-09-01 修訂）
 
 **第二步，組內依行距歸併**：把組內發現依 `line` 由小到大排序，逐一比對——
 與**該群目前代表**的 `line` 相差 ≤ 3 則併入該群，否則自成新群。
@@ -800,6 +805,10 @@ lane 結果的處置矩陣。每列對應一個已定義的 scenario，判定由
 - 新增 S-37：所有 lane 都 `enabled: false` 時，原本會貼出一份零發現零失敗、
   且能通過既有 `ValidateReviewContent` 的空殼審查——與 S-12 同類的失敗，
   但經由設定而非 provider 錯誤達成。
+- REQ-04/REQ-05: 修訂（2026-09-01）——eval 報告揭露自由文字 category 使跨 lane
+  去重失效（"Concurrency"/"concurrency"/"Concurrency & Immutability" 為三個不同
+  字串、三群）；改為 allowlist＋解析時正規化，並將 `other`/空字串設為不可分組以
+  防異類誤併。程式先行出貨、spec 隨碼修訂並重算 fingerprint。
 
 ### 第二輪抗辯（2026-08-26，僅針對第一輪的修正）
 

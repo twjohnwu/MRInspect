@@ -423,7 +423,7 @@ func normalizeFinding(encoded json.RawMessage, maxFieldChars int, stats *ParseSt
 		File:       truncateField(raw.File, "file", maxFieldChars, stats),
 		Line:       parseLine(raw.Line),
 		EndLine:    parseLine(raw.EndLine),
-		Category:   truncateField(raw.Category, "category", maxFieldChars, stats),
+		Category:   truncateField(normalizeCategory(raw.Category), "category", maxFieldChars, stats),
 		Suggestion: truncateField(raw.Suggestion, "suggestion", maxFieldChars, stats),
 		Citations:  raw.Citations,
 		Summary:    truncateField(raw.Summary, "summary", maxFieldChars, stats),
@@ -431,6 +431,16 @@ func normalizeFinding(encoded json.RawMessage, maxFieldChars int, stats *ParseSt
 		Notes:      truncateFields(raw.Notes, "notes", maxFieldChars, stats),
 	}
 	return finding, true, nil
+}
+
+func normalizeCategory(category string) string {
+	category = strings.ToLower(strings.TrimSpace(category))
+	switch category {
+	case "", "correctness", "concurrency", "security", "performance", "testing", "error-handling", "maintainability", "style", "other":
+		return category
+	default:
+		return "other"
+	}
 }
 
 func parseLine(raw json.RawMessage) *int {

@@ -108,6 +108,9 @@ func renderFindingsTable(output *strings.Builder, input RenderInput) {
 	output.WriteByte('\n')
 	output.WriteString(findingsTableSeparator)
 	output.WriteByte('\n')
+	if len(input.Findings) == 0 {
+		output.WriteString("| - | - | - | - | No findings reported | - |\n")
+	}
 	for index, finding := range input.Findings {
 		fmt.Fprintf(
 			output,

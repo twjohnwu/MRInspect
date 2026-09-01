@@ -131,6 +131,44 @@ func TestParse_NormalizesAndCountsDropped(t *testing.T) {
 	}
 }
 
+func TestParse_NormalizesCategory(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+		want     string
+	}{
+		{name: "uppercase allowlisted category", category: "Concurrency", want: "concurrency"},
+		{name: "surrounding whitespace", category: "  testing  ", want: "testing"},
+		{name: "non-allowlisted category", category: "Concurrency & Immutability", want: "other"},
+		{name: "empty category", category: "", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := parseTestJSON(t, map[string]any{
+				"laneId": "category-normalization",
+				"findings": []map[string]any{{
+					"title":     "Category normalization",
+					"severity":  "medium",
+					"rationale": "The finding is complete.",
+					"category":  test.category,
+				}},
+			})
+
+			got, err := Parse(raw, parseTestLimits())
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(got.Findings) != 1 {
+				t.Fatalf("finding count = %d, want exactly 1", len(got.Findings))
+			}
+			if got.Findings[0].Category != test.want {
+				t.Errorf("Category = %q, want %q", got.Findings[0].Category, test.want)
+			}
+		})
+	}
+}
+
 // TestParse_RetryReusesRetrieval verifies REQ-04 / S-15: a parse retry only
 // repeats Generate, keeps the composed prompt, and does not repeat retrieval.
 func TestParse_RetryReusesRetrieval(t *testing.T) {

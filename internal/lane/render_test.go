@@ -164,6 +164,20 @@ func TestRender_PreservesExistingStructure(t *testing.T) {
 	}
 }
 
+func TestRender_EmptyFindingsPlaceholderRow(t *testing.T) {
+	rendered := Render(renderTestInput(nil))
+
+	for _, row := range []string{
+		"| # | Severity | Category | Standard | Item | File:Line |",
+		"|---|----------|----------|----------|------|-----------|",
+		"| - | - | - | - | No findings reported | - |",
+	} {
+		if got := renderTestExactLineCount(rendered, row); got != 1 {
+			t.Errorf("row %q occurs on %d exact lines, want exactly 1", row, got)
+		}
+	}
+}
+
 // TestRender_ShowsLaneAndCitation verifies REQ-06 / S-23: each finding shows
 // its reporting lane and a verified chunk location, omitting a zero line.
 func TestRender_ShowsLaneAndCitation(t *testing.T) {

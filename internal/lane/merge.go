@@ -33,7 +33,7 @@ func Merge(laneOrder []string, results []LaneResult) []MergedFinding {
 			}
 			encounter++
 
-			if finding.Line == nil {
+			if finding.Line == nil || finding.Category == "" || finding.Category == "other" {
 				clusters = append(clusters, []mergeMember{member})
 				continue
 			}

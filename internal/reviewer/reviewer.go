@@ -76,6 +76,7 @@ type namedLaneDegradation struct {
 
 type generationStatus struct {
 	reflectApplied bool
+	reflectChanged bool
 	multiFanout    *lane.FanoutResult
 }
 
@@ -234,10 +235,14 @@ func (r *MRInspectReviewer) generateReviewForExplicitModeWithStatus(ctx context.
 	case EvalModeReflect:
 		content, err := r.generateReview(ctx, codeDiff, mr)
 		reflectApplied := false
+		reflectChanged := false
 		if err == nil {
-			content, reflectApplied = r.selfReflectWithStatus(ctx, content)
+			content, reflectApplied, reflectChanged = r.selfReflectWithStatus(ctx, content)
 		}
-		return content, footerAggregation{}, generationStatus{reflectApplied: reflectApplied}, err
+		return content, footerAggregation{}, generationStatus{
+			reflectApplied: reflectApplied,
+			reflectChanged: reflectChanged,
+		}, err
 	case EvalModeMulti:
 		content, footer, fanout, err := r.generateMultiReview(ctx, codeDiff, changes, mr)
 		return content, footer, generationStatus{multiFanout: fanout}, err
@@ -425,25 +430,25 @@ func (r *MRInspectReviewer) callAI(ctx context.Context, reviewPrompt string) (st
 }
 
 func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) string {
-	reflected, _ := r.selfReflectWithStatus(ctx, review)
+	reflected, _, _ := r.selfReflectWithStatus(ctx, review)
 	return reflected
 }
 
-func (r *MRInspectReviewer) selfReflectWithStatus(ctx context.Context, review string) (string, bool) {
+func (r *MRInspectReviewer) selfReflectWithStatus(ctx context.Context, review string) (string, bool, bool) {
 	loadedProject, err := r.loadServiceProject()
 	if err != nil {
-		return review, false
+		return review, false, false
 	}
 	reflectPrompt := r.prompt.ComposeSelfReflectionPrompt(loadedProject, review)
 	r.logSelfReflectPromptBreakdown(review, reflectPrompt)
 	result, err := r.callAI(ctx, reflectPrompt)
 	if err != nil {
 		r.log.Warn("self-reflection failed", "error", err)
-		return review, false
+		return review, false, false
 	}
 	if strings.Contains(result, "REVIEW VALIDATED") {
 		r.log.Info("self-reflection: review validated")
-		return review, true
+		return review, true, false
 	}
 
 	// Never adopt a reflection result that has not been re-validated: a
@@ -454,11 +459,11 @@ func (r *MRInspectReviewer) selfReflectWithStatus(ctx context.Context, review st
 	if err := r.validator.ValidateReviewContent(cleaned); err != nil {
 		r.log.Warn("self-reflection produced an invalid review; keeping original", "error", err.Error())
 		r.dumpForensics(dumpsEnabled, "Response", "self-reflection", result)
-		return review, false
+		return review, false, false
 	}
 
 	r.log.Info("self-reflection: review updated")
-	return cleaned, true
+	return cleaned, true, cleaned != review
 }
 
 func (r *MRInspectReviewer) postReview(ctx context.Context, content string) error {

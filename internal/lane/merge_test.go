@@ -102,6 +102,109 @@ func TestMerge_DeduplicatesAcrossLanes(t *testing.T) {
 	}
 }
 
+// TestMerge_MergesAcceptedCategoryVariantsButIsolatesUnknownCategory pins the
+// intentional degradation: accepted variants normalize and merge, while a
+// non-allowlisted variant degrades to "other" and remains ungroupable.
+func TestMerge_MergesAcceptedCategoryVariantsButIsolatesUnknownCategory(t *testing.T) {
+	categories := []string{"Concurrency", "concurrency", "Concurrency & Immutability"}
+	results := make([]LaneResult, 0, len(categories))
+	laneOrder := make([]string, 0, len(categories))
+
+	for index, category := range categories {
+		laneID := fmt.Sprintf("lane-%c", 'a'+rune(index))
+		raw := parseTestJSON(t, map[string]any{
+			"laneId": laneID,
+			"findings": []map[string]any{{
+				"title":     "Concurrent logger access",
+				"severity":  "medium",
+				"rationale": "The logger state can be accessed concurrently.",
+				"file":      "internal/logger/logger.go",
+				"line":      173,
+				"category":  category,
+			}},
+		})
+		parsed, err := Parse(raw, parseTestLimits())
+		if err != nil {
+			t.Fatalf("Parse lane %q: %v", laneID, err)
+		}
+		if len(parsed.Findings) != 1 {
+			t.Fatalf("parsed lane %q finding count = %d, want exactly 1", laneID, len(parsed.Findings))
+		}
+		laneOrder = append(laneOrder, laneID)
+		results = append(results, LaneResult{LaneID: laneID, Findings: parsed.Findings})
+	}
+
+	got := Merge(laneOrder, results)
+	if len(got) != 2 {
+		t.Fatalf("Merge returned %d findings, want one accepted-category cluster and one isolated other finding: %#v", len(got), got)
+	}
+	if got[0].Category != "concurrency" {
+		t.Errorf("merged Category = %q, want %q", got[0].Category, "concurrency")
+	}
+	if !hasExactlyReporters(got[0].ReportedBy, "lane-a", "lane-b") {
+		t.Errorf("merged ReportedBy = %v, want exactly lane-a and lane-b", got[0].ReportedBy)
+	}
+	if got[1].Category != "other" {
+		t.Errorf("isolated Category = %q, want %q", got[1].Category, "other")
+	}
+	if !hasExactlyReporters(got[1].ReportedBy, "lane-c") {
+		t.Errorf("isolated ReportedBy = %v, want exactly lane-c", got[1].ReportedBy)
+	}
+}
+
+func TestMerge_DoesNotGroupDifferentUnknownCategoriesRemappedToOther(t *testing.T) {
+	tests := []struct {
+		laneID   string
+		title    string
+		line     int
+		category string
+	}{
+		{laneID: "supply-lane", title: "Unpinned transitive dependency", line: 40, category: "supply chain"},
+		{laneID: "resource-lane", title: "Response body is not closed", line: 42, category: "resource leak"},
+	}
+	results := make([]LaneResult, 0, len(tests))
+	laneOrder := make([]string, 0, len(tests))
+
+	for _, tt := range tests {
+		raw := parseTestJSON(t, map[string]any{
+			"laneId": tt.laneID,
+			"findings": []map[string]any{{
+				"title":     tt.title,
+				"severity":  "medium",
+				"rationale": "Distinct issue reported by " + tt.laneID,
+				"file":      "internal/client/client.go",
+				"line":      tt.line,
+				"category":  tt.category,
+			}},
+		})
+		parsed, err := Parse(raw, parseTestLimits())
+		if err != nil {
+			t.Fatalf("Parse lane %q: %v", tt.laneID, err)
+		}
+		if len(parsed.Findings) != 1 {
+			t.Fatalf("parsed lane %q finding count = %d, want exactly 1", tt.laneID, len(parsed.Findings))
+		}
+		if parsed.Findings[0].Category != "other" {
+			t.Fatalf("parsed lane %q category = %q, want remapped %q", tt.laneID, parsed.Findings[0].Category, "other")
+		}
+		laneOrder = append(laneOrder, tt.laneID)
+		results = append(results, LaneResult{LaneID: tt.laneID, Findings: parsed.Findings})
+	}
+
+	got := Merge(laneOrder, results)
+	if len(got) != 2 {
+		t.Fatalf("Merge returned %d findings, want two ungrouped unknown-category findings: %#v", len(got), got)
+	}
+	for index, tt := range tests {
+		if got[index].Title != tt.title {
+			t.Errorf("finding[%d] Title = %q, want %q", index, got[index].Title, tt.title)
+		}
+		if !hasExactlyReporters(got[index].ReportedBy, tt.laneID) {
+			t.Errorf("finding[%d] ReportedBy = %v, want exactly %s", index, got[index].ReportedBy, tt.laneID)
+		}
+	}
+}
+
 // TestMerge_KeepsDistantFindingsSeparate verifies REQ-05 / S-18: grouping is
 // representative-based, neither whole-file merging, transitive chaining, nor line/4 bucketing.
 func TestMerge_KeepsDistantFindingsSeparate(t *testing.T) {
@@ -245,7 +348,7 @@ func TestMerge_OutputIsDeterministic(t *testing.T) {
 }
 
 // TestMerge_NormalizesFilePaths verifies REQ-05 / S-44 plus the exact-group
-// category rule and no-line exception: prefixes normalize, case does not fold.
+// category rule and ungroupable exceptions: prefixes normalize, case does not fold.
 func TestMerge_NormalizesFilePaths(t *testing.T) {
 	t.Run("leading dot and diff prefixes merge", func(t *testing.T) {
 		got := Merge(
@@ -291,7 +394,7 @@ func TestMerge_NormalizesFilePaths(t *testing.T) {
 		}
 	})
 
-	t.Run("two missing categories merge", func(t *testing.T) {
+	t.Run("two missing categories stay separate", func(t *testing.T) {
 		got := Merge(
 			[]string{"lane-a", "lane-b"},
 			[]LaneResult{
@@ -299,8 +402,11 @@ func TestMerge_NormalizesFilePaths(t *testing.T) {
 				{LaneID: "lane-b", Findings: []Finding{mergeTestFinding("missing B", SeverityMedium, "internal/foo.go", mergeTestLine(13), "")}},
 			},
 		)
-		if len(got) != 1 || !hasExactlyReporters(got[0].ReportedBy, "lane-a", "lane-b") {
-			t.Fatalf("Merge result = %#v, want one missing-category cluster reported by both lanes", got)
+		if len(got) != 2 {
+			t.Fatalf("Merge result = %#v, want two ungroupable missing-category findings", got)
+		}
+		if !hasExactlyReporters(got[0].ReportedBy, "lane-a") || !hasExactlyReporters(got[1].ReportedBy, "lane-b") {
+			t.Errorf("missing-category reporters = [%v %v], want separate lane-a and lane-b facts", got[0].ReportedBy, got[1].ReportedBy)
 		}
 	})
 
@@ -354,9 +460,9 @@ func TestMerge_SameLaneFindingsStaySeparate(t *testing.T) {
 	})
 
 	t.Run("mixed lanes: same-lane pair splits, other lane joins one of them", func(t *testing.T) {
-		laneA1 := mergeTestFinding("lane-a first", SeverityMedium, "internal/b.go", mergeTestLine(10), "")
-		laneB := mergeTestFinding("lane-b only", SeverityMedium, "internal/b.go", mergeTestLine(11), "")
-		laneA2 := mergeTestFinding("lane-a second", SeverityMedium, "internal/b.go", mergeTestLine(12), "")
+		laneA1 := mergeTestFinding("lane-a first", SeverityMedium, "internal/b.go", mergeTestLine(10), "correctness")
+		laneB := mergeTestFinding("lane-b only", SeverityMedium, "internal/b.go", mergeTestLine(11), "correctness")
+		laneA2 := mergeTestFinding("lane-a second", SeverityMedium, "internal/b.go", mergeTestLine(12), "correctness")
 
 		got := Merge(
 			[]string{"lane-a", "lane-b"},

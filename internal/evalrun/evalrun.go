@@ -137,10 +137,17 @@ func WriteReport(path string, report Report) error {
 			} else {
 				rendered.WriteString(strings.TrimSpace(modeReport.Result.Outcome.ReviewText))
 				rendered.WriteString("\n\n")
-				if modeReport.Result.Mode == reviewer.EvalModeReflect && !modeReport.Result.Outcome.ReflectApplied {
-					rendered.WriteString("> reflection not applied (degraded)\n\n")
+				if modeReport.Result.Mode == reviewer.EvalModeReflect {
+					switch {
+					case !modeReport.Result.Outcome.ReflectApplied:
+						rendered.WriteString("> reflection not applied (degraded)\n\n")
+					case modeReport.Result.Outcome.ReflectChanged:
+						rendered.WriteString("> reflection applied, review rewritten\n\n")
+					default:
+						rendered.WriteString("> reflection applied, review unchanged (validated)\n\n")
+					}
 				}
-				if breakdown := firstPromptBreakdown(modeReport.PromptBreakdown); breakdown != "" {
+				for _, breakdown := range promptBreakdowns(modeReport.PromptBreakdown) {
 					rendered.WriteString(breakdown)
 					rendered.WriteString("\n\n")
 				}
@@ -233,8 +240,9 @@ func innermostCause(err error) error {
 	}
 }
 
-func firstPromptBreakdown(captured string) string {
+func promptBreakdowns(captured string) []string {
 	decoder := json.NewDecoder(strings.NewReader(captured))
+	var breakdowns []string
 	for {
 		var record struct {
 			Message string `json:"msg"`
@@ -243,13 +251,16 @@ func firstPromptBreakdown(captured string) string {
 			break
 		}
 		if strings.Contains(record.Message, "| Section | Tokens | % of total |") {
-			return strings.TrimSpace(record.Message)
+			breakdowns = append(breakdowns, strings.TrimSpace(record.Message))
 		}
 	}
-	if strings.Contains(captured, "| Section | Tokens | % of total |") {
-		return strings.TrimSpace(captured)
+	if len(breakdowns) > 0 {
+		return breakdowns
 	}
-	return ""
+	if strings.Contains(captured, "| Section | Tokens | % of total |") {
+		return []string{strings.TrimSpace(captured)}
+	}
+	return nil
 }
 
 func summarizeMetrics(metrics logger.Metrics) (int64, int) {

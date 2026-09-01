@@ -534,8 +534,8 @@ func TestS06_ReportGeneration(t *testing.T) {
 			t.Errorf("report does not contain %q", want)
 		}
 	}
-	if got := strings.Count(report, "| Section | Tokens | % of total |"); got != 5 {
-		t.Errorf("prompt-breakdown table count = %d, want 5 successful mode-runs", got)
+	if got := strings.Count(report, "| Section | Tokens | % of total |"); got != 7 {
+		t.Errorf("prompt-breakdown table count = %d, want 5 base calls plus 2 reflection calls", got)
 	}
 	for _, mode := range modes {
 		if got := strings.Count(report, "### "+string(mode)+"\n"); got != len(fixtures) {
@@ -547,6 +547,169 @@ func TestS06_ReportGeneration(t *testing.T) {
 	}
 	if report != "" && (!strings.HasSuffix(report, "\n") || !strings.Contains(report, "## 02-beta.diff")) {
 		t.Error("published report appears incomplete")
+	}
+}
+
+func TestWriteReport_RendersAllPromptBreakdownsInLogOrder(t *testing.T) {
+	base := "Prompt composition breakdown (estimated tokens per section):\n" +
+		"| Section | Tokens | % of total |\n" +
+		"|---|---:|---:|\n" +
+		"| diff | 10 | 100.0% |"
+	reflection := "Self-reflection prompt breakdown (estimated tokens per section):\n" +
+		"| Section | Tokens | % of total |\n" +
+		"|---|---:|---:|\n" +
+		"| original review | 20 | 100.0% |"
+	captured := fmt.Sprintf("{\"msg\":%q}\n{\"msg\":\"unrelated\"}\n{\"msg\":%q}\n", base, reflection)
+
+	report := writePromptBreakdownReport(t, reviewer.EvalModeReflect, captured)
+	baseIndex := strings.Index(report, base)
+	reflectionIndex := strings.Index(report, reflection)
+	if baseIndex < 0 || reflectionIndex < 0 {
+		t.Fatalf("report did not render both prompt breakdowns:\n%s", report)
+	}
+	if baseIndex >= reflectionIndex {
+		t.Errorf("prompt breakdown order = reflection before base, want captured log order:\n%s", report)
+	}
+}
+
+func TestWriteReport_OnePromptBreakdownOutputUnchanged(t *testing.T) {
+	breakdown := "Prompt composition breakdown (estimated tokens per section):\n" +
+		"| Section | Tokens | % of total |\n" +
+		"|---|---:|---:|\n" +
+		"| diff | 10 | 100.0% |"
+	captured := fmt.Sprintf("{\"msg\":%q}\n", breakdown)
+
+	got := writePromptBreakdownReport(t, reviewer.EvalModeSingle, captured)
+	want := "# MRInspect Review Quality Evaluation\n\n" +
+		"Generated: 2026-08-30T14:00:00Z\n\n" +
+		"Provider: `fake`\n\n" +
+		"Model: `fake-model`\n\n" +
+		"Fixtures: `01-breakdown.diff`\n\n" +
+		"## 01-breakdown.diff\n\n" +
+		"### single\n\n" +
+		"review body\n\n" +
+		breakdown + "\n\n" +
+		"Token subtotal: 0\n\n"
+	if got != want {
+		t.Errorf("single-breakdown report changed:\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
+func writePromptBreakdownReport(t *testing.T, mode reviewer.EvalMode, captured string) string {
+	t.Helper()
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err := evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 30, 14, 0, 0, 0, time.UTC),
+		Provider:    "fake",
+		Model:       "fake-model",
+		Fixtures: []evalrun.FixtureReport{{
+			Fixture: evalrun.Fixture{Name: "01-breakdown.diff"},
+			Modes: []evalrun.ModeReport{{
+				Result: evalrun.ModeResult{
+					Mode: mode,
+					Outcome: reviewer.EvalOutcome{
+						ReviewText: "review body",
+						Mode:       mode,
+					},
+				},
+				PromptBreakdown: captured,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	return string(data)
+}
+
+func TestWriteReport_ReflectionNotes(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    reviewer.EvalMode
+		outcome reviewer.EvalOutcome
+		want    string
+	}{
+		{
+			name: "reflect not applied",
+			mode: reviewer.EvalModeReflect,
+			outcome: reviewer.EvalOutcome{
+				ReflectApplied: false,
+				ReflectChanged: false,
+			},
+			want: "> reflection not applied (degraded)",
+		},
+		{
+			name: "reflect applied unchanged",
+			mode: reviewer.EvalModeReflect,
+			outcome: reviewer.EvalOutcome{
+				ReflectApplied: true,
+				ReflectChanged: false,
+			},
+			want: "> reflection applied, review unchanged (validated)",
+		},
+		{
+			name: "reflect applied rewritten",
+			mode: reviewer.EvalModeReflect,
+			outcome: reviewer.EvalOutcome{
+				ReflectApplied: true,
+				ReflectChanged: true,
+			},
+			want: "> reflection applied, review rewritten",
+		},
+		{
+			name: "single has no reflection note",
+			mode: reviewer.EvalModeSingle,
+			outcome: reviewer.EvalOutcome{
+				ReflectApplied: true,
+				ReflectChanged: true,
+			},
+		},
+		{
+			name: "multi has no reflection note",
+			mode: reviewer.EvalModeMulti,
+			outcome: reviewer.EvalOutcome{
+				ReflectApplied: true,
+				ReflectChanged: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+			tt.outcome.ReviewText = "review body"
+			tt.outcome.Mode = tt.mode
+			err := evalrun.WriteReport(reportPath, evalrun.Report{
+				GeneratedAt: time.Date(2026, time.August, 30, 15, 0, 0, 0, time.UTC),
+				Provider:    "fake",
+				Model:       "fake-model",
+				Fixtures: []evalrun.FixtureReport{{
+					Fixture: evalrun.Fixture{Name: "01-reflect.diff"},
+					Modes: []evalrun.ModeReport{{Result: evalrun.ModeResult{
+						Mode:    tt.mode,
+						Outcome: tt.outcome,
+					}}},
+				}},
+			})
+			if err != nil {
+				t.Fatalf("WriteReport: %v", err)
+			}
+			data, err := os.ReadFile(reportPath)
+			if err != nil {
+				t.Fatalf("read report: %v", err)
+			}
+			report := string(data)
+			if tt.want != "" && !strings.Contains(report, tt.want) {
+				t.Errorf("report missing reflection note %q:\n%s", tt.want, report)
+			}
+			if tt.want == "" && strings.Contains(report, "> reflection ") {
+				t.Errorf("non-reflect report contains reflection note:\n%s", report)
+			}
+		})
 	}
 }
 
