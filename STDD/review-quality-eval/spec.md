@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-08-30
-approved_fingerprint: 6957f9faa87ba65f2b55da3e9415400921bdf012322955ceef11c94cf9234b44
+approved_fingerprint: 13771457ef2418ac37a27f271955b03f2514b545156988adf34625dce74a963c
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -79,8 +79,9 @@ review 全文或失敗摘要（部分失敗記為該格的錯誤說明，不整�
 ——裁決依據：fixtures 限定取自本已公開 repo 的歷史內容，無新增洩漏面
 （見 Adjudications）。佔比表的取得依賴 **logger writer seam**：
 `logger.New` 增加可注入 `io.Writer` 的建構變體，eval 據此擷取佔比表
-（production 預設 os.Stdout 不變）。已知限制寫入報告說明：selfReflect
-失敗時既有語意是靜默回傳未反思版本，報告無法區分，標註為 limitation。
+（production 預設 os.Stdout 不變）。反省結果的可區分性（2026-09-01 修訂）：報告以三態註記呈現 reflect
+mode-run——未套用（degraded）／已套用但原文未改（validated）／已套用
+且已改寫；原「報告無法區分」的 limitation 已由 528b649 修復並移除。
 
 ### REQ-04 token 用量記錄
 
@@ -263,3 +264,4 @@ S-09 之後）。研究已得的上界參考：20 審/日 ×（100k in＋8k out�
   否決（保留變數）**；修訂為誠實的單次對照語意＋「≥」下限標示＋
   ParseUint 防呆，限制寫入 docs。
 - REQ-03: 修訂（2026-08-31）——使用者於 S-09 判讀時指示移除報告的「人工評語」欄；spec 與 S-06 同步修訂並重算 fingerprint。
+- REQ-03: 修訂（2026-09-01）——528b649 讓報告收集全部 prompt breakdown 表並以三態註記區分 reflect 結果，原「selfReflect 失敗無法區分」的已知限制不再成立；spec 隨碼修訂並重算 fingerprint。

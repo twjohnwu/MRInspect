@@ -12,7 +12,7 @@ node_modules/
 .rag/
 
 # Test artifacts
-.mrinspect-ai-log/
+.ai-log/
 mrinspect-metrics.json
 *.test
 *.out

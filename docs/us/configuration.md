@@ -65,7 +65,7 @@ Any of the variables below can also be supplied via a `.env` file in the working
 | `GEMINI_MAX_TOKENS` | `8000` | Max output tokens for Gemini |
 | `OPENAI_MAX_TOKENS` | `4000` | Max output tokens for OpenAI |
 | `AI_PER_CALL_TIMEOUT_MS` | `120000` | Per-attempt timeout for each AI provider call in milliseconds; a timed-out attempt proceeds to retry |
-| `MRI_AI_LOG_DIR` | _(unset; disabled)_ | Local directory for a per-run `ai-log-<timestamp>-<pid>.jsonl` transcript containing every AI provider attempt, including failures and retries. Example: `.mrinspect-ai-log/`. The files contain full prompts and responses, so keep them local and handle them as sensitive data. |
+| `MRI_AI_LOG_DIR` | _(unset; disabled)_ | Local directory for a per-run `ai-log-<timestamp>-<pid>.jsonl` transcript containing every AI provider attempt, including failures and retries. Example: `.ai-log/`. The files contain full prompts and responses, so keep them local and handle them as sensitive data. |
 | `MRI_MODEL_LIMITS` | _(unset)_ | Go runner: comma-separated `model:tokens` entries merged over the built-in context-window defaults; a malformed entry (missing colon, non-positive/non-integer tokens) fails startup |
 | `API_RETRY_ATTEMPTS` | `3` | Number of API retry attempts |
 | `API_RETRY_DELAY_MS` | `1000` | Initial retry delay in milliseconds |
