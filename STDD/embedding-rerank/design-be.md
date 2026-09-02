@@ -81,6 +81,19 @@ sequenceDiagram
    （介面＋per-provider 建構器＋HTTP 注入），無新 GoF 模式——Strategy
    形狀已內建於 Embedder 介面，不另立 Factory/Registry（兩個 provider
    一個 switch 即可，D4 的 N 在 provider 常數表內）。
+6. **S-17 漂移紀錄（2026-09-02，T3 GREEN 前）**：design 原假設前一 change 的
+   `TestRetrieve_RerankReordersWithinCandidates`（S-29）可原樣回歸，但該測試
+   的 store 建構**未寫向量**，在「查詢時讀庫向量、無向量即降級」的新設計下
+   會正確地降級回 BM25，與其「順序須異於 BM25」的斷言矛盾。裁決：S-29 的
+   語意（只重排候選、不引入新 chunk）保留；其測試 setup 改為以測試 embedder
+   建有向量的 store，斷言不動。屬授權的 fingerprint 重定基線，非測試竄改。
+
+7. **S-17 漂移紀錄（2026-09-02，T4 GREEN 前）**：模組表與 tasks.md T4 的檔案
+   清單漏了 `internal/ragcmd/index.go`——`mrinspect index` 子命令必須在 flag
+   開時把 embedder 與 `Progress`（os.Stderr）接進 `IndexOptions`，否則
+   REQ-02 的入庫在真實指令下永遠不觸發（只有測試直呼 `Index` 會）。裁決：
+   納入 T4 GREEN 範圍；`config.LoadForIndex` 為唯一的 flag/provider/key 讀取點，
+   sqlite 包改以 option 接收決定、不再自行讀 env。
 
 ## Requirements Checklist（S-51，plan 版）
 

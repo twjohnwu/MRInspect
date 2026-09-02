@@ -3,6 +3,9 @@ package ragwire
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +13,7 @@ import (
 	"mrinspect/internal/lane"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
+	"mrinspect/internal/rag/sqlite"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/testfake"
 )
@@ -80,5 +84,74 @@ func TestReviewPath_StoreResolutionFailureNamesReason(t *testing.T) {
 	want := "store unavailable: " + resolverFailure.Error()
 	if !slices.ContainsFunc(state.Degraded, func(entry string) bool { return strings.Contains(entry, want) }) {
 		t.Errorf("Degraded = %#v, want named store resolution failure %q", state.Degraded, want)
+	}
+}
+
+// TestS10_ProviderMissingDegradesThroughWiring verifies REQ-03 / S-10: a
+// missing embedding provider degrades to BM25 through the production RAG wiring.
+func TestS10_ProviderMissingDegradesThroughWiring(t *testing.T) {
+	t.Setenv("MRI_RAG_EMBEDDINGS", "true")
+	t.Setenv("MRI_RAG_EMBED_KEY", "fixture-key")
+	t.Setenv("MRI_RAG_EMBED_PROVIDER", "temporary-value-restored-by-testing")
+	if err := os.Unsetenv("MRI_RAG_EMBED_PROVIDER"); err != nil {
+		t.Fatalf("Unsetenv MRI_RAG_EMBED_PROVIDER: %v", err)
+	}
+	t.Setenv("MRI_RAG_SOURCE", "path")
+	t.Setenv("MRI_RAG_BACKEND", "sqlite")
+
+	dir := t.TempDir()
+	var document strings.Builder
+	document.WriteString("# Ranked guidance\n\n")
+	for rank := 1; rank <= 6; rank++ {
+		fmt.Fprintf(&document, "## Rank %02d\n%s%smarker-%02d\n\n",
+			rank,
+			strings.Repeat("needle ", rank),
+			strings.Repeat("filler ", 7-rank),
+			rank,
+		)
+	}
+	documentPath := filepath.Join(dir, "ranked.md")
+	if err := os.WriteFile(documentPath, []byte(document.String()), 0o600); err != nil {
+		t.Fatalf("write fixture document: %v", err)
+	}
+	set := resources.Set{Name: "review", Mode: resources.ModeRetrieval, Paths: []string{dir}}
+	storePath := filepath.Join(dir, "store.sqlite")
+	if _, err := sqlite.Index(context.Background(), sqlite.IndexOptions{
+		OutputPath: storePath,
+		Sets:       []resources.Set{set},
+	}); err != nil {
+		t.Fatalf("index fixture without vectors: %v", err)
+	}
+	t.Setenv("MRI_RAG_STORE", storePath)
+	rag.RegisterBuiltinSources(rag.BuiltinSourcesConfig{})
+
+	path := NewReviewPath(ReviewPathConfig{
+		ResolverConfig: rag.DefaultResolverConfig(),
+		ResourceSets:   []resources.Set{set},
+	})
+	state, err := path.RetrieveForReview(context.Background(), `--- a/review.go
++++ b/review.go
+@@ -1 +1 @@
+-old guidance
++needle
+`)
+	if err != nil {
+		t.Fatalf("RetrieveForReview: %v", err)
+	}
+	if len(state.Chunks) != 5 {
+		t.Fatalf("BM25 chunks = %d, want TopK 5", len(state.Chunks))
+	}
+	for index := 1; index < len(state.Chunks); index++ {
+		previous, current := state.Chunks[index-1].Score, state.Chunks[index].Score
+		if previous == nil || current == nil {
+			t.Fatalf("BM25 scores at ranks %d/%d = (%v, %v), want non-nil", index, index+1, previous, current)
+		}
+		if *previous >= *current {
+			t.Errorf("BM25 scores at ranks %d/%d = (%g, %g), want ascending SQLite BM25 order", index, index+1, *previous, *current)
+		}
+	}
+	reason := strings.Join(state.Degraded, " | ")
+	if !strings.Contains(reason, "MRI_EMBED_PROVIDER") {
+		t.Errorf("Degraded = %q, want missing provider initialization reason containing MRI_EMBED_PROVIDER", reason)
 	}
 }

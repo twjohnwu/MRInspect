@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"mrinspect/internal/config"
 	"mrinspect/internal/lane"
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/resources"
@@ -20,6 +21,7 @@ import (
 type ReviewPathConfig struct {
 	ResolverConfig rag.ResolverConfig
 	ResourceSets   []resources.Set
+	RAGEmbedding   *config.RAGEmbeddingConfig
 }
 
 // ReviewPath is the production implementation of reviewer.RAGReviewPath.
@@ -29,9 +31,10 @@ type ReviewPath struct {
 }
 
 // NewReviewPath constructs the production RAG review adapter.
-func NewReviewPath(config ReviewPathConfig) *ReviewPath {
-	RegisterBuiltinBackends()
-	return &ReviewPath{config: config, store: newResolvedStore(config.ResolverConfig, nil)}
+func NewReviewPath(reviewConfig ReviewPathConfig) *ReviewPath {
+	reviewConfig = withRAGEmbeddingConfig(reviewConfig)
+	RegisterBuiltinBackends(*reviewConfig.RAGEmbedding)
+	return &ReviewPath{config: reviewConfig, store: newResolvedStore(reviewConfig.ResolverConfig, nil)}
 }
 
 // ProductionReviewDependencies are the review-only RAG adapters shared by the
@@ -96,7 +99,8 @@ func retrieveResourceSets(ctx context.Context, retriever rag.Retriever, sets []r
 // both reviewer modes. Construction stays lazy: store resolution and opening
 // happen only on the review path, never during process wiring.
 func NewProductionReviewDependencies(reviewConfig ReviewPathConfig) ProductionReviewDependencies {
-	RegisterBuiltinBackends()
+	reviewConfig = withRAGEmbeddingConfig(reviewConfig)
+	RegisterBuiltinBackends(*reviewConfig.RAGEmbedding)
 	if reviewConfig.ResolverConfig.MaxBytes == 0 {
 		reviewConfig.ResolverConfig = rag.DefaultResolverConfig()
 	}
@@ -106,6 +110,14 @@ func NewProductionReviewDependencies(reviewConfig ReviewPathConfig) ProductionRe
 		Retriever:  &resolvingRetriever{config: reviewConfig, store: store},
 		FullLoader: resourceFullLoader{sets: reviewConfig.ResourceSets},
 	}
+}
+
+func withRAGEmbeddingConfig(reviewConfig ReviewPathConfig) ReviewPathConfig {
+	if reviewConfig.RAGEmbedding == nil {
+		embeddingConfig := config.LoadRAGEmbedding()
+		reviewConfig.RAGEmbedding = &embeddingConfig
+	}
+	return reviewConfig
 }
 
 func degradedEntries(entries []rag.DegradedEntry) []string {

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/chunk"
+	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/resources"
 )
 
@@ -217,29 +219,38 @@ func TestRetrieve_AllUnknownSelectorsReturnEmpty(t *testing.T) {
 
 type fixtureEmbedder struct{}
 
-func (fixtureEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
-	if text == "needle" {
-		return []float64{1, 0}, nil
+func (fixtureEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	vectors := make([][]float32, len(texts))
+	for index, text := range texts {
+		if text == "needle" || !strings.Contains(text, "BM25-first") {
+			vectors[index] = []float32{1, 0}
+			continue
+		}
+		vectors[index] = []float32{0, 1}
 	}
-	if strings.Contains(text, "BM25-first") {
-		return []float64{0, 1}, nil
-	}
-	return []float64{1, 0}, nil
+	return vectors, nil
 }
+
+func (fixtureEmbedder) Model() string { return "fixture-rerank" }
+func (fixtureEmbedder) Dim() int      { return 2 }
 
 // TestRetrieve_RerankReordersWithinCandidates verifies REQ-08 / S-29.
 func TestRetrieve_RerankReordersWithinCandidates(t *testing.T) {
 	t.Setenv("MRI_RAG_EMBEDDINGS", "false")
 	t.Setenv("MRI_RAG_EMBED_KEY", "fixture-key")
 	set := retrievalSet(t, "rerank", map[string]string{"doc.md": "# Doc\n\n## First\nneedle needle BM25-first\n\n## Second\nneedle BM25-second\n"})
-	r, _ := indexedRetriever(t, set)
+	r, path := indexRetrieverWithOptions(t, set, fixtureEmbedder{})
 	baseline := retrieve(t, r, set.Name, []string{"needle"}, 2)
 	if len(baseline.Chunks) != 2 {
 		t.Fatalf("BM25 candidates = %d, want 2", len(baseline.Chunks))
 	}
 	t.Setenv("MRI_RAG_EMBEDDINGS", "true")
-	r.embedder = fixtureEmbedder{}
-	got := retrieve(t, r, set.Name, []string{"needle"}, 2)
+	reranker, err := OpenRetriever(path, []resources.Set{set}, WithEmbedder(fixtureEmbedder{}))
+	if err != nil {
+		t.Fatalf("OpenRetriever with fixture embedder: %v", err)
+	}
+	t.Cleanup(func() { _ = reranker.Close() })
+	got := retrieve(t, reranker, set.Name, []string{"needle"}, 2)
 	if !reflect.DeepEqual(ids(got.Chunks), []string{baseline.Chunks[1].ID, baseline.Chunks[0].ID}) {
 		t.Errorf("reranked IDs = %v, want fixture cosine order %v", ids(got.Chunks), []string{baseline.Chunks[1].ID, baseline.Chunks[0].ID})
 	}
@@ -254,6 +265,317 @@ func TestRetrieve_RerankReordersWithinCandidates(t *testing.T) {
 		if !candidates[item.ID] {
 			t.Errorf("rerank introduced non-candidate chunk %q", item.ID)
 		}
+	}
+}
+
+type testVectorEmbedder struct {
+	model      string
+	targetText string
+	allSame    bool
+	err        error
+	calls      int
+}
+
+func (fixture *testVectorEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	fixture.calls++
+	if fixture.err != nil {
+		return nil, fixture.err
+	}
+	vectors := make([][]float32, len(texts))
+	for index, text := range texts {
+		if fixture.allSame || text == "needle" || text == fixture.targetText {
+			vectors[index] = []float32{1, 0}
+			continue
+		}
+		vectors[index] = []float32{0, 1}
+	}
+	return vectors, nil
+}
+
+func (fixture *testVectorEmbedder) Model() string { return fixture.model }
+func (*testVectorEmbedder) Dim() int              { return 2 }
+func (fixture *testVectorEmbedder) Calls() int    { return fixture.calls }
+
+func rankedNeedleSet(t *testing.T, count int) resources.Set {
+	t.Helper()
+	var source strings.Builder
+	for rank := 1; rank <= count; rank++ {
+		fmt.Fprintf(&source, "## Candidate %02d\n%s marker-%02d\n\n", rank, strings.TrimSpace(strings.Repeat("needle ", count-rank+1)), rank)
+	}
+	return retrievalSet(t, "embedding-ranks", map[string]string{"ranked.md": source.String()})
+}
+
+func indexRetrieverWithOptions(t *testing.T, set resources.Set, indexEmbedder embed.Embedder, options ...RetrieverOption) (*Retriever, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "store.sqlite")
+	if _, err := Index(context.Background(), IndexOptions{
+		OutputPath: path,
+		Sets:       []resources.Set{set},
+		Embedder:   indexEmbedder,
+	}); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+	retriever, err := OpenRetriever(path, []resources.Set{set}, options...)
+	if err != nil {
+		t.Fatalf("OpenRetriever: %v", err)
+	}
+	t.Cleanup(func() { _ = retriever.Close() })
+	return retriever, path
+}
+
+func assertStrictBM25Order(t *testing.T, chunks []rag.Chunk) {
+	t.Helper()
+	for index := 1; index < len(chunks); index++ {
+		if chunks[index-1].Score == nil || chunks[index].Score == nil {
+			t.Fatalf("BM25 scores at ranks %d/%d = (%v, %v), want non-nil", index, index+1, chunks[index-1].Score, chunks[index].Score)
+		}
+		if *chunks[index-1].Score >= *chunks[index].Score {
+			t.Fatalf("BM25 scores at ranks %d/%d = (%g, %g), want strictly increasing (lower is better)", index, index+1, *chunks[index-1].Score, *chunks[index].Score)
+		}
+	}
+}
+
+// TestS07_RerankWidensAndReorders verifies REQ-03 / S-07: reranking widens
+// BM25 to four times TopK, reads candidate vectors from the store, embeds only
+// the query, and can promote a candidate from inside (but not outside) that window.
+func TestS07_RerankWidensAndReorders(t *testing.T) {
+	t.Setenv(embeddingsEnv, "false")
+	t.Setenv(embedKeyEnv, "fixture-key")
+	set := rankedNeedleSet(t, 12)
+	baselineRetriever, _ := indexRetrieverWithOptions(t, set, nil)
+	baseline := retrieve(t, baselineRetriever, set.Name, []string{"needle"}, 12)
+	if len(baseline.Chunks) != 12 {
+		t.Fatalf("BM25 chunks = %d, want 12", len(baseline.Chunks))
+	}
+	assertStrictBM25Order(t, baseline.Chunks)
+
+	t.Run("rank 5 is promoted for TopK 3", func(t *testing.T) {
+		target := baseline.Chunks[4]
+		storeEmbedder := &testVectorEmbedder{model: "rank-fixture", targetText: target.Text}
+		queryEmbedder := &testVectorEmbedder{model: storeEmbedder.model, targetText: target.Text}
+		reranker, _ := indexRetrieverWithOptions(t, set, storeEmbedder, WithEmbedder(queryEmbedder))
+		t.Setenv(embeddingsEnv, "true")
+
+		got := retrieve(t, reranker, set.Name, []string{"needle"}, 3)
+		if len(got.Chunks) != 3 {
+			t.Fatalf("reranked chunks = %d, want 3", len(got.Chunks))
+		}
+		if got.Chunks[0].Text != target.Text {
+			t.Errorf("first reranked chunk = %q, want BM25 rank 5 %q", got.Chunks[0].Text, target.Text)
+		}
+		if calls := queryEmbedder.Calls(); calls != 1 {
+			t.Errorf("query-time Embed calls = %d, want 1 (query only; candidate vectors must come from SQLite)", calls)
+		}
+	})
+
+	t.Run("rank 9 stays outside TopK 2 window", func(t *testing.T) {
+		target := baseline.Chunks[8]
+		storeEmbedder := &testVectorEmbedder{model: "rank-fixture", targetText: target.Text}
+		queryEmbedder := &testVectorEmbedder{model: storeEmbedder.model, targetText: target.Text}
+		reranker, _ := indexRetrieverWithOptions(t, set, storeEmbedder, WithEmbedder(queryEmbedder))
+		t.Setenv(embeddingsEnv, "true")
+
+		got := retrieve(t, reranker, set.Name, []string{"needle"}, 2)
+		if len(got.Chunks) != 2 {
+			t.Fatalf("reranked chunks = %d, want 2", len(got.Chunks))
+		}
+		for _, item := range got.Chunks {
+			if item.Text == target.Text {
+				t.Errorf("BM25 rank 9 appeared in TopK=2 results; widening window must stop at rank 8")
+			}
+		}
+		if calls := queryEmbedder.Calls(); calls != 1 {
+			t.Errorf("query-time Embed calls = %d, want 1 (query only)", calls)
+		}
+	})
+}
+
+// TestS08_RerankDegrades verifies REQ-03 / S-08: every unavailable or invalid
+// rerank input falls back to BM25 with a bounded, safe, actionable reason.
+func TestS08_RerankDegrades(t *testing.T) {
+	const (
+		storeModel = "stored-model-v1"
+		queryModel = "query-model-v2"
+	)
+	testCases := []struct {
+		name             string
+		keyMissing       bool
+		constructionErr  error
+		storeModel       string
+		queryModel       string
+		queryErr         error
+		corruptVector    bool
+		wantSubstrings   []string
+		rejectSubstrings []string
+	}{
+		{
+			name:           "key missing",
+			keyMissing:     true,
+			storeModel:     storeModel,
+			queryModel:     storeModel,
+			wantSubstrings: []string{embedKeyEnv},
+		},
+		{
+			name:            "provider invalid",
+			constructionErr: errors.New("embedder construction failed: invalid provider"),
+			storeModel:      storeModel,
+			wantSubstrings:  []string{"embedder"},
+		},
+		{
+			name:             "store has no vectors",
+			queryModel:       storeModel,
+			wantSubstrings:   []string{"no vectors"},
+			rejectSubstrings: []string{"mismatch"},
+		},
+		{
+			name:           "model mismatch",
+			storeModel:     storeModel,
+			queryModel:     queryModel,
+			wantSubstrings: []string{storeModel, queryModel},
+		},
+		{
+			name:           "query embedding 503 is redacted",
+			storeModel:     storeModel,
+			queryModel:     storeModel,
+			queryErr:       errors.New("POST https://secret.example/?key=abc returned status 503"),
+			wantSubstrings: []string{"503"},
+			rejectSubstrings: []string{
+				"secret.example",
+				"abc",
+			},
+		},
+		{
+			name:           "corrupt stored vector",
+			storeModel:     storeModel,
+			queryModel:     storeModel,
+			corruptVector:  true,
+			wantSubstrings: []string{"vector"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv(embeddingsEnv, "false")
+			if testCase.keyMissing {
+				t.Setenv(embedKeyEnv, "temporary-value-restored-by-testing")
+				if err := os.Unsetenv(embedKeyEnv); err != nil {
+					t.Fatalf("Unsetenv %s: %v", embedKeyEnv, err)
+				}
+			} else {
+				t.Setenv(embedKeyEnv, "fixture-key")
+			}
+
+			set := rankedNeedleSet(t, 5)
+			var indexEmbedder embed.Embedder
+			if testCase.storeModel != "" {
+				indexEmbedder = &testVectorEmbedder{model: testCase.storeModel, allSame: true}
+			}
+			path := filepath.Join(t.TempDir(), "store.sqlite")
+			if _, err := Index(context.Background(), IndexOptions{
+				OutputPath: path,
+				Sets:       []resources.Set{set},
+				Embedder:   indexEmbedder,
+			}); err != nil {
+				t.Fatalf("Index: %v", err)
+			}
+			if testCase.corruptVector {
+				db, err := sql.Open("sqlite", path)
+				if err != nil {
+					t.Fatalf("sql.Open for corruption: %v", err)
+				}
+				if _, err := db.Exec(`UPDATE embeddings SET vec = substr(vec, 1, length(vec) - 1) WHERE chunk_id = (SELECT min(chunk_id) FROM embeddings)`); err != nil {
+					_ = db.Close()
+					t.Fatalf("truncate stored vector: %v", err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatalf("close corruption database: %v", err)
+				}
+			}
+
+			baselineRetriever, err := OpenRetriever(path, []resources.Set{set})
+			if err != nil {
+				t.Fatalf("OpenRetriever baseline: %v", err)
+			}
+			baseline := retrieve(t, baselineRetriever, set.Name, []string{"needle"}, 3)
+			if err := baselineRetriever.Close(); err != nil {
+				t.Fatalf("close baseline retriever: %v", err)
+			}
+
+			var options []RetrieverOption
+			if testCase.constructionErr != nil {
+				t.Setenv("MRI_RAG_EMBED_PROVIDER", "invalid-provider")
+				options = append(options, WithEmbedderError(testCase.constructionErr))
+			} else {
+				options = append(options, WithEmbedder(&testVectorEmbedder{
+					model:   testCase.queryModel,
+					allSame: true,
+					err:     testCase.queryErr,
+				}))
+			}
+			reranker, err := OpenRetriever(path, []resources.Set{set}, options...)
+			if err != nil {
+				t.Fatalf("OpenRetriever reranker: %v", err)
+			}
+			defer reranker.Close()
+			t.Setenv(embeddingsEnv, "true")
+
+			got, err := reranker.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 3})
+			if err != nil {
+				t.Errorf("Retrieve error = %v, want nil degradation fallback", err)
+			}
+			if !reflect.DeepEqual(ids(got.Chunks), ids(baseline.Chunks)) {
+				t.Errorf("fallback IDs = %v, want BM25 order %v", ids(got.Chunks), ids(baseline.Chunks))
+			}
+
+			reason := strings.Join(got.Degraded, " | ")
+			for _, want := range testCase.wantSubstrings {
+				if !strings.Contains(reason, want) {
+					t.Errorf("Degraded = %q, want substring %q", reason, want)
+				}
+			}
+			for _, rejected := range testCase.rejectSubstrings {
+				if strings.Contains(reason, rejected) {
+					t.Errorf("Degraded = %q, must not contain %q", reason, rejected)
+				}
+			}
+			for _, item := range got.Degraded {
+				if len(item) > 200 {
+					t.Errorf("Degraded reason length = %d, want <= 200: %q", len(item), item)
+				}
+			}
+		})
+	}
+}
+
+// TestS09_FlagOffRetrieveUnchanged verifies REQ-03 / S-09: flag-off retrieval
+// retains the existing TopK+1 cap, BM25 order, truncation, and empty degradation.
+func TestS09_FlagOffRetrieveUnchanged(t *testing.T) {
+	t.Setenv(embeddingsEnv, "false")
+	t.Setenv(embedKeyEnv, "temporary-value-restored-by-testing")
+	if err := os.Unsetenv(embedKeyEnv); err != nil {
+		t.Fatalf("Unsetenv %s: %v", embedKeyEnv, err)
+	}
+	set := rankedNeedleSet(t, 5)
+	retriever, _ := indexRetrieverWithOptions(t, set, nil)
+	all := retrieve(t, retriever, set.Name, []string{"needle"}, 5)
+	got, err := retriever.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 3})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(got.Chunks) != 3 {
+		t.Errorf("chunks = %d, want 3", len(got.Chunks))
+	}
+	if !reflect.DeepEqual(ids(got.Chunks), ids(all.Chunks[:3])) {
+		t.Errorf("TopK IDs = %v, want BM25 order %v", ids(got.Chunks), ids(all.Chunks[:3]))
+	}
+	if !got.Truncated {
+		t.Errorf("Truncated = false, want true with five hits and TopK=3")
+	}
+	if len(got.Degraded) != 0 {
+		t.Errorf("Degraded = %v, want empty while reranking is off", got.Degraded)
 	}
 }
 

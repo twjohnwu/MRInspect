@@ -5,15 +5,32 @@ import (
 	"database/sql"
 	"fmt"
 
+	"mrinspect/internal/config"
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/rag/sqlite"
 )
 
 // RegisterBuiltinBackends installs production SQLite retrieval and validation wiring.
-func RegisterBuiltinBackends() {
+func RegisterBuiltinBackends(configs ...config.RAGEmbeddingConfig) {
+	embeddingConfig := config.LoadRAGEmbedding()
+	if len(configs) != 0 {
+		embeddingConfig = configs[0]
+	}
+	options := []sqlite.RetrieverOption{
+		sqlite.WithEmbeddingConfig(embeddingConfig.Enabled, embeddingConfig.Key != ""),
+	}
+	if embeddingConfig.Enabled {
+		embedder, err := embed.New(embeddingConfig.Provider, embeddingConfig.Key)
+		if err != nil {
+			options = append(options, sqlite.WithEmbedderError(err))
+		} else {
+			options = append(options, sqlite.WithEmbedder(embedder))
+		}
+	}
 	rag.Register("sqlite", func(storePath string, sets []resources.Set) (rag.Retriever, error) {
-		return sqlite.OpenRetriever(storePath, sets)
+		return sqlite.OpenRetriever(storePath, sets, options...)
 	})
 	rag.RegisterStoreOpener(sqliteStoreOpener{})
 }

@@ -8,7 +8,7 @@ language: zh-TW
 `S-04`–`S-06` 共用 `indexer_test.go`、`S-07`–`S-09` 共用
 `retriever_test.go`——各為一個 task。
 
-## T1 `[ ]` `S-01,S-02,S-03` [NEW] embed client 包
+## T1 `[x]` `S-01,S-02,S-03` [NEW] embed client 包
 
 - 檔案：`internal/rag/embed/{embedder.go,remote.go,fixture.go}`＋
   `internal/rag/embed/embed_test.go`
@@ -20,7 +20,7 @@ language: zh-TW
   （決定性＋呼叫計數＋可注入錯誤）
 - Verification command: `go test ./internal/rag/embed/ -run 'TestS01_OpenAIEmbed|TestS02_GeminiEmbed|TestS03_ConstructorValidation' -count=1 -v`
 
-## T2 `[ ]` `S-04,S-05,S-06` [MODIFY] 索引時向量入庫
+## T2 `[x]` `S-04,S-05,S-06` [MODIFY] 索引時向量入庫
 
 - 檔案：`internal/rag/sqlite/indexer.go`（`buildStore`，:107-128 一帶）、
   `internal/rag/sqlite/store.go`（:32-47 meta 寫入）＋
@@ -34,7 +34,7 @@ language: zh-TW
   無 NaN、Inf）＋既有 `TestIndex_EmbeddingsOffByDefault` 等全數回歸
 - Verification command: `go test ./internal/rag/sqlite/ -run 'TestS04_IndexWritesEmbeddings|TestS05_FlagOffIndexUnchanged|TestS06_EmbedFailureLeavesStoreIntact' -count=1 -v`
 
-## T3 `[ ]` `S-07,S-08,S-09` [MODIFY] 查詢加寬、重排與降級
+## T3 `[x]` `S-07,S-08,S-09` [MODIFY] 查詢加寬、重排與降級
 
 - 檔案：`internal/rag/sqlite/retriever.go`（`bm25` :108-132、`rerank`
   :146-182）＋`internal/rag/sqlite/retriever_test.go`
@@ -52,7 +52,7 @@ language: zh-TW
   `TestRetrieve_NoEmbedKeyFallsBackToBM25`（key gate）、S-29 類全數回歸
 - Verification command: `go test ./internal/rag/sqlite/ -run 'TestS07_RerankWidensAndReorders|TestS08_RerankDegrades|TestS09_FlagOffRetrieveUnchanged' -count=1 -v`
 
-## T4 `[ ]` `S-10` [MODIFY] config 與生產 wiring
+## T4 `[x]` `S-10` [MODIFY] config 與生產 wiring
 
 - 檔案：`internal/config/config.go`（`LoadForIndex` :201-214、共用
   load()）、`internal/ragwire/sqlite.go`（:14-19 注入點）與 `internal/ragwire/review_path.go`（:62 `rag.New` 一帶）＋
@@ -65,7 +65,7 @@ language: zh-TW
   ragwire 建 embedder 注入 retriever option（建構失敗轉降級原因）
 - Verification command: `go test ./internal/ragwire/ -run TestS10_ProviderMissingDegradesThroughWiring -count=1 -v`
 
-## T5 `[ ]` [INFRA] env example 與 docs
+## T5 `[x]` [INFRA] env example 與 docs
 
 - 原因：文件工件；守門測試（envexample_test.go canonical 清單）本身即
   紅→綠，但內容為既定值謄寫、無設計判斷。

@@ -54,6 +54,13 @@ type ErrorReportingConfig struct {
 	MaxErrorMessageLength int
 }
 
+// RAGEmbeddingConfig configures optional indexing and retrieval embeddings.
+type RAGEmbeddingConfig struct {
+	Enabled  bool
+	Provider string
+	Key      string
+}
+
 type Config struct {
 	AIProvider    AIProvider
 	AIProviderKey string
@@ -67,6 +74,7 @@ type Config struct {
 	ReviewDumpEnabled bool
 
 	RAGOnNormativeEviction string
+	RAGEmbedding           RAGEmbeddingConfig
 	LaneConcurrency        string
 	LaneConcurrencySet     bool
 	DiffPromptShare        string
@@ -114,6 +122,7 @@ func load(requireGitLabToken bool) (Config, error) {
 
 	projectsDir := getEnv("PROJECTS_DIR", "./projects")
 	laneConcurrency, laneConcurrencySet := os.LookupEnv("MRI_LANE_CONCURRENCY")
+	ragEmbedding := LoadRAGEmbedding()
 
 	cfg := Config{
 		AIProvider:    provider,
@@ -143,6 +152,7 @@ func load(requireGitLabToken bool) (Config, error) {
 		ReviewMode:             getEnv("MRI_REVIEW_MODE", "single"),
 		ReviewDumpEnabled:      getEnv("MRI_REVIEW_DUMP_ENABLED", "false") == "true",
 		RAGOnNormativeEviction: getEnv("MRI_RAG_ON_NORMATIVE_EVICTION", "warn"),
+		RAGEmbedding:           ragEmbedding,
 		LaneConcurrency:        laneConcurrency,
 		LaneConcurrencySet:     laneConcurrencySet,
 		DiffPromptShare:        os.Getenv("MRI_DIFF_PROMPT_SHARE"),
@@ -200,7 +210,17 @@ func load(requireGitLabToken bool) (Config, error) {
 // (REQ-05). Unlike Load, it must not require review credentials.
 func LoadForIndex() (Config, error) {
 	projectsDir := getEnv("PROJECTS_DIR", "./projects")
+	ragEmbedding := LoadRAGEmbedding()
+	if ragEmbedding.Enabled {
+		if ragEmbedding.Provider != "openai" && ragEmbedding.Provider != "gemini" {
+			return Config{}, fmt.Errorf("MRI_EMBED_PROVIDER must be one of openai or gemini, got %q", ragEmbedding.Provider)
+		}
+		if ragEmbedding.Key == "" {
+			return Config{}, fmt.Errorf("MRI_RAG_EMBED_KEY must not be empty")
+		}
+	}
 	return Config{
+		RAGEmbedding: ragEmbedding,
 		Service: ServiceConfig{
 			Name: getEnv("MRI_SERVICE_NAME", "unknown"),
 			Type: getEnv("MRI_SERVICE_TYPE", "backend"),
@@ -211,6 +231,21 @@ func LoadForIndex() (Config, error) {
 			SharedDir:    projectsDir + "/_shared",
 		},
 	}, nil
+}
+
+// LoadRAGEmbedding reads the shared embedding controls without applying a
+// command-specific failure policy. Review and eval degrade construction errors;
+// LoadForIndex validates the same values for fail-fast indexing.
+func LoadRAGEmbedding() RAGEmbeddingConfig {
+	enabled, err := strconv.ParseBool(os.Getenv("MRI_RAG_EMBEDDINGS"))
+	if err != nil {
+		enabled = false
+	}
+	return RAGEmbeddingConfig{
+		Enabled:  enabled,
+		Provider: strings.ToLower(strings.TrimSpace(os.Getenv("MRI_EMBED_PROVIDER"))),
+		Key:      os.Getenv("MRI_RAG_EMBED_KEY"),
+	}
 }
 
 func getEnv(key, fallback string) string {

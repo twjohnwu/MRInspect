@@ -33,10 +33,13 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 		"MRI_AI_LOG_DIR",
 		"MRI_DAILY_TOKEN_BUDGET",
 		"MRI_DIFF_PROMPT_SHARE",
+		"MRI_EMBED_PROVIDER",
 		"MRI_EVAL_ALLOW_CI",
 		"MRI_LANE_CONCURRENCY",
 		"MRI_MODEL_LIMITS",
 		"MRI_PROMPT_BUDGET_FACTOR",
+		"MRI_RAG_EMBEDDINGS",
+		"MRI_RAG_EMBED_KEY",
 		"MRI_RAG_ON_NORMATIVE_EVICTION",
 		"MRI_RAG_PACKAGE_VERSION",
 		"MRI_RAG_SOURCE",
@@ -53,7 +56,7 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 	// Excluded CI variables are injected by GitLab or the cross-repository trigger contract,
 	// rather than being user-settable application configuration.
 	// AI_REVIEW_METRICS_FILE is a debug/evaluation output path, not production configuration.
-	// MRI_RAG_BACKEND, MRI_RAG_ENABLED, and embedding switches are internal extension controls;
+	// MRI_RAG_BACKEND and MRI_RAG_ENABLED are internal extension controls;
 	// sqlite is the only production backend, so users should not configure them.
 	// MRINSPECT_IMAGE_TAG belongs to the reusable CI template and is absent from this example.
 	excluded := map[string]struct{}{

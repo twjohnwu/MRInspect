@@ -2,13 +2,17 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mrinspect/internal/rag"
+	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/resources"
 )
 
@@ -50,6 +54,164 @@ func countRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 		t.Fatalf("count rows: %v", err)
 	}
 	return count
+}
+
+func fileSHA256(t *testing.T, path string) [sha256.Size]byte {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %q for sha256: %v", path, err)
+	}
+	return sha256.Sum256(content)
+}
+
+func indexTestSetWithChunks(t *testing.T, count int) resources.Set {
+	t.Helper()
+
+	var source strings.Builder
+	for index := range count {
+		fmt.Fprintf(&source, "## Chunk %03d\nretrieval body %03d\n\n", index, index)
+	}
+	return indexTestSet(t, resources.ModeRetrieval, source.String())
+}
+
+// TestS04_IndexWritesEmbeddings verifies REQ-02 / S-04: enabling embeddings
+// writes one correctly sized vector per retrieval chunk and records its model,
+// dimension, and completed count.
+func TestS04_IndexWritesEmbeddings(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSetWithChunks(t, 3)
+	fixture := embed.NewFixture(4)
+
+	stats, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{set},
+		Embedder:   fixture,
+	})
+	if err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	store, err := Open(output)
+	if err != nil {
+		t.Fatalf("Open indexed store: %v", err)
+	}
+	defer store.Close()
+
+	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 3 {
+		t.Errorf("embeddings row count = %d, want 3", got)
+	}
+	rows, err := store.db.Query(`SELECT chunk_id, length(vec) FROM embeddings ORDER BY chunk_id`)
+	if err != nil {
+		t.Fatalf("query embedding vector sizes: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var chunkID int64
+		var blobBytes int
+		if err := rows.Scan(&chunkID, &blobBytes); err != nil {
+			t.Fatalf("scan embedding vector size: %v", err)
+		}
+		if blobBytes != 4*4 {
+			t.Errorf("embedding for chunk %d is %d bytes, want 16 (4 float32 values)", chunkID, blobBytes)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate embedding vector sizes: %v", err)
+	}
+
+	var model string
+	var dimension int
+	if err := store.db.QueryRow(`SELECT embed_model, embed_dim FROM schema_meta WHERE id = 1`).Scan(&model, &dimension); err != nil {
+		t.Fatalf("query embedding schema metadata: %v", err)
+	}
+	if model != fixture.Model() {
+		t.Errorf("schema_meta.embed_model = %q, want %q", model, fixture.Model())
+	}
+	if dimension != fixture.Dim() {
+		t.Errorf("schema_meta.embed_dim = %d, want %d", dimension, fixture.Dim())
+	}
+	if stats.Embeddings != 3 {
+		t.Errorf("IndexStats.Embeddings = %d, want 3", stats.Embeddings)
+	}
+	// Index currently has no logger/writer seam, so RED cannot capture the
+	// required pre-embedding chunk-total cost line. IndexStats is asserted here;
+	// add the output assertion once production exposes an existing-style seam.
+}
+
+// TestS05_FlagOffIndexUnchanged verifies REQ-02 / S-05: without an embedder,
+// indexing leaves vector rows and embedding metadata at their flag-off values.
+func TestS05_FlagOffIndexUnchanged(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSetWithChunks(t, 3)
+
+	stats, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{set},
+	})
+	if err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	store, err := Open(output)
+	if err != nil {
+		t.Fatalf("Open indexed store: %v", err)
+	}
+	defer store.Close()
+	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 0 {
+		t.Errorf("embeddings row count = %d, want 0", got)
+	}
+
+	var model string
+	var dimension int
+	if err := store.db.QueryRow(`SELECT embed_model, embed_dim FROM schema_meta WHERE id = 1`).Scan(&model, &dimension); err != nil {
+		t.Fatalf("query embedding schema metadata: %v", err)
+	}
+	if model != "" {
+		t.Errorf("schema_meta.embed_model = %q, want empty", model)
+	}
+	if dimension != 0 {
+		t.Errorf("schema_meta.embed_dim = %d, want 0", dimension)
+	}
+	if stats.Embeddings != 0 {
+		t.Errorf("IndexStats.Embeddings = %d, want 0", stats.Embeddings)
+	}
+}
+
+// TestS06_EmbedFailureLeavesStoreIntact verifies REQ-02 / S-06: an embedding
+// failure aborts a rebuild before atomic replacement, preserving the prior
+// valid store byte-for-byte.
+func TestS06_EmbedFailureLeavesStoreIntact(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	baselineSet := indexTestSet(t, resources.ModeRetrieval, "# Baseline\n\nold store marker\n")
+	if _, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{baselineSet},
+	}); err != nil {
+		t.Fatalf("Index baseline store: %v", err)
+	}
+	before := fileSHA256(t, output)
+
+	fixture := embed.NewFixture(4)
+	fixture.ErrAt = 2
+	replacementSet := indexTestSetWithChunks(t, 65)
+	_, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{replacementSet},
+		Embedder:   fixture,
+	})
+	if err == nil {
+		t.Errorf("Index error = nil, want fixture failure on second Embed call")
+	}
+	if calls := fixture.Calls(); calls != 2 {
+		t.Errorf("fixture Embed calls = %d, want 2", calls)
+	}
+
+	after := fileSHA256(t, output)
+	if after != before {
+		t.Errorf("OutputPath sha256 changed after embedding failure: before %x, after %x", before, after)
+	}
 }
 
 // TestIndex_EmbeddingsOffByDefault verifies REQ-08 / S-28: when embeddings are

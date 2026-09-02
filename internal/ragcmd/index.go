@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 
+	"mrinspect/internal/config"
+	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/rag/sqlite"
 )
@@ -147,6 +149,10 @@ func ParseOptions(args []string, serviceName string, output io.Writer) (Options,
 	if flags.NArg() != 0 {
 		return Options{}, fmt.Errorf("index: unexpected arguments: %v", flags.Args())
 	}
+	cfg, err := config.LoadForIndex()
+	if err != nil {
+		return Options{}, err
+	}
 
 	return Options{
 		OutputPath: *outputPath,
@@ -154,7 +160,10 @@ func ParseOptions(args []string, serviceName string, output io.Writer) (Options,
 		Check:      *check,
 		Output:     output,
 		Loader:     resourceSetLoader{repoRoot: ".", system: serviceName},
-		Indexer:    sqliteIndexer{backend: os.Getenv("MRI_RAG_BACKEND")},
+		Indexer: sqliteIndexer{
+			backend:   os.Getenv("MRI_RAG_BACKEND"),
+			embedding: cfg.RAGEmbedding,
+		},
 	}, nil
 }
 
@@ -234,15 +243,29 @@ func (l resourceSetLoader) Load(context.Context) ([]resources.Set, error) {
 }
 
 type sqliteIndexer struct {
-	backend string
+	backend   string
+	embedding config.RAGEmbeddingConfig
 }
 
 func (i sqliteIndexer) SupportsIndexing() bool {
 	return i.backend == "" || i.backend == "sqlite"
 }
 
-func (sqliteIndexer) Index(ctx context.Context, output string, sets []resources.Set) (IndexStats, error) {
-	stats, err := sqlite.Index(ctx, sqlite.IndexOptions{OutputPath: output, Sets: sets})
+func (i sqliteIndexer) Index(ctx context.Context, output string, sets []resources.Set) (IndexStats, error) {
+	var embedding embed.Embedder
+	if i.embedding.Enabled {
+		var err error
+		embedding, err = embed.New(i.embedding.Provider, i.embedding.Key)
+		if err != nil {
+			return IndexStats{}, fmt.Errorf("construct embedding provider: %w", err)
+		}
+	}
+	stats, err := sqlite.Index(ctx, sqlite.IndexOptions{
+		OutputPath: output,
+		Sets:       sets,
+		Embedder:   embedding,
+		Progress:   os.Stderr,
+	})
 	return IndexStats{
 		FilesIndexed: stats.FilesIndexed,
 		FilesFailed:  len(stats.Failures),

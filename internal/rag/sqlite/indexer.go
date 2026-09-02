@@ -4,13 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"mrinspect/internal/rag/chunk"
+	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/intake"
 	"mrinspect/internal/rag/resources"
 )
@@ -19,6 +23,8 @@ import (
 type IndexOptions struct {
 	OutputPath string
 	Sets       []resources.Set
+	Embedder   embed.Embedder
+	Progress   io.Writer
 
 	// writeError is an unexported test seam. Production callers cannot set it.
 	writeError error
@@ -53,7 +59,11 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 		store.Close()
 		return stats, fmt.Errorf("Index: disable WAL for atomic replacement: %w", err)
 	}
-	if err := buildStore(ctx, store.db, opts.Sets, &stats); err != nil {
+	progress := opts.Progress
+	if progress == nil {
+		progress = os.Stderr
+	}
+	if err := buildStore(ctx, store.db, opts.Sets, opts.Embedder, progress, &stats); err != nil {
 		store.Close()
 		return stats, err
 	}
@@ -104,7 +114,7 @@ func syncFile(path string) error {
 	return nil
 }
 
-func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, stats *IndexStats) error {
+func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder embed.Embedder, progress io.Writer, stats *IndexStats) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("Index: begin transaction: %w", err)
@@ -120,11 +130,133 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, stats *In
 		}
 		chunkCount += count
 	}
+	if embedder != nil {
+		if err := embedChunks(ctx, tx, embedder, progress, indexedAt, chunkCount, stats); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_meta SET built_at = ?, chunk_count = ? WHERE id = 1`, indexedAt, chunkCount); err != nil {
 		return fmt.Errorf("Index: update manifest: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("Index: commit transaction: %w", err)
+	}
+	return nil
+}
+
+const embeddingBatchSize = 64
+
+type embeddingChunk struct {
+	id   int64
+	text string
+}
+
+func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progress io.Writer, indexedAt string, expectedChunks int, stats *IndexStats) error {
+	chunks, err := embeddingChunks(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if len(chunks) != expectedChunks {
+		return fmt.Errorf("Index: embedding chunk count = %d, want %d", len(chunks), expectedChunks)
+	}
+
+	requests := (len(chunks) + embeddingBatchSize - 1) / embeddingBatchSize
+	if _, err := fmt.Fprintf(progress, "embedding %d chunks (~%d requests)\n", len(chunks), requests); err != nil {
+		return fmt.Errorf("Index: write embedding progress: %w", err)
+	}
+
+	dimension := embedder.Dim()
+	if dimension <= 0 {
+		return fmt.Errorf("Index: embedder dimension = %d, want positive", dimension)
+	}
+	written := 0
+	for start := 0; start < len(chunks); start += embeddingBatchSize {
+		end := min(start+embeddingBatchSize, len(chunks))
+		texts := make([]string, end-start)
+		for index, item := range chunks[start:end] {
+			texts[index] = item.text
+		}
+
+		vectors, err := embedder.Embed(ctx, texts)
+		if err != nil {
+			return fmt.Errorf("Index: embed chunk batch %d: %w", start/embeddingBatchSize+1, err)
+		}
+		if len(vectors) != len(texts) {
+			return fmt.Errorf("Index: embed chunk batch %d returned %d vectors, want %d", start/embeddingBatchSize+1, len(vectors), len(texts))
+		}
+		for index, vector := range vectors {
+			chunkID := chunks[start+index].id
+			blob, err := encodeEmbedding(vector, dimension)
+			if err != nil {
+				return fmt.Errorf("Index: validate embedding for chunk %d: %w", chunkID, err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO embeddings (chunk_id, dim, vec, created_at) VALUES (?, ?, ?, ?)`, chunkID, dimension, blob, indexedAt); err != nil {
+				return fmt.Errorf("Index: insert embedding for chunk %d: %w", chunkID, err)
+			}
+			written++
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_meta SET embed_model = ?, embed_dim = ? WHERE id = 1`, embedder.Model(), dimension); err != nil {
+		return fmt.Errorf("Index: update embedding manifest: %w", err)
+	}
+	if err := validateStoredEmbeddings(ctx, tx, expectedChunks, dimension); err != nil {
+		return err
+	}
+	stats.Embeddings = written
+	return nil
+}
+
+func embeddingChunks(ctx context.Context, tx *sql.Tx) ([]embeddingChunk, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, text FROM chunks ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("Index: query chunks for embedding: %w", err)
+	}
+	defer rows.Close()
+
+	var chunks []embeddingChunk
+	for rows.Next() {
+		var item embeddingChunk
+		if err := rows.Scan(&item.id, &item.text); err != nil {
+			return nil, fmt.Errorf("Index: scan chunk for embedding: %w", err)
+		}
+		chunks = append(chunks, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Index: iterate chunks for embedding: %w", err)
+	}
+	return chunks, nil
+}
+
+func encodeEmbedding(vector []float32, dimension int) ([]byte, error) {
+	if len(vector) != dimension {
+		return nil, fmt.Errorf("dimension = %d, want %d", len(vector), dimension)
+	}
+
+	blob := make([]byte, dimension*4)
+	for index, value := range vector {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return nil, fmt.Errorf("coordinate %d is not finite", index)
+		}
+		binary.LittleEndian.PutUint32(blob[index*4:], math.Float32bits(value))
+	}
+	return blob, nil
+}
+
+func validateStoredEmbeddings(ctx context.Context, tx *sql.Tx, expected, dimension int) error {
+	var count int
+	var invalid int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*),
+		       COALESCE(sum(CASE WHEN dim != ? OR length(vec) != ? THEN 1 ELSE 0 END), 0)
+		FROM embeddings`, dimension, dimension*4).Scan(&count, &invalid); err != nil {
+		return fmt.Errorf("Index: validate stored embeddings: %w", err)
+	}
+	if count != expected {
+		return fmt.Errorf("Index: stored embedding count = %d, want %d", count, expected)
+	}
+	if invalid != 0 {
+		return fmt.Errorf("Index: stored embeddings with invalid dimension = %d, want 0", invalid)
 	}
 	return nil
 }

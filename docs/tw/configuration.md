@@ -52,6 +52,9 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `MRI_RAG_STORE` | _(未設定)_ | Go `path` 來源要用的明確 SQLite 路徑；把 `path` 放在來源鏈最前面即可讓它優先 |
 | `MRI_RAG_SOURCE` | `package,artifact,baked` | Go runner 的 store 來源鏈，以逗號分隔並依序嘗試 |
 | `MRI_RAG_PACKAGE_VERSION` | `latest` | GitLab generic-package 版本；設定明確版本可釘住 RAG store |
+| `MRI_RAG_EMBEDDINGS` | `false` / _(未設定；關閉)_ | 啟用選用的語意重排；它在小型語料庫的價值尚未量測。啟用時，索引會把 resource-set 文字傳送到選定的外部 embeddings API，因此會產生 provider 用量成本與資料外送。API 呼叫前，索引會印出成本行 `embedding <chunk-count> chunks (~<request-count> requests)`。檢索時若 embeddings 無法使用或不相容，或 provider 發生錯誤，會降級回 BM25，並在 review scope/footer 顯示可見原因。 |
+| `MRI_RAG_EMBED_KEY` | _(未設定)_ | 選定任一 embedding provider 時共用的唯一憑證；啟用 embeddings 時必填，且與 `AI_PROVIDER_KEY` 各自獨立。 |
+| `MRI_EMBED_PROVIDER` | _(未設定)_ | Embedding provider：`openai` \| `gemini`。模型為固定常數：`text-embedding-3-small`（OpenAI，1536 維）與 `gemini-embedding-001`（Gemini，768 維）。 |
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | full 模式的 normative 段落被裁掉時，Go runner 的處理方式：`warn` \| `fail` |
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數。預設值 0.8 也吸收了估算器實測約 11% 的系統性低估。 |
 | `MRI_DIFF_PROMPT_SHARE` | `0.85` | 有效模型 prompt 預算中 diff 可佔用的比例；超額的 diff 會整檔剔除（先剔不可人審 pattern，再依大小由大到小剔除；hunk 永不截斷），剔除清單會同時揭露於 prompt 與 review footer。無效值會退回預設值。實測事故資料顯示 diff 佔 prompt 超過約 93% 時，模型會省略必要區段；降到約 85% 即恢復格式遵循——上限依模型預算比例縮放，而非固定 KB 值。 |
