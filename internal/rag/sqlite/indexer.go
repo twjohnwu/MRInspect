@@ -147,8 +147,9 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 const embeddingBatchSize = 64
 
 type embeddingChunk struct {
-	id   int64
-	text string
+	id      int64
+	heading string
+	text    string
 }
 
 func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progress io.Writer, indexedAt string, expectedChunks int, stats *IndexStats) error {
@@ -174,7 +175,11 @@ func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progr
 		end := min(start+embeddingBatchSize, len(chunks))
 		texts := make([]string, end-start)
 		for index, item := range chunks[start:end] {
-			texts[index] = item.text
+			input, err := embeddingInput(item)
+			if err != nil {
+				return err
+			}
+			texts[index] = input
 		}
 
 		vectors, err := embedder.Embed(ctx, texts)
@@ -207,8 +212,18 @@ func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progr
 	return nil
 }
 
+func embeddingInput(item embeddingChunk) (string, error) {
+	if strings.TrimSpace(item.text) != "" {
+		return item.text, nil
+	}
+	if heading := strings.TrimSpace(item.heading); heading != "" {
+		return heading, nil
+	}
+	return "", fmt.Errorf("embed: chunk %d has no text or heading", item.id)
+}
+
 func embeddingChunks(ctx context.Context, tx *sql.Tx) ([]embeddingChunk, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, text FROM chunks ORDER BY id`)
+	rows, err := tx.QueryContext(ctx, `SELECT id, heading, text FROM chunks ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("Index: query chunks for embedding: %w", err)
 	}
@@ -217,7 +232,7 @@ func embeddingChunks(ctx context.Context, tx *sql.Tx) ([]embeddingChunk, error) 
 	var chunks []embeddingChunk
 	for rows.Next() {
 		var item embeddingChunk
-		if err := rows.Scan(&item.id, &item.text); err != nil {
+		if err := rows.Scan(&item.id, &item.heading, &item.text); err != nil {
 			return nil, fmt.Errorf("Index: scan chunk for embedding: %w", err)
 		}
 		chunks = append(chunks, item)

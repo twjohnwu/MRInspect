@@ -76,6 +76,81 @@ func indexTestSetWithChunks(t *testing.T, count int) resources.Set {
 	return indexTestSet(t, resources.ModeRetrieval, source.String())
 }
 
+func TestIndex_EmbedsHeadingWhenTextEmpty(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSet(t, resources.ModeRetrieval, "# Heading only   \n\n## Normal\nnormal chunk body\n")
+	fixture := embed.NewFixture(4)
+	var received []string
+	fixture.FailOn = func(_ int, texts []string) error {
+		received = append(received, append([]string(nil), texts...)...)
+		return nil
+	}
+
+	if _, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{set},
+		Embedder:   fixture,
+	}); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	store, err := Open(output)
+	if err != nil {
+		t.Fatalf("Open indexed store: %v", err)
+	}
+	defer store.Close()
+
+	rows, err := store.db.Query(`SELECT heading, text FROM chunks ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query chunks: %v", err)
+	}
+	defer rows.Close()
+	var headings, texts []string
+	for rows.Next() {
+		var heading, text string
+		if err := rows.Scan(&heading, &text); err != nil {
+			t.Fatalf("scan chunk: %v", err)
+		}
+		headings = append(headings, heading)
+		texts = append(texts, text)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate chunks: %v", err)
+	}
+	if len(received) != 2 {
+		t.Fatalf("embedder received %d inputs, want 2: %q", len(received), received)
+	}
+	if len(headings) != 2 || len(texts) != 2 {
+		t.Fatalf("stored chunks = %d, want 2", len(texts))
+	}
+	if received[0] != strings.TrimSpace(headings[0]) {
+		t.Errorf("heading-only embed input = %q, want trimmed heading %q", received[0], strings.TrimSpace(headings[0]))
+	}
+	if received[1] != texts[1] {
+		t.Errorf("normal embed input = %q, want chunk text %q", received[1], texts[1])
+	}
+	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 2 {
+		t.Errorf("embeddings row count = %d, want 2", got)
+	}
+}
+
+func TestIndex_FailsWhenChunkHasNoTextOrHeading(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSet(t, resources.ModeRetrieval, " \n")
+
+	_, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{set},
+		Embedder:   embed.NewFixture(4),
+	})
+	if err == nil {
+		t.Fatal("Index error = nil, want empty embedding input failure")
+	}
+	if want := "embed: chunk 1 has no text or heading"; !strings.Contains(err.Error(), want) {
+		t.Errorf("Index error = %q, want it to contain %q", err, want)
+	}
+}
+
 // TestS04_IndexWritesEmbeddings verifies REQ-02 / S-04: enabling embeddings
 // writes one correctly sized vector per retrieval chunk and records its model,
 // dimension, and completed count.

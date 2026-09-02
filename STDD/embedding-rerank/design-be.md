@@ -95,6 +95,14 @@ sequenceDiagram
    納入 T4 GREEN 範圍；`config.LoadForIndex` 為唯一的 flag/provider/key 讀取點，
    sqlite 包改以 option 接收決定、不再自行讀 env。
 
+8. **S-11 實跑修正（2026-09-02）**：真 key 跑 `mrinspect index` 得 Gemini
+   HTTP 400。根因：store 25 個 chunk 有 7 個 `text` 為空（純標題段，
+   `chunkText` 回空字串），Gemini 拒絕空 content。裁決：嵌入輸入＝`text`
+   非空取 text，否則取 `heading`（FTS 本就同時索引兩者）；兩者皆空 → index
+   報錯指名 chunk（不靜默跳過，維持「每 chunk 恰一向量」與 fail-fast）。
+   附帶觀察：REQ-01 的「錯誤只帶 status code」讓本地 index 診斷困難——
+   後續可考慮 index 路徑專用的 debug 輸出，但不改公開報告的 redaction。
+
 ## Requirements Checklist（S-51，plan 版）
 
 - [ ] REQ-01：embed 包＋憑證契約＋LoadForIndex（T1/T4）
