@@ -142,7 +142,7 @@ stages:
       echo "✅ All required variables are present"
     - mrinspect
   variables:
-    MRINSPECT_IMAGE_TAG: "v0.1.0"
+    MRINSPECT_IMAGE_TAG: "v0.2.0"
 
     # ── Provider (anthropic | gemini | openai) ─────────────────────────────
     AI_PROVIDER: openai
@@ -362,7 +362,7 @@ stages:
   parallel:
     matrix:
       - REVIEW_LAYER: [mrinspect]
-        MRI_JOB_IMAGE: ["ghcr.io/twjohnwu/mrinspect:v0.1.0"]
+        MRI_JOB_IMAGE: ["ghcr.io/twjohnwu/mrinspect:v0.2.0"]
       - REVIEW_LAYER: [superpowers]
         MRI_JOB_IMAGE: ["node:22"]
   image:

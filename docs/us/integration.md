@@ -12,7 +12,7 @@ Add this job to the target repository's `.gitlab-ci.yml`, and set `AI_PROVIDER_K
 ai-review:
   stage: test
   image:
-    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    name: ghcr.io/twjohnwu/mrinspect:v0.2.0
     entrypoint: [""]
   script:
     - mrinspect

@@ -22,7 +22,7 @@ make build        # compiles to ./bin/mrinspect
 
 ```bash
 # Pull the official release image:
-docker pull ghcr.io/twjohnwu/mrinspect:v0.1.0
+docker pull ghcr.io/twjohnwu/mrinspect:v0.2.0
 
 # Or build a development image locally:
 docker build -t mrinspect:dev .

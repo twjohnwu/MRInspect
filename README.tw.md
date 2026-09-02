@@ -1,6 +1,7 @@
 # MRInspect
 
 ![CI](https://github.com/twjohnwu/MRInspect/actions/workflows/ci.yml/badge.svg)
+![Version](https://img.shields.io/github/v/tag/twjohnwu/MRInspect?label=version)
 
 [English](README.md)
 
@@ -18,7 +19,7 @@
 ai-review:
   stage: test
   image:
-    name: ghcr.io/twjohnwu/mrinspect:v0.1.0
+    name: ghcr.io/twjohnwu/mrinspect:v0.2.0
     entrypoint: [""]
   script:
     - mrinspect
