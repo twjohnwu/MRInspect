@@ -1,6 +1,6 @@
 # MRInspect Review Quality Evaluation
 
-Generated: 2026-09-02T11:26:52Z
+Generated: 2026-09-03T15:27:51Z
 
 Provider: `gemini`
 
@@ -16,48 +16,66 @@ Fixtures: `01-echo-cut-earliest-marker.diff`, `02-logger-metrics-race.diff`, `03
 
 ### MR Info
 - **Title**: 01-echo-cut-earliest-marker.diff
-- **Author**: tw.johnwu <tw.johnwu@gmail.com>
+- **Author**: tw.johnwu
 - **Branch**: N/A → N/A
-- **Service**: internal/reviewer & src/review (Margherita Pizza)
-- **Date**: 2026-09-02
-- **Standards Referenced**: coding-standards.md
+- **Service**: 01-echo-cut-earliest-marker.diff (Margherita Pizza)
+- **Date**: 2026-09-03
+- **Standards Referenced**: `coding-standards.md`, `architecture.md`, `review-focus.md`
+
+---
 
 ### Scope
+
 | Area | Description | Coverage |
 |------|-------------|----------|
-| Go Reviewer Clean Logic | Updates `cleanResponse` in `internal/reviewer/reviewer.go` to cut at the earliest marker index across all candidate markers. | 100% |
-| Go Unit Tests | Adds `TestCleanResponse_EarliestMarkerWins` in `internal/reviewer/reviewer_test.go`. | 100% |
-| TS Reviewer Clean Logic | Updates `cleanResponse` in `src/review/MRReviewer.ts` to mirror the earliest-marker calculation in TypeScript. | 100% |
-| TS Unit Tests | Adds `tests/reviewer-quoted-marker.test.ts` to test TS implementation. | 100% |
+| `internal/reviewer` | Fix `cleanResponse` cut logic to select earliest marker across all markers in Go | High |
+| `src/review` | Port earliest-marker cut logic to TypeScript `MRReviewer` | High |
+| `internal/reviewer/reviewer_test.go` | Unit tests covering marker hijack and list priority scenarios in Go | High |
+| `tests/reviewer-quoted-marker.test.ts` | Unit tests covering marker hijack and list priority scenarios in TS | High |
+
+---
 
 ### Findings
+
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
 | - | - | - | - | No findings identified | - |
 
+---
+
 ### Details
 
 #### High
-*No high severity findings.*
+*None identified.*
 
 #### Medium
-*No medium severity findings.*
+*None identified.*
 
 #### Low
-*No low severity findings.*
+*None identified.*
+
+---
 
 ### Production Readiness
+
 - [x] No breaking changes without migration path
 - [x] Error handling covers failure cases
 - [x] No secrets or credentials in code
 
+---
+
 ### Positive Observations
-- **Fixes Marker Hijacking Bug**: Correctly resolves the issue where a high-priority marker string inside quoted diff text near the response tail could prematurely cut the review response.
-- **Cross-Language Parity**: Maintained full behavioral parity across both Go (`MRInspectReviewer`) and TypeScript (`MRReviewer`) reviewer components.
-- **Comprehensive Unit Tests**: Regression tests included for both Go and TS that directly test the fail-case scenario (quoted diff tail markers overriding valid review bodies).
+
+1. **Bug Resolution**: Replaces list-priority ordering with absolute earliest position scanning ($\min \text{Index}(M)$), effectively preventing quoted markers in diff content near response tails from truncating the actual review content.
+2. **Cross-Language Alignment**: Logic fix is applied synchronously across both Go (`reviewer.go`) and TypeScript (`MRReviewer.ts`) implementations, maintaining parity.
+3. **Comprehensive Test Coverage**: Included explicit failure-and-pass regression tests on both Go and TypeScript sides covering both high-priority tail hijack and position vs. priority precedence scenarios.
+4. **Clean Implementation**: Keeps functions small ($\le 30$ lines) and pure, adhering strictly to immutability and self-documenting code principles from `coding-standards.md`.
+
+---
 
 ### Verdict
-LGTM
+
+**LGTM** — Approved for merge.
 
 Prompt composition breakdown
 Prompt composition breakdown (estimated tokens per section):
@@ -79,7 +97,7 @@ Prompt composition breakdown (estimated tokens per section):
 ### Findings
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
-| 1 | low | testing | coding-standards.md:17 — coding-standards.md:17 | Unit test does not use table-driven structure for multiple input cases | internal/reviewer/reviewer_test.go:904 |
+| 1 | low | testing | coding-standards.md:17 — coding-standards.md:17 | Use table-driven tests for functions with multiple input cases in Go | internal/reviewer/reviewer_test.go:904 |
 
 #### High
 - None.
@@ -88,10 +106,10 @@ Prompt composition breakdown (estimated tokens per section):
 - None.
 
 #### Low
-**Finding 1 — Unit test does not use table-driven structure for multiple input cases**
+**Finding 1 — Use table-driven tests for functions with multiple input cases in Go**
 - **Reported by**: standards
-- **Rationale**: `TestCleanResponse_EarliestMarkerWins` tests `cleanResponse` across multiple input scenarios using manual `t.Run` blocks with inline logic rather than standard Go table-driven tests.
-- **Suggestion**: Refactor `TestCleanResponse_EarliestMarkerWins` into a table-driven test using a slice of test case structs containing fields like `name`, `input`, `wantPrefix`, or assertion logic.
+- **Rationale**: The Go unit test `TestCleanResponse_EarliestMarkerWins` tests multiple input cases for `cleanResponse` using individual `t.Run` blocks with inline logic rather than a table-driven test structure. The coding standards require using table-driven tests for functions with multiple input cases.
+- **Suggestion**: Refactor `TestCleanResponse_EarliestMarkerWins` into a table-driven test using a slice of test case structs: ```go tests := []struct { 	name     string 	response string 	wantContains string 	wantPrefix   string }{ 	{ 		name: "tail-quoted high-priority marker hijack", 		response: "...", 		wantContains: "This is the real review body with actual findings.", 	}, 	{ 		name: "earliest position beats list priority", 		response: "noise\\n\#\#\# MR Info\\nreal content\\nmore noise\\n\#\# Code Review\\nlater section", 		wantPrefix: "\#\#\# MR Info", 	}, } for _, tt := range tests { 	t.Run(tt.name, func(t *testing.T) { 		// assertion logic 	}) } ```
 - **Citations**: coding-standards.md:17 — coding-standards.md:17
 
 ### Verdict
@@ -134,36 +152,34 @@ Prompt composition breakdown (estimated tokens per section):
 ## Code Review: MR !0
 
 ### MR Info
-- **Title**: 01-echo-cut-earliest-marker.diff
+- **Title**: fix(reviewer): cut response at earliest marker across all markers, not list priority
 - **Author**: tw.johnwu <tw.johnwu@gmail.com>
-- **Branch**: `` → ``
-- **Service**: 01-echo-cut-earliest-marker.diff (Margherita Pizza)
-- **Date**: 2026-09-02
+- **Branch**: `main` → `main`
+- **Service**: Margherita Pizza System / Internal Reviewer Tooling
+- **Date**: 2026-09-03
 - **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
 
 ### Scope
 | Area | Description | Coverage |
 |------|-------------|----------|
-| Go Reviewer Clean Response | Updates `cleanResponse` in `internal/reviewer/reviewer.go` to cut at the earliest marker position | 100% |
-| Go Unit Tests | Adds regression tests in `internal/reviewer/reviewer_test.go` for marker selection order | 100% |
-| TypeScript Reviewer Clean Response | Updates `cleanResponse` in `src/review/MRReviewer.ts` to match Go earliest marker logic | 100% |
-| TypeScript Unit Tests | Adds unit test suite in `tests/reviewer-quoted-marker.test.ts` for private method validation | 100% |
+| Go Reviewer (`internal/reviewer`) | Modified `cleanResponse` to calculate the earliest index across all candidate headers rather than returning on the first marker in list priority. Added unit tests. | High |
+| TypeScript Runner (`src/review`) | Updated `MRReviewer.cleanResponse` to mirror the Go logic using earliest index matching. Added Jest test suite. | High |
 
 ### Findings
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
-| — | None | — | — | No issues identified | — |
+| - | - | - | - | No findings identified | - |
 
 ### Details
 
 #### High
-*No high severity findings.*
+*None.*
 
 #### Medium
-*No medium severity findings.*
+*None.*
 
 #### Low
-*No low severity findings.*
+*None.*
 
 ---
 
@@ -175,9 +191,9 @@ Prompt composition breakdown (estimated tokens per section):
 ---
 
 ### Positive Observations
-- **Cross-Language Parity**: The response sanitization logic was updated in both the Go (`internal/reviewer/reviewer.go`) and TypeScript (`src/review/MRReviewer.ts`) implementations simultaneously, ensuring consistent behavior across services.
-- **Thorough Regression Testing**: Both implementations include targeted unit tests covering both the tail-quoted diff marker hijack scenario and the earliest-position vs list-priority precedence rule.
-- **Clear Rationale & Comments**: In-code comments clearly explain *why* earliest position selection was chosen over list-priority order and note how downstream validation interacts with the result.
+1. **Cross-Language Consistency**: Handled the logic update identically across both Go (`reviewer.go`) and TypeScript (`MRReviewer.ts`) implementations.
+2. **Comprehensive Test Coverage**: Added fail-then-pass unit test cases in both Go (`TestCleanResponse_EarliestMarkerWins`) and TypeScript (`reviewer-quoted-marker.test.ts`) covering tail-quoted header hijacks and priority overrides.
+3. **Clear Documentation**: Inline code comments clearly document the rationale for choosing the earliest marker position over list priority.
 
 ---
 
@@ -198,11 +214,11 @@ Self-reflection prompt breakdown
 Prompt composition breakdown (estimated tokens per section):
 | Section | Tokens | % of total |
 |---------|--------|------------|
-| original review | 538 | 35.6% |
-| reflection instructions | 972 | 64.4% |
-| **total** | 1510 | 100.0% |
+| original review | 460 | 32.1% |
+| reflection instructions | 971 | 67.9% |
+| **total** | 1431 | 100.0% |
 
-Token subtotal: 30187
+Token subtotal: ≥26863
 
 ## 02-logger-metrics-race.diff
 
@@ -212,18 +228,20 @@ Token subtotal: 30187
 
 ### MR Info
 - **Title**: 02-logger-metrics-race.diff
-- **Author**: 
-- **Branch**: `` → ``
+- **Author**: tw.johnwu
+- **Branch**: `main` → `main`
 - **Service**: 02-logger-metrics-race.diff (Margherita Pizza)
-- **Date**: 2026-09-02
+- **Date**: 2026-09-03
 - **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
+
+---
 
 ### Scope
 | Area | Description | Coverage |
 |------|-------------|----------|
-| Logger Metrics Concurrency | Mutex guarding of internal metrics struct across logger operations | Modified `internal/logger/logger.go` |
-| Build / Test Scripts | Inclusion of `-race` flag in `Makefile` | Modified `Makefile` |
-| Test Coverage | Unit test verifying concurrent safety of metric logging | Added `TestLogger_ConcurrentMetricsAreRaceFree` in `internal/logger/logger_test.go` |
+| `Makefile` | Added `-race` flag to default test execution target. | High |
+| `internal/logger/logger.go` | Added `metricsMu sync.Mutex` to guard metrics fields across logging and export operations. | High |
+| `internal/logger/logger_test.go` | Added concurrent race detector test for logger metrics. | High |
 
 ---
 
@@ -231,8 +249,8 @@ Token subtotal: 30187
 
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
-| 1 | High | Concurrency | coding-standards.md — General Principles | Shallow copy of slice fields leaves concurrent access exposed to data races | `internal/logger/logger.go:173` |
-| 2 | Medium | Error Handling | coding-standards.md — Error Handling | Silently swallowing `json.Unmarshal` error when loading history | `internal/logger/logger.go:178` |
+| 1 | High | Concurrency | coding-standards.md — General Principles | Shallow copy of struct with slices under lock | `internal/logger/logger.go:173-175` |
+| 2 | Medium | Error Handling | coding-standards.md — Error Handling | Ignored unmarshaling error in `SaveMetrics` | `internal/logger/logger.go:179` |
 
 ---
 
@@ -240,59 +258,65 @@ Token subtotal: 30187
 
 #### High
 
-**Finding 1 — Shallow copy of `Metrics` struct retains shared slice reference under mutex**
-- **File**: `internal/logger/logger.go:173`
-- **Standard**: coding-standards.md — General Principles ("Prefer immutability: avoid mutating shared state.")
-- **Why**: `metrics := l.metrics` makes a shallow copy of the `Metrics` struct. However, fields such as `Steps`, `APICalls`, and `Errors` are slices (reference types backed by underlying arrays). Releasing the lock at line 175 (`l.metricsMu.Unlock()`) means subsequent concurrent calls to `LogAPICall`, `LogStep`, or `LogError` can append to or mutate the underlying slice backing arrays while `SaveMetrics` processes `metrics`. This triggers data races during JSON serialization or slice iteration.
-- **Suggestion**: Perform a deep copy of slice fields while holding `metricsMu.Lock()`:
+**Finding 1 — Shallow copy of struct with slices allows race condition after lock release**
+- **File**: `internal/logger/logger.go:173-175`
+- **Standard**: coding-standards.md — General Principles (Concurrency Safety)
+- **Why**: `metrics := l.metrics` performs a value copy of the `Metrics` struct. However, `Metrics` contains slice fields (`Steps`, `APICalls`, `Errors`). A value copy of a struct containing slices creates new slice headers that still point to the *same underlying backing arrays*. 
+  Once `l.metricsMu.Unlock()` is called on line 175, another goroutine calling `LogStep`, `LogAPICall`, or `LogError` will `append()` to `l.metrics.Steps`/`APICalls`/`Errors`. If those appends mutate or reallocate the backing array while `SaveMetrics` is appending `metrics` to `history` or serializing `history` to disk, a data race and slice data corruption will occur.
+- **Suggestion**: Perform a deep copy of the slice fields while holding `l.metricsMu.Lock()`, or clone the metrics object properly:
+  ```go
+  func (l *Logger) SaveMetrics() error {
+      l.metricsMu.Lock()
+      metrics := Metrics{
+          StartTimeMs: l.metrics.StartTimeMs,
+          EndTimeMs:   l.metrics.EndTimeMs,
+          MrID:        l.metrics.MrID,
+          ProjectID:   l.metrics.ProjectID,
+          Success:     l.metrics.Success,
+          Error:       l.metrics.Error,
+          Steps:       append([]StepMetric(nil), l.metrics.Steps...),
+          APICalls:    append([]APICallMetric(nil), l.metrics.APICalls...),
+          Errors:      append([]ErrorMetric(nil), l.metrics.Errors...),
+      }
+      l.metricsMu.Unlock()
+      // ...
+  }
+  ```
 
-```go
-func (l *Logger) SaveMetrics() error {
-	l.metricsMu.Lock()
-	metrics := l.metrics
-	metrics.Steps = append([]StepMetric(nil), l.metrics.Steps...)
-	metrics.APICalls = append([]APICallMetric(nil), l.metrics.APICalls...)
-	metrics.Errors = append([]ErrorMetric(nil), l.metrics.Errors...)
-	l.metricsMu.Unlock()
-
-	// ... rest of method
-}
-```
+---
 
 #### Medium
 
-**Finding 2 — Silently ignored error during JSON unmarshaling in `SaveMetrics`**
-- **File**: `internal/logger/logger.go:178`
+**Finding 2 — Ignored error when unmarshaling metrics history**
+- **File**: `internal/logger/logger.go:179`
 - **Standard**: coding-standards.md — Error Handling ("Never swallow errors silently. Log or propagate every error with context.")
-- **Why**: The unmarshaling error `_ = json.Unmarshal(data, &history)` is explicitly ignored using the blank identifier (`_`). If `l.metricsFile` becomes corrupted or malformed, the error is swallowed and existing history is silently reset to an empty slice, discarding past metrics without warning.
-- **Suggestion**: Handle the error properly, logging context or returning a wrapped error:
-
-```go
-if data, err := os.ReadFile(l.metricsFile); err == nil {
-    if err := json.Unmarshal(data, &history); err != nil {
-        return fmt.Errorf("SaveMetrics: failed to unmarshal metrics history: %w", err)
-    }
-}
-```
+- **Why**: `_ = json.Unmarshal(data, &history)` ignores JSON parsing errors. If `metricsFile` exists but contains corrupted JSON, the unmarshal fails silently, `history` remains empty, and saving metrics overwrites or drops historical data without diagnostic output.
+- **Suggestion**: Handle the unmarshal error and log or return context:
+  ```go
+  if data, err := os.ReadFile(l.metricsFile); err == nil {
+      if err := json.Unmarshal(data, &history); err != nil {
+          l.slog.Warn("failed to parse existing metrics history", "file", l.metricsFile, "error", err)
+      }
+  }
+  ```
 
 ---
 
 ### Production Readiness
 - [x] No breaking changes without migration path
-- [ ] Error handling covers failure cases *(ignored `json.Unmarshal` error in `SaveMetrics`)*
+- [ ] Error handling covers failure cases *(Swallowed unmarshal error in `SaveMetrics`)*
 - [x] No secrets or credentials in code
 
 ---
 
 ### Positive Observations
-- Added `-race` flag to `go test ./...` in `Makefile`, helping ensure race conditions are detected automatically in CI.
-- Comprehensive table/goroutine concurrency unit test added (`TestLogger_ConcurrentMetricsAreRaceFree`) validating race-free metric tracking under load.
-- Consistent mutex locking applied across `StartReview`, `LogStep`, `LogAPICall`, `LogError`, and `CompleteReview`.
+- Enabling `go test -race ./...` in the `Makefile` ensures that race conditions are routinely caught during local testing and CI pipelines.
+- Unit test `TestLogger_ConcurrentMetricsAreRaceFree` effectively tests concurrent access from multiple goroutines under the Go race detector.
 
 ---
 
 ### Verdict
-**Needs Minor Changes** — The addition of `-race` and mutex guarding significantly improves safety, but `SaveMetrics` requires a deep copy of slice members to fully prevent data races, and unmarshal errors should be handled rather than ignored.
+**Needs Changes**
 
 Prompt composition breakdown
 Prompt composition breakdown (estimated tokens per section):
@@ -314,21 +338,21 @@ Prompt composition breakdown (estimated tokens per section):
 ### Findings
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
-| 1 | high | concurrency | coding-standards.md:3 — coding-standards.md:3 | Shallow copy of Metrics in SaveMetrics allows data race on slice backing arrays | internal/logger/logger.go:173 |
-| 2 | medium | error-handling | coding-standards.md:3 — coding-standards.md:3; coding-standards.md:11 — coding-standards.md:11 | Ignored error during json.Unmarshal in SaveMetrics | internal/logger/logger.go:179 |
+| 1 | high | concurrency | coding-standards.md:3 — coding-standards.md:3 | Shallow copy of Metrics in SaveMetrics exposes slice backing arrays to concurrent data races | internal/logger/logger.go:173 |
+| 2 | medium | error-handling | coding-standards.md:3 — coding-standards.md:3; coding-standards.md:11 — coding-standards.md:11 | Unmarshaling error swallowed silently in SaveMetrics | internal/logger/logger.go:179 |
 
 #### High
-**Finding 1 — Shallow copy of Metrics in SaveMetrics allows data race on slice backing arrays**
+**Finding 1 — Shallow copy of Metrics in SaveMetrics exposes slice backing arrays to concurrent data races**
 - **Reported by**: spec-conformance, standards, code-diff
-- **Rationale**: In `SaveMetrics`, `l.metrics` is copied by value while holding `metricsMu`. However, `Metrics` contains slice fields (`Steps`, `APICalls`, `Errors`). A shallow struct copy copies the slice headers (pointer, length, capacity) without copying the underlying backing arrays. Once `metricsMu` is unlocked, concurrent calls to logging methods (e.g., `LogStep`, `LogAPICall`, `LogError`) will mutate those underlying slice backing arrays while `SaveMetrics` operates on `history` and serializes it, leading to data races.
-- **Suggestion**: Perform a deep copy of `l.metrics` (allocating new slices for `Steps`, `APICalls`, and `Errors`) while holding `metricsMu` before releasing the lock.
+- **Rationale**: In SaveMetrics, l.metrics is shallow-copied into a local variable while holding metricsMu, and the lock is unlocked immediately after. Because Metrics contains slice fields (Steps, APICalls, Errors), the local struct shares the underlying slice backing arrays with l.metrics. Subsequent concurrent calls to LogStep, LogAPICall, or LogError modify these backing arrays without mutex protection relative to SaveMetrics, leading to data races during JSON serialization or slice iteration.
+- **Suggestion**: Perform a deep copy of l.metrics (or construct the JSON payload / deep copy the slices) while holding metricsMu before unlocking, or keep the lock held during the copy of slice elements.
 - **Citations**: coding-standards.md:3 — coding-standards.md:3
 
 #### Medium
-**Finding 2 — Ignored error during json.Unmarshal in SaveMetrics**
+**Finding 2 — Unmarshaling error swallowed silently in SaveMetrics**
 - **Reported by**: standards
-- **Rationale**: In `SaveMetrics`, `_ = json.Unmarshal(data, &history)` silently discards unmarshaling errors when reading existing metrics history. If the metrics file is corrupted, the error is swallowed and history is overwritten without diagnostic context.
-- **Suggestion**: Check and return or log the error returned by `json.Unmarshal`: `if err := json.Unmarshal(data, &history); err != nil { return fmt.Errorf("unmarshal metrics history: %w", err) }`.
+- **Rationale**: The error returned by json.Unmarshal(data, &history) is explicitly ignored using '_ ='. If the existing metrics file contains invalid JSON, the error is swallowed silently rather than propagated or logged with context.
+- **Suggestion**: Check and return the error from json.Unmarshal wrapped with context, e.g., fmt.Errorf("unmarshal metrics history: %w", err).
 - **Citations**: coding-standards.md:3 — coding-standards.md:3; coding-standards.md:11 — coding-standards.md:11
 
 #### Low
@@ -341,12 +365,12 @@ Prompt composition breakdown
 Prompt composition breakdown (estimated tokens per section):
 | Section | Tokens | % of total |
 |---------|--------|------------|
-| lane template preamble | 67 | 2.9% |
-| base prompt/metadata | 509 | 22.2% |
-| output contract | 191 | 8.3% |
-| margherita-pizza-docs | 482 | 21.1% |
-| diff | 1039 | 45.4% |
-| **total** | 2288 | 100.0% |
+| lane template preamble | 67 | 2.8% |
+| base prompt/metadata | 509 | 21.5% |
+| output contract | 191 | 8.1% |
+| margherita-pizza-docs | 562 | 23.7% |
+| diff | 1039 | 43.9% |
+| **total** | 2368 | 100.0% |
 
 Prompt composition breakdown
 Prompt composition breakdown (estimated tokens per section):
@@ -375,80 +399,98 @@ Prompt composition breakdown (estimated tokens per section):
 
 ### MR Info
 - **Title**: 02-logger-metrics-race.diff
-- **Author**: tw.johnwu
+- **Author**: tw.johnwu <tw.johnwu@gmail.com>
 - **Branch**: N/A → N/A
-- **Service**: logger / mrinspect (Margherita Pizza)
-- **Date**: 2026-09-02
+- **Service**: internal/logger (Margherita Pizza)
+- **Date**: 2026-09-03
 - **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
 
 ### Scope
 | Area | Description | Coverage |
 |------|-------------|----------|
-| `Makefile` | Added `-race` detector flag to unit testing command | Updated |
-| `internal/logger/logger.go` | Guarded logger metrics fields with `sync.Mutex` | Refactored |
-| `internal/logger/logger_test.go` | Added concurrency test for race detection | Added |
+| Tooling / Build | Added Go race detector flag (`-race`) to Makefile test step | Full |
+| Concurrency / Logger | Protected logger metrics data structures with `sync.Mutex` | Partial |
+| Unit Testing | Added unit test `TestLogger_ConcurrentMetricsAreRaceFree` for concurrent logger operations | Full |
 
 ### Findings
 | # | Severity | Category | Standard | Item | File:Line |
 |---|----------|----------|----------|------|-----------|
-| 1 | Medium | Concurrency | coding-standards.md — General Principles | Shallow copy of struct containing slices leaves slice headers shared | internal/logger/logger.go:173 |
-| 2 | Low | Error Handling | coding-standards.md — Error Handling | Ignored `json.Unmarshal` error when reading metrics history | internal/logger/logger.go:179 |
+| 1 | High | Concurrency | coding-standards.md — General Principles | Shallow copy of struct containing slice fields leaves slice elements susceptible to data races | internal/logger/logger.go:173 |
 
 ---
 
 ### Details
 
-#### Medium
+#### High
 
-**Finding 1 — Shallow copy of `Metrics` leaves slice backing arrays exposed to data races**
-- **File**: `internal/logger/logger.go:173-175`
-- **Standard**: `coding-standards.md` — General Principles (Prefer immutability / Thread safety)
-- **Why**: `metrics := l.metrics` makes a value copy of the `Metrics` struct, but slice headers (`Steps`, `APICalls`, `Errors`) continue pointing to the exact same underlying backing arrays. Once `l.metricsMu.Unlock()` is released, concurrent calls to `LogStep`, `LogAPICall`, or `LogError` will mutate these backing arrays, resulting in a data race during subsequent slice reads/writes (e.g., during JSON serialization in `SaveMetrics`).
-- **Suggestion**: Perform a deep copy of the slice fields inside the critical section:
-  ```go
-  l.metricsMu.Lock()
-  metrics := l.metrics
-  metrics.Steps = append([]StepMetric(nil), l.metrics.Steps...)
-  metrics.APICalls = append([]APICallMetric(nil), l.metrics.APICalls...)
-  metrics.Errors = append([]ErrorMetric(nil), l.metrics.Errors...)
-  l.metricsMu.Unlock()
-  ```
+**Finding 1 — Shallow copy of `Metrics` struct leaves slice backing arrays exposed to data races**
+- **File**: `internal/logger/logger.go:173`
+- **Standard**: coding-standards.md — General Principles (Immutability & Concurrency)
+- **Why**: In `SaveMetrics()`, `metrics := l.metrics` copies the `Metrics` struct while holding `l.metricsMu`. However, `Metrics` contains slice headers (`Steps []StepMetric`, `APICalls []APICallMetric`, `Errors []ErrorMetric`). A shallow copy duplicates the slice pointer, length, and capacity, but points to the *same* underlying array. Once `l.metricsMu.Unlock()` is called on line 175, concurrent calls to `LogAPICall`, `LogStep`, or `LogError` can append to or modify elements in those backing arrays. If `SaveMetrics` later serializes or reads `metrics`, this results in a data race on the slice contents.
+- **Suggestion**: Perform a deep copy (clone) of the `Metrics` struct and its slice fields while holding the mutex before releasing it:
+
+```go
+func (l *Logger) cloneMetricsLocked() Metrics {
+	cp := l.metrics
+	if l.metrics.Steps != nil {
+		cp.Steps = append([]StepMetric(nil), l.metrics.Steps...)
+	}
+	if l.metrics.APICalls != nil {
+		cp.APICalls = append([]APICallMetric(nil), l.metrics.APICalls...)
+	}
+	if l.metrics.Errors != nil {
+		cp.Errors = append([]ErrorMetric(nil), l.metrics.Errors...)
+	}
+	return cp
+}
+
+func (l *Logger) SaveMetrics() error {
+	l.metricsMu.Lock()
+	metrics := l.cloneMetricsLocked()
+	l.metricsMu.Unlock()
+
+	var history []Metrics
+	if data, err := os.ReadFile(l.metricsFile); err == nil {
+		_ = json.Unmarshal(data, &history)
+	}
+	history = append(history, metrics)
+	if len(history) > 100 {
+		history = history[len(history)-100:]
+	}
+	// ...
+}
+```
+
+---
+
+#### Medium
+*No medium severity findings.*
+
+---
 
 #### Low
-
-**Finding 2 — Ignored JSON unmarshal error when reading existing metrics history**
-- **File**: `internal/logger/logger.go:179`
-- **Standard**: `coding-standards.md` — Error Handling ("Never swallow errors silently. Log or propagate every error with context.")
-- **Why**: `_ = json.Unmarshal(data, &history)` ignores errors when parsing `metricsFile`. If the metrics file is corrupted, the error is silently discarded and historical metric records will be silently overwritten.
-- **Suggestion**: Log the warning or propagate context:
-  ```go
-  if data, err := os.ReadFile(l.metricsFile); err == nil {
-      if unmarshalErr := json.Unmarshal(data, &history); unmarshalErr != nil {
-          l.slog.Warn("failed to parse existing metrics history", "error", unmarshalErr)
-      }
-  }
-  ```
+*No low severity findings.*
 
 ---
 
 ### Production Readiness
 - [x] No breaking changes without migration path
-- [x] Error handling covers failure cases
+- [ ] Error handling covers failure cases (Note: `json.Unmarshal` error in `SaveMetrics` is silently ignored; consider logging or returning unmarshaling errors)
 - [x] No secrets or credentials in code
 
 ---
 
 ### Positive Observations
-- Adding `-race` to `Makefile` standardizes race detector execution across tests in CI/CD.
-- All primary logger metric mutators (`StartReview`, `LogStep`, `LogAPICall`, `LogError`, `CompleteReview`) are systematically wrapped with `sync.Mutex`.
-- Unit test `TestLogger_ConcurrentMetricsAreRaceFree` thoroughly exercises 50 concurrent goroutines to verify race-free state transitions.
+- Added `-race` to `go test` in the `Makefile`, ensuring all future test suite runs automatically detect race conditions.
+- Added a table/goroutine concurrency test (`TestLogger_ConcurrentMetricsAreRaceFree`) that verifies parallel calls to `LogAPICall` and `LogError` produce expected final counts.
+- Consistently used `l.metricsMu.Lock()` and `defer l.metricsMu.Unlock()` across all metric mutation methods (`StartReview`, `LogStep`, `LogAPICall`, `LogError`, `CompleteReview`).
 
 ---
 
 ### Verdict
-**Needs Minor Changes**
+**Needs Minor Changes** — Deep copy the `Metrics` slice fields inside `SaveMetrics()` under lock to completely eliminate the race condition window.
 
-> reflection applied, review unchanged (validated)
+> reflection not applied (degraded)
 
 Prompt composition breakdown
 Prompt composition breakdown (estimated tokens per section):
@@ -462,318 +504,65 @@ Self-reflection prompt breakdown
 Prompt composition breakdown (estimated tokens per section):
 | Section | Tokens | % of total |
 |---------|--------|------------|
-| original review | 916 | 48.5% |
-| reflection instructions | 972 | 51.5% |
-| **total** | 1888 | 100.0% |
+| original review | 964 | 49.8% |
+| reflection instructions | 971 | 50.2% |
+| **total** | 1935 | 100.0% |
 
-Token subtotal: ≥34130
+Token subtotal: ≥31599
 
 ## 03-lane-overlays-config.diff
 
 ### single
 
-## Code Review: MR !0
-
-### MR Info
-- **Title**: 03-lane-overlays-config.diff
-- **Author**: tw.johnwu <tw.johnwu@gmail.com>
-- **Branch**: `` → ``
-- **Service**: 03-lane-overlays-config.diff (Margherita Pizza)
-- **Date**: 2026-09-02
-- **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
-
-### Scope
-| Area | Description | Coverage |
-|------|-------------|----------|
-| Configuration | Per-system overlay configuration (`lanes.yaml` and `resources.yaml`) | 100% |
-| Documentation | Architecture design doc (`design-be.md`) and task tracking (`tasks.md`) updates | 100% |
-
-### Findings
-| # | Severity | Category | Standard | Item | File:Line |
-|---|----------|----------|----------|------|-----------|
-| - | - | - | - | No issues identified | - |
-
-### Details
-
-#### High
-*No high-severity findings.*
-
-#### Medium
-*No medium-severity findings.*
-
-#### Low
-*No low-severity findings.*
-
-### Production Readiness
-- [x] No breaking changes without migration path
-- [x] Error handling covers failure cases
-- [x] No secrets or credentials in code
-
-### Positive Observations
-- **Effective Isolation**: Removing the `docs` tag from system-specific resource sets in `projects/resources.yaml` and explicitly referencing sets in system overlays prevents cross-system spec contamination (resolves Finding F3).
-- **Clear Rationale**: Design decisions and plan drift explanations are well documented in `STDD/multi-lane-review/design-be.md`.
-- **Zero Code Modification Needed**: Scalable configuration design allows adding new systems via isolated overlay files without code changes.
-
-### Verdict
-**LGTM**
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| base prompt (metadata+instructions) | 1371 | 55.3% |
-| diff | 1107 | 44.7% |
-| **total** | 2478 | 100.0% |
+Mode failed: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 1.152079051s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:1s]]
+Failure context: generateReview: all attempts failed: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 1.152079051s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:1s]]
 
 ### multi
 
-## MRInspect Review
-
-### Scope
-- **spec-conformance** — Resource sets: margherita-pizza-docs (8 chunks retrieved)
-- **standards** — Resource sets: shared-standards (no content retrieved)
-- **code-diff** — Resource sets: none
-
-### Findings
-| # | Severity | Category | Standard | Item | File:Line |
-|---|----------|----------|----------|------|-----------|
-| - | - | - | - | No findings reported | - |
-
-#### High
-- None.
-
-#### Medium
-- None.
-
-#### Low
-- None.
-
-### Verdict
-Approved
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| lane template preamble | 67 | 2.9% |
-| base prompt/metadata | 510 | 22.2% |
-| output contract | 191 | 8.3% |
-| margherita-pizza-docs | 425 | 18.5% |
-| diff | 1107 | 48.1% |
-| **total** | 2300 | 100.0% |
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| lane template preamble | 56 | 3.0% |
-| base prompt/metadata | 510 | 27.4% |
-| output contract | 191 | 10.2% |
-| diff | 1107 | 59.4% |
-| **total** | 1864 | 100.0% |
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| lane template preamble | 51 | 2.7% |
-| base prompt/metadata | 510 | 27.4% |
-| output contract | 191 | 10.3% |
-| diff | 1107 | 59.5% |
-| **total** | 1859 | 100.0% |
-
-### reflect
-
-## Code Review: MR !0
-
-### MR Info
-- **Title**: 03-lane-overlays-config.diff
-- **Author**: tw.johnwu <tw.johnwu@gmail.com>
-- **Branch**: `main` → `main`
-- **Service**: 03-lane-overlays-config.diff (Margherita Pizza)
-- **Date**: 2026-09-02
-- **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
-
-### Scope
-| Area | Description | Coverage |
-|------|-------------|----------|
-| Configuration & Infrastructure | Per-system lane overlay configurations for `margherita-pizza` and `fried-chicken` | High |
-| Documentation | Design documentation updates for multi-lane review isolation and task tracking | High |
-
-### Findings
-| # | Severity | Category | Standard | Item | File:Line |
-|---|----------|----------|----------|------|-----------|
-| - | None | - | - | No findings identified | - |
-
-### Details
-
-#### High
-*No high-severity findings.*
-
-#### Medium
-*No medium-severity findings.*
-
-#### Low
-*No low-severity findings.*
-
----
-
-### Production Readiness
-- [x] No breaking changes without migration path
-- [x] Error handling covers failure cases
-- [x] No secrets or credentials in code
-
----
-
-### Positive Observations
-- **Isolates System Resources**: Successfully resolves cross-system document leakage (Finding F3) by retracting the generic `docs` tag from `projects/resources.yaml` and pinning each system's `spec-conformance` lane directly to its dedicated set (e.g., `margherita-pizza-docs`).
-- **Clean Extensibility**: Adding new systems now only requires creating a `projects/<system>/lanes.yaml` overlay without requiring core code changes.
-- **Clear Traceability**: Comprehensive updates in `STDD/multi-lane-review/design-be.md` document the rationale behind retracting `tags: [docs]`.
-
----
-
-### Verdict
-**LGTM**
-
-> reflection applied, review unchanged (validated)
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| base prompt (metadata+instructions) | 1371 | 55.3% |
-| diff | 1107 | 44.7% |
-| **total** | 2478 | 100.0% |
-
-Self-reflection prompt breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| original review | 439 | 31.1% |
-| reflection instructions | 971 | 68.9% |
-| **total** | 1410 | 100.0% |
-
-Token subtotal: 20574
-
-## 04-lane-topk-default.diff
-
-### single
-
-## Code Review: MR !0
-
-### MR Info
-- **Title**: fix(lane): default TopK 8 when undeclared — shipped config no longer a silent retrieval no-op
-- **Author**: tw.johnwu <tw.johnwu@gmail.com>
-- **Branch**: `` → ``
-- **Service**: 04-lane-topk-default.diff (Margherita Pizza)
-- **Date**: 2026-09-02
-- **Standards Referenced**: coding-standards.md, architecture.md, review-focus.md
-
----
-
-### Scope
-
-| Area | Description | Coverage |
-|------|-------------|----------|
-| `internal/lane/compose.go` | Added `DefaultLaneTopK` backstop in `collectResources` for zero/negative `TopK` | Full |
-| `internal/lane/compose_test.go` | Unit test verifying hand-constructed lanes with zero `TopK` hit the retriever with `DefaultLaneTopK` | Full |
-| `internal/lane/registry.go` | Defined `DefaultLaneTopK = 8` constant and applied it during declaration conversion in `convertLanes` | Full |
-| `internal/lane/registry_test.go` | Updated existing test fixtures and added `TestLoad_DefaultTopK` test case | Full |
-
----
-
-### Findings
-
-| # | Severity | Category | Standard | Item | File:Line |
-|---|----------|----------|----------|------|-----------|
-| - | - | - | - | No findings | - |
-
----
-
-### Details
-
-#### High
-*No high severity issues found.*
-
-#### Medium
-*No medium severity issues found.*
-
-#### Low
-*No low severity issues found.*
-
----
-
-### Production Readiness
-- [x] No breaking changes without migration path
-- [x] Error handling covers failure cases
-- [x] No secrets or credentials in code
-
----
-
-### Positive Observations
-- **Defense in Depth**: Setting the default both at configuration parse time (`convertLanes`) and at retrieval execution time (`collectResources`) prevents hand-constructed `Lane` values from silently failing to retrieve chunks.
-- **Comprehensive Test Coverage**: Unit tests verify both registry parsing (unspecified vs. explicitly declared `TopK`) and runtime backstop behavior.
-- **Clear Documentation**: `DefaultLaneTopK` is exported with clear godoc comments explaining why the default is required.
-
----
-
-### Verdict
-LGTM
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| base prompt (metadata+instructions) | 1368 | 34.6% |
-| diff | 2583 | 65.4% |
-| **total** | 3951 | 100.0% |
-
-### multi
-
-## MRInspect Review
-
-### Scope
-- **spec-conformance** — Resource sets: margherita-pizza-docs (no content retrieved)
-- **standards** — Resource sets: shared-standards (no content retrieved)
-- **code-diff** — Resource sets: none
-- **Failed lane spec-conformance** (generate): lane response generation failed after 3 attempts: generate lane response: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit.  * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash Please retry in 27.981997986s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:27s]]
-- **Failed lane standards** (generate): lane response generation failed after 3 attempts: generate lane response: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit.  * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash Please retry in 27.755495907s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:27s]]
-
-### Findings
-| # | Severity | Category | Standard | Item | File:Line |
-|---|----------|----------|----------|------|-----------|
-| - | - | - | - | No findings reported | - |
-
-#### High
-- None.
-
-#### Medium
-- None.
-
-#### Low
-- None.
-
-### Verdict
-Incomplete
-
-Prompt composition breakdown
-Prompt composition breakdown (estimated tokens per section):
-| Section | Tokens | % of total |
-|---------|--------|------------|
-| lane template preamble | 51 | 1.5% |
-| base prompt/metadata | 507 | 15.2% |
-| output contract | 191 | 5.7% |
-| diff | 2583 | 77.5% |
-| **total** | 3332 | 100.0% |
+Mode failed: multi review failed: 3 lanes failed; first lane error: lane response generation failed after 3 attempts: generate lane response: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 51.047652823s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:51s]]
 
 ### reflect
 
 Mode failed: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
 * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
-Please retry in 7.919631834s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:7s]]
+Please retry in 41.773780803s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:41s]]
 Failure context: generateReview: all attempts failed: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
 * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
-Please retry in 7.919631834s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:7s]]
+Please retry in 41.773780803s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:41s]]
 
-Token subtotal: ≥13386
+Token subtotal: ≥0
+
+## 04-lane-topk-default.diff
+
+### single
+
+Mode failed: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 30.828911687s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:30s]]
+Failure context: generateReview: all attempts failed: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 30.828911687s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:30s]]
+
+### multi
+
+Mode failed: multi review failed: 3 lanes failed; first lane error: lane response generation failed after 3 attempts: generate lane response: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 19.553099614s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:19s]]
+
+### reflect
+
+Mode failed: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 8.788526191s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:8s]]
+Failure context: generateReview: all attempts failed: gemini Generate: Error 429, Message: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 8.788526191s., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.Help links:[map[description:Learn more about Gemini API quotas url:https://ai.google.dev/gemini-api/docs/rate-limits]]] map[@type:type.googleapis.com/google.rpc.QuotaFailure violations:[map[quotaDimensions:map[location:global model:gemini-3.6-flash] quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier quotaMetric:generativelanguage.googleapis.com/generate_content_free_tier_requests quotaValue:20]]] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:8s]]
+
+Token subtotal: ≥0
 
