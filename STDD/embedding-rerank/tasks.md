@@ -78,10 +78,11 @@ language: zh-TW
 
 ## Manual verification checklist
 
-- [ ] S-11：本機真 key（`MRI_RAG_EMBED_KEY`）＋`MRI_RAG_EMBEDDINGS=true`
+- [x] S-11：本機真 key（`MRI_RAG_EMBED_KEY`）＋`MRI_RAG_EMBEDDINGS=true`
   ＋`MRI_EMBED_PROVIDER`，重跑 `mrinspect index` 後跑
   `./bin/mrinspect eval`：Scope 行無降級字樣；改用未重建舊 store 再跑
   →出現無向量/不符降級且字樣不含 URL 或 key 片段。
+  驗證紀錄：2026-09-03 有向量 store eval，01/02 multi Scope 行無降級字樣（eval/REPORT.md:92-94, 333-335，commit 3775ccf）；2026-09-04 無向量 store 單 fixture eval，Scope 行出現 `rerank degraded: no-vectors (provider=gemini-embedding-001, component=embedding, detail=no vectors)`，無 URL/key 片段。
 
 ## Task 依賴
 
@@ -97,5 +98,5 @@ flowchart LR
 
 ## Requirements Checklist（引 design-be.md S-51 節，approval 時逐項對）
 
-- [ ] REQ-01（T1/T4）、REQ-02（T2）、REQ-03（T3/T4）、env/docs（T5）、
+- [x] REQ-01（T1/T4）、REQ-02（T2）、REQ-03（T3/T4）、env/docs（T5）、
   既有不變量回歸（T2/T3 GREEN 條件）
