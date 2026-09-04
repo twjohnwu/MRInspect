@@ -1,12 +1,26 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestParseDotenv_MalformedReportsLineNumbersOnly(t *testing.T) {
+	input := "\n# comment\nA=1\ntop-secret-token-xyz\n=novalue\n"
+	_, malformed := parseDotenv(strings.NewReader(input))
+
+	want := []int{4, 5}
+	if !reflect.DeepEqual(malformed, want) {
+		t.Errorf("malformed: want line numbers %v, got %v", want, malformed)
+	}
+	if got := fmt.Sprint(malformed); strings.Contains(got, "top-secret") {
+		t.Errorf("malformed output contains secret content: %q", got)
+	}
+}
 
 func TestParseDotenv(t *testing.T) {
 	t.Run("parses key-value pairs, skipping blanks and comments", func(t *testing.T) {
@@ -67,7 +81,7 @@ func TestParseDotenv(t *testing.T) {
 		if len(values) != 1 {
 			t.Errorf("values: want only OK applied, got %v", values)
 		}
-		wantMalformed := []string{"no-equals-here", "=empty-key"}
+		wantMalformed := []int{1, 2}
 		if !reflect.DeepEqual(malformed, wantMalformed) {
 			t.Errorf("malformed: want %v, got %v", wantMalformed, malformed)
 		}
@@ -114,7 +128,7 @@ func TestLoadDotenv(t *testing.T) {
 		if got := os.Getenv("MRI_DOTENV_LOAD_TEST"); got != "loaded" {
 			t.Errorf("MRI_DOTENV_LOAD_TEST: want %q, got %q", "loaded", got)
 		}
-		wantMalformed := []string{"broken-line"}
+		wantMalformed := []int{2}
 		if !reflect.DeepEqual(malformed, wantMalformed) {
 			t.Errorf("malformed: want %v, got %v", wantMalformed, malformed)
 		}

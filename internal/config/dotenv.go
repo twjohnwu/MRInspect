@@ -13,13 +13,16 @@ import (
 // comment (a '#' preceded by whitespace) is stripped from unquoted values.
 // Values wrapped in single or double quotes are unwrapped as-is, keeping
 // any inner '#' or spaces. Lines with no '=' or an empty key are reported
-// in malformed and not applied to the returned map.
-func parseDotenv(r io.Reader) (map[string]string, []string) {
+// by line number in malformed and not applied to the returned map; their
+// content is never echoed.
+func parseDotenv(r io.Reader) (map[string]string, []int) {
 	values := make(map[string]string)
-	var malformed []string
+	var malformed []int
 
 	scanner := bufio.NewScanner(r)
+	lineNumber := 0
 	for scanner.Scan() {
+		lineNumber++
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -28,13 +31,13 @@ func parseDotenv(r io.Reader) (map[string]string, []string) {
 
 		idx := strings.Index(line, "=")
 		if idx < 0 {
-			malformed = append(malformed, line)
+			malformed = append(malformed, lineNumber)
 			continue
 		}
 
 		key := strings.TrimSpace(line[:idx])
 		if key == "" {
-			malformed = append(malformed, line)
+			malformed = append(malformed, lineNumber)
 			continue
 		}
 
@@ -84,9 +87,9 @@ func applyDotenv(values map[string]string) {
 
 // LoadDotenv reads and applies the .env file at path. A missing file is a
 // silent no-op (returns nil). If present, its contents are parsed and
-// applied via applyDotenv, and any malformed lines are returned for the
-// caller to report.
-func LoadDotenv(path string) []string {
+// applied via applyDotenv. Malformed line numbers are returned for the caller
+// to report; malformed content is never echoed.
+func LoadDotenv(path string) []int {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil

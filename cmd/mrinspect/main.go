@@ -27,8 +27,8 @@ import (
 )
 
 func main() {
-	for _, line := range config.LoadDotenv(".env") {
-		fmt.Fprintln(os.Stderr, "warning: malformed .env line:", line)
+	for _, n := range config.LoadDotenv(".env") {
+		fmt.Fprintf(os.Stderr, "warning: malformed .env line %d (content withheld)\n", n)
 	}
 
 	ctx := context.Background()
