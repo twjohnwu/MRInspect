@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -46,6 +48,12 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 		return stats, fmt.Errorf("Index: output path is required")
 	}
 
+	releaseLock, err := acquireIndexLock(opts.OutputPath)
+	if err != nil {
+		return stats, err
+	}
+	defer releaseLock()
+
 	tempPath, err := createTempStorePath(opts.OutputPath)
 	if err != nil {
 		return stats, err
@@ -84,6 +92,33 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 		return stats, fmt.Errorf("Index: rename temporary store: %w", err)
 	}
 	return stats, nil
+}
+
+func acquireIndexLock(outputPath string) (release func(), err error) {
+	lockPath := outputPath + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, fmt.Errorf("Index: create output directory: %w", err)
+	}
+	lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, fmt.Errorf("Index: another index run holds %s; remove it if stale", lockPath)
+		}
+		return nil, fmt.Errorf("Index: create lock: %w", err)
+	}
+	removeLock := func() {
+		_ = os.Remove(lockPath)
+	}
+	if _, err := fmt.Fprintf(lock, "%d\n", os.Getpid()); err != nil {
+		_ = lock.Close()
+		removeLock()
+		return nil, fmt.Errorf("Index: write lock: %w", err)
+	}
+	if err := lock.Close(); err != nil {
+		removeLock()
+		return nil, fmt.Errorf("Index: close lock: %w", err)
+	}
+	return removeLock, nil
 }
 
 func createTempStorePath(outputPath string) (string, error) {
@@ -126,11 +161,14 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 	chunkCount := 0
 	var resourceHashLines []string
 	for sequence, set := range sets {
-		count, err := indexSet(ctx, tx, set, sequence, indexedAt, stats, &resourceHashLines)
+		count, err := indexSet(ctx, tx, set, sequence, indexedAt, progress, stats, &resourceHashLines)
 		if err != nil {
 			return err
 		}
 		chunkCount += count
+	}
+	if stats.FilesIndexed == 0 {
+		return errors.New("Index: no files matched any resource set; refusing to publish an empty store")
 	}
 	if embedder != nil {
 		if err := embedChunks(ctx, tx, embedder, progress, indexedAt, chunkCount, stats); err != nil {
@@ -280,7 +318,7 @@ func validateStoredEmbeddings(ctx context.Context, tx *sql.Tx, expected, dimensi
 	return nil
 }
 
-func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, stats *IndexStats, resourceHashLines *[]string) (int, error) {
+func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, progress io.Writer, stats *IndexStats, resourceHashLines *[]string) (int, error) {
 	result, err := intake.Walk(intake.WalkOptions{
 		Paths:   set.Paths,
 		Include: set.Include,
@@ -290,6 +328,11 @@ func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, 
 		return 0, fmt.Errorf("Index: walk set %q: %w", set.Name, err)
 	}
 	stats.FilesSkipped += result.FilesSkipped
+	if len(result.Files) == 0 {
+		if _, err := fmt.Fprintf(progress, "warning: resource set %q matched no files\n", set.Name); err != nil {
+			return 0, fmt.Errorf("Index: write empty-set warning: %w", err)
+		}
+	}
 
 	setID, err := insertSet(ctx, tx, set, sequence, indexedAt)
 	if err != nil {

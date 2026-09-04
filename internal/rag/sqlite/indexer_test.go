@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -65,6 +66,86 @@ func fileSHA256(t *testing.T, path string) [sha256.Size]byte {
 		t.Fatalf("ReadFile %q for sha256: %v", path, err)
 	}
 	return sha256.Sum256(content)
+}
+
+func TestIndex_RefusesWhenLockHeld(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	lockPath := output + ".lock"
+	if err := os.WriteFile(lockPath, []byte("existing lock"), 0o644); err != nil {
+		t.Fatalf("WriteFile lock: %v", err)
+	}
+
+	_, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{indexTestSet(t, resources.ModeRetrieval, "# Guide\n")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "holds") {
+		t.Fatalf("Index error = %v, want it to contain %q", err, "holds")
+	}
+	if _, err := os.Stat(output); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("locked index created output %q; stat error = %v, want not exist", output, err)
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("Stat pre-existing lock: %v", err)
+	}
+}
+
+func TestIndex_RemovesLockAfterRun(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\nindexed content\n")
+
+	if _, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: []resources.Set{set}}); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+	if _, err := os.Stat(output + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock remains after successful Index; stat error = %v, want not exist", err)
+	}
+}
+
+func TestIndex_RefusesToPublishEmptyStore(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\nold store marker\n")
+	if _, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: []resources.Set{set}}); err != nil {
+		t.Fatalf("Index baseline store: %v", err)
+	}
+	before := fileSHA256(t, output)
+
+	emptySets := []resources.Set{
+		{Name: "empty-one", Mode: resources.ModeRetrieval, Paths: []string{t.TempDir()}},
+		{Name: "empty-two", Mode: resources.ModeFull, Paths: []string{t.TempDir()}},
+	}
+	_, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: emptySets})
+	if err == nil || !strings.Contains(err.Error(), "refusing to publish") {
+		t.Fatalf("Index error = %v, want it to contain %q", err, "refusing to publish")
+	}
+	if after := fileSHA256(t, output); after != before {
+		t.Errorf("OutputPath sha256 changed after empty rebuild: before %x, after %x", before, after)
+	}
+	tempPattern := filepath.Join(filepath.Dir(output), "."+filepath.Base(output)+"-*")
+	if matches, err := filepath.Glob(tempPattern); err != nil {
+		t.Fatalf("Glob temporary stores: %v", err)
+	} else if len(matches) != 0 {
+		t.Errorf("temporary stores remain after empty rebuild: %v", matches)
+	}
+}
+
+func TestIndex_WarnsOnEmptySet(t *testing.T) {
+	populated := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\nindexed content\n")
+	empty := resources.Set{Name: "empty-docs", Mode: resources.ModeRetrieval, Paths: []string{t.TempDir()}}
+	var progress bytes.Buffer
+
+	_, err := Index(context.Background(), IndexOptions{
+		OutputPath: filepath.Join(t.TempDir(), "store.sqlite"),
+		Sets:       []resources.Set{populated, empty},
+		Progress:   &progress,
+	})
+	if err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+	want := `warning: resource set "empty-docs" matched no files`
+	if !strings.Contains(progress.String(), want) {
+		t.Errorf("progress = %q, want it to contain %q", progress.String(), want)
+	}
 }
 
 func indexedResourcesFingerprint(t *testing.T, output string, sets []resources.Set) string {
