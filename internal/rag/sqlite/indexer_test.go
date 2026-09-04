@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -64,6 +65,66 @@ func fileSHA256(t *testing.T, path string) [sha256.Size]byte {
 		t.Fatalf("ReadFile %q for sha256: %v", path, err)
 	}
 	return sha256.Sum256(content)
+}
+
+func indexedResourcesFingerprint(t *testing.T, output string, sets []resources.Set) string {
+	t.Helper()
+
+	if _, err := Index(context.Background(), IndexOptions{OutputPath: output, Sets: sets}); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+	store, err := Open(output)
+	if err != nil {
+		t.Fatalf("Open indexed store: %v", err)
+	}
+	defer store.Close()
+
+	var fingerprint string
+	if err := store.db.QueryRow(`SELECT resources_sha256 FROM schema_meta WHERE id = 1`).Scan(&fingerprint); err != nil {
+		t.Fatalf("query resources_sha256: %v", err)
+	}
+	return fingerprint
+}
+
+func TestIndex_WritesResourcesFingerprint(t *testing.T) {
+	retrievalSet := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\nretrieval content\n")
+	retrievalSet.Name = "retrieval-set"
+	fullSet := indexTestSet(t, resources.ModeFull, "# Standard\n\nfull content\n")
+	fullSet.Name = "full-set"
+	sets := []resources.Set{retrievalSet, fullSet}
+
+	first := indexedResourcesFingerprint(t, filepath.Join(t.TempDir(), "first.sqlite"), sets)
+	second := indexedResourcesFingerprint(t, filepath.Join(t.TempDir(), "second.sqlite"), sets)
+
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(first) {
+		t.Errorf("resources_sha256 = %q, want exactly 64 lowercase hex characters", first)
+	}
+	if second != first {
+		t.Errorf("resources_sha256 differs for identical fixture tree: first %q, second %q", first, second)
+	}
+}
+
+func TestIndex_ResourcesFingerprintTracksContent(t *testing.T) {
+	set := indexTestSet(t, resources.ModeRetrieval, "# Guide\n\noriginal content\n")
+	path := filepath.Join(set.Paths[0], "guide.md")
+	baseline := indexedResourcesFingerprint(t, filepath.Join(t.TempDir(), "baseline.sqlite"), []resources.Set{set})
+
+	if err := os.WriteFile(path, []byte("# Guide\n\noriginal contenT\n"), 0o644); err != nil {
+		t.Fatalf("change one byte in guide.md: %v", err)
+	}
+	contentChanged := indexedResourcesFingerprint(t, filepath.Join(t.TempDir(), "content.sqlite"), []resources.Set{set})
+	if contentChanged == baseline {
+		t.Errorf("resources_sha256 unchanged after one-byte content change: %q", baseline)
+	}
+
+	renamedPath := filepath.Join(set.Paths[0], "renamed.md")
+	if err := os.Rename(path, renamedPath); err != nil {
+		t.Fatalf("rename guide.md: %v", err)
+	}
+	renamed := indexedResourcesFingerprint(t, filepath.Join(t.TempDir(), "renamed.sqlite"), []resources.Set{set})
+	if renamed == contentChanged {
+		t.Errorf("resources_sha256 unchanged after file rename: %q", contentChanged)
+	}
 }
 
 func indexTestSetWithChunks(t *testing.T, count int) resources.Set {

@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -123,8 +124,9 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 
 	indexedAt := time.Now().UTC().Format(time.RFC3339)
 	chunkCount := 0
+	var resourceHashLines []string
 	for sequence, set := range sets {
-		count, err := indexSet(ctx, tx, set, sequence, indexedAt, stats)
+		count, err := indexSet(ctx, tx, set, sequence, indexedAt, stats, &resourceHashLines)
 		if err != nil {
 			return err
 		}
@@ -135,7 +137,9 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE schema_meta SET built_at = ?, chunk_count = ? WHERE id = 1`, indexedAt, chunkCount); err != nil {
+	sort.Strings(resourceHashLines)
+	resourcesHash := contentHash([]byte(strings.Join(resourceHashLines, "")))
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_meta SET built_at = ?, chunk_count = ?, resources_sha256 = ? WHERE id = 1`, indexedAt, chunkCount, resourcesHash); err != nil {
 		return fmt.Errorf("Index: update manifest: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -276,7 +280,7 @@ func validateStoredEmbeddings(ctx context.Context, tx *sql.Tx, expected, dimensi
 	return nil
 }
 
-func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, stats *IndexStats) (int, error) {
+func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, stats *IndexStats, resourceHashLines *[]string) (int, error) {
 	result, err := intake.Walk(intake.WalkOptions{
 		Paths:   set.Paths,
 		Include: set.Include,
@@ -300,10 +304,12 @@ func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, 
 		if err != nil {
 			return 0, fmt.Errorf("Index: read %q: %w", path, err)
 		}
-		documentID, err := insertDocument(ctx, tx, setID, relativePath(set.Paths, path), path, content, indexedAt)
+		relPath := relativePath(set.Paths, path)
+		documentID, err := insertDocument(ctx, tx, setID, relPath, path, content, indexedAt)
 		if err != nil {
 			return 0, err
 		}
+		*resourceHashLines = append(*resourceHashLines, fmt.Sprintf("%s\t%s\t%s\n", set.Name, relPath, contentHash(content)))
 		stats.FilesIndexed++
 		if set.Mode == resources.ModeFull {
 			continue
