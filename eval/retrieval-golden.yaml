@@ -1,0 +1,67 @@
+entries:
+  - fixture: 01-echo-cut-earliest-marker.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: api-conventions.md
+        heading: Margherita Pizza API Conventions > Earliest response marker
+      - set: margherita-pizza-docs
+        path: api-conventions.md
+        heading: Margherita Pizza API Conventions > Quoted marker isolation
+  - fixture: 01-echo-cut-earliest-marker.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Earliest marker review
+
+  - fixture: 02-logger-metrics-race.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: observability.md
+        heading: Margherita Pizza Observability > Mutex guarded metrics
+      - set: margherita-pizza-docs
+        path: observability.md
+        heading: Margherita Pizza Observability > Serialization snapshots
+      - set: margherita-pizza-docs
+        path: testing.md
+        heading: Margherita Pizza Testing Guide > Race detector execution
+  - fixture: 02-logger-metrics-race.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: concurrency.md
+        heading: Shared Concurrency Standards > Concurrent metrics verification
+
+  - fixture: 03-lane-overlays-config.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: configuration.md
+        heading: Margherita Pizza Configuration > Lane overlay replacement
+      - set: margherita-pizza-docs
+        path: configuration.md
+        heading: Margherita Pizza Configuration > Resource selectors
+  - fixture: 03-lane-overlays-config.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Lane overlay review
+
+  - fixture: 04-lane-topk-default.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: configuration.md
+        heading: Margherita Pizza Configuration > TopK zero-value default
+      - set: margherita-pizza-docs
+        path: runtime.md
+        heading: Margherita Pizza Runtime Operations > Retriever boundary backstop
+  - fixture: 04-lane-topk-default.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > TopK default review

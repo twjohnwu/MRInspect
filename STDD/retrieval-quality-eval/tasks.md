@@ -52,7 +52,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
   `WithReadOnly` DSN 實測（`?mode=ro` 不支援則改 `_pragma=query_only(1)` 並記回 design-be 第 4 條）
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestRun_RefusesStaleStore|TestRun_WritesReportAndSanitizesHeader|TestRun_DegradationPolicy|TestRun_EmbedsOncePerRerankedTriple' -count=1 -v && go test ./internal/rag/sqlite/ -count=1`
 
-## T5 `[ ]` `S-01` [NEW] corpus 擴寫與真 golden
+## T5 `[x]` `S-01` [NEW] corpus 擴寫與真 golden
 
 - 檔案：`projects/margherita-pizza/*.md`（擴寫既有兩檔、可新增檔）、`projects/_shared/coding-standards.md`
   （擴寫、可新增檔）、`eval/retrieval-golden.yaml`；測試 `internal/retrievaleval/corpus_test.go`
@@ -65,7 +65,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
   內容不得含工作機或內部 repo 名
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestCorpus_MeetsSizeAndUniqueBreadcrumbs|TestCorpus_GoldenCoversAllFixtures' -count=1 -v`
 
-## T6 `[ ]` [INFRA] CLI 旗標與 docs
+## T6 `[wip]` [INFRA] CLI 旗標與 docs
 
 - 原因：`main.go` 旗標接線無獨立行為可單測（guard 與 flag 解析屬既有路徑，S-10 手動覆蓋）；
   docs 為文件工件。
