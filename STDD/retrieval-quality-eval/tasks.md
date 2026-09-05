@@ -36,7 +36,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
 - GREEN：`BuildPlan`；`lane.Load`＋`resources.Load`＋Enabled 過濾＋`lane.Terms`
 - Verification command: `go test ./internal/retrievaleval/ -run TestPlan_MatchesProductionLaneResolution -count=1 -v && go test ./internal/evalrun/ -count=1`
 
-## T4 `[ ]` `S-04,S-07,S-08,S-09` [MODIFY] harness 主流程、報告、sqlite 匯出
+## T4 `[x]` `S-04,S-07,S-08,S-09` [MODIFY] harness 主流程、報告、sqlite 匯出
 
 - 檔案：`internal/retrievaleval/{run.go,report.go}`＋`internal/retrievaleval/run_test.go`；
   `internal/rag/sqlite/indexer.go`（:162-179 抽為 `ResourcesFingerprint`）、

@@ -159,9 +159,9 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 
 	indexedAt := time.Now().UTC().Format(time.RFC3339)
 	chunkCount := 0
-	var resourceHashLines []string
+	fingerprint := resourceFingerprint{}
 	for sequence, set := range sets {
-		count, err := indexSet(ctx, tx, set, sequence, indexedAt, progress, stats, &resourceHashLines)
+		count, err := indexSet(ctx, tx, set, sequence, indexedAt, progress, stats, &fingerprint)
 		if err != nil {
 			return err
 		}
@@ -175,8 +175,7 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 			return err
 		}
 	}
-	sort.Strings(resourceHashLines)
-	resourcesHash := contentHash([]byte(strings.Join(resourceHashLines, "")))
+	resourcesHash := fingerprint.sum()
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_meta SET built_at = ?, chunk_count = ?, resources_sha256 = ? WHERE id = 1`, indexedAt, chunkCount, resourcesHash); err != nil {
 		return fmt.Errorf("Index: update manifest: %w", err)
 	}
@@ -318,7 +317,7 @@ func validateStoredEmbeddings(ctx context.Context, tx *sql.Tx, expected, dimensi
 	return nil
 }
 
-func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, progress io.Writer, stats *IndexStats, resourceHashLines *[]string) (int, error) {
+func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string, progress io.Writer, stats *IndexStats, fingerprint *resourceFingerprint) (int, error) {
 	result, err := intake.Walk(intake.WalkOptions{
 		Paths:   set.Paths,
 		Include: set.Include,
@@ -352,7 +351,7 @@ func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, 
 		if err != nil {
 			return 0, err
 		}
-		*resourceHashLines = append(*resourceHashLines, fmt.Sprintf("%s\t%s\t%s\n", set.Name, relPath, contentHash(content)))
+		fingerprint.add(set.Name, relPath, content)
 		stats.FilesIndexed++
 		if set.Mode == resources.ModeFull {
 			continue
@@ -370,6 +369,43 @@ func indexSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, 
 		}
 	}
 	return chunksWritten, nil
+}
+
+type resourceFingerprint struct {
+	lines []string
+}
+
+func (fingerprint *resourceFingerprint) add(setName, relPath string, content []byte) {
+	fingerprint.lines = append(fingerprint.lines, fmt.Sprintf("%s\t%s\t%s\n", setName, relPath, contentHash(content)))
+}
+
+func (fingerprint *resourceFingerprint) sum() string {
+	sort.Strings(fingerprint.lines)
+	return contentHash([]byte(strings.Join(fingerprint.lines, "")))
+}
+
+// ResourcesFingerprint computes the content fingerprint used in schema_meta
+// from the files selected by the same intake walker as Index.
+func ResourcesFingerprint(sets []resources.Set) (string, error) {
+	fingerprint := resourceFingerprint{}
+	for _, set := range sets {
+		result, err := intake.Walk(intake.WalkOptions{
+			Paths:   set.Paths,
+			Include: set.Include,
+			Exclude: set.Exclude,
+		})
+		if err != nil {
+			return "", fmt.Errorf("ResourcesFingerprint: walk set %q: %w", set.Name, err)
+		}
+		for _, path := range result.Files {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return "", fmt.Errorf("ResourcesFingerprint: read %q: %w", path, err)
+			}
+			fingerprint.add(set.Name, relativePath(set.Paths, path), content)
+		}
+	}
+	return fingerprint.sum(), nil
 }
 
 func insertSet(ctx context.Context, tx *sql.Tx, set resources.Set, sequence int, indexedAt string) (int64, error) {

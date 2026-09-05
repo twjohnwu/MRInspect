@@ -25,11 +25,12 @@ const (
 
 // Retriever reads chunks from one SQLite store.
 type Retriever struct {
-	mu     sync.RWMutex
-	db     *sql.DB
-	path   string
-	modes  map[string]string
-	closed bool
+	mu       sync.RWMutex
+	db       *sql.DB
+	path     string
+	modes    map[string]string
+	closed   bool
+	readOnly bool
 
 	// embedder is deliberately package-private: it is a construction seam for
 	// the SQLite backend, not an API exposed to review callers.
@@ -42,6 +43,13 @@ type Retriever struct {
 
 // RetrieverOption configures an optional retrieval dependency.
 type RetrieverOption func(*Retriever)
+
+// WithReadOnly opens the SQLite store without write access.
+func WithReadOnly() RetrieverOption {
+	return func(retriever *Retriever) {
+		retriever.readOnly = true
+	}
+}
 
 // WithEmbeddingConfig supplies the config-owned reranking decision. Direct
 // package callers that omit it retain the legacy environment-backed behavior.
@@ -70,18 +78,23 @@ func WithEmbedderError(err error) RetrieverOption {
 
 // OpenRetriever opens a retriever for path using the declared resource sets.
 func OpenRetriever(path string, sets []resources.Set, options ...RetrieverOption) (*Retriever, error) {
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, fmt.Errorf("OpenRetriever: sql.Open: %w", err)
-	}
 	modes := make(map[string]string, len(sets))
 	for _, set := range sets {
 		modes[set.Name] = set.Mode
 	}
-	retriever := &Retriever{db: db, path: path, modes: modes}
+	retriever := &Retriever{path: path, modes: modes}
 	for _, option := range options {
 		option(retriever)
 	}
+	dsn := path
+	if retriever.readOnly {
+		dsn = "file:" + path + "?mode=ro"
+	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("OpenRetriever: sql.Open: %w", err)
+	}
+	retriever.db = db
 	return retriever, nil
 }
 
