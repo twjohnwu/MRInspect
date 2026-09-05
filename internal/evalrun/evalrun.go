@@ -354,7 +354,7 @@ func LoadFixtures(dir string, log *logger.Logger) ([]Fixture, error) {
 		fixtures = append(fixtures, Fixture{
 			Name:    name,
 			Diff:    data,
-			Changes: synthesizeChanges(data),
+			Changes: SynthesizeChanges(data),
 		})
 	}
 
@@ -543,7 +543,8 @@ type diffFile struct {
 	diffStart int
 }
 
-func synthesizeChanges(data []byte) []gitlab.Change {
+// SynthesizeChanges converts a rendered unified diff into GitLab-style file changes.
+func SynthesizeChanges(data []byte) []gitlab.Change {
 	lines := splitLines(data)
 	firstDiffLine := 0
 	if len(lines) > 0 && bytes.HasPrefix(lines[0].text, []byte(fixtureHeaderPrefix)) {

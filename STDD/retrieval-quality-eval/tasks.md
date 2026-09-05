@@ -26,7 +26,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
 - GREEN：`Score(hits, relevant, k)`，三欄比對
 - Verification command: `go test ./internal/retrievaleval/ -run TestMetrics_RecallMRRAndTruncation -count=1 -v`
 
-## T3 `[ ]` `S-05` [MODIFY] 三元組規劃與 SynthesizeChanges 匯出
+## T3 `[x]` `S-05` [MODIFY] 三元組規劃與 SynthesizeChanges 匯出
 
 - 檔案：`internal/retrievaleval/plan.go`＋`internal/retrievaleval/plan_test.go`；
   `internal/evalrun/evalrun.go:synthesizeChanges`（:546 匯出為 `SynthesizeChanges`，:357 呼叫點改名）
