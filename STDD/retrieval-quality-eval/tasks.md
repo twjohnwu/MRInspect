@@ -8,7 +8,7 @@ language: zh-TW
 `S-04`、`S-07`–`S-09` 共用 `run_test.go`；其餘各一檔。corpus 內容（T5）排在
 loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
 
-## T1 `[ ]` `S-02,S-03` [NEW] golden 載入與驗證
+## T1 `[x]` `S-02,S-03` [NEW] golden 載入與驗證
 
 - 檔案：`internal/retrievaleval/golden.go`＋`internal/retrievaleval/golden_test.go`
 - RED：`TestGolden_RejectsIncompleteCoverage`（缺 lane 條目→錯含檔名與 `standards`；
