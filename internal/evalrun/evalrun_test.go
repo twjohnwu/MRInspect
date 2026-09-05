@@ -550,6 +550,62 @@ func TestS06_ReportGeneration(t *testing.T) {
 	}
 }
 
+func TestWriteReport_SummaryTable(t *testing.T) {
+	modes := []reviewer.EvalMode{
+		reviewer.EvalModeSingle,
+		reviewer.EvalModeMulti,
+		reviewer.EvalModeReflect,
+	}
+	fixtures := []evalrun.Fixture{
+		{Name: "01-alpha.diff"},
+		{Name: "02-beta.diff"},
+	}
+	injected := errors.New("injected fixture/mode failure")
+	fixtureReports := make([]evalrun.FixtureReport, 0, len(fixtures))
+	for fixtureIndex, fixture := range fixtures {
+		modeReports := make([]evalrun.ModeReport, 0, len(modes))
+		for _, mode := range modes {
+			result := evalrun.ModeResult{Mode: mode}
+			if fixtureIndex == 1 && mode == reviewer.EvalModeMulti {
+				result.Err = injected
+			}
+			modeReports = append(modeReports, evalrun.ModeReport{Result: result})
+		}
+		fixtureReports = append(fixtureReports, evalrun.FixtureReport{Fixture: fixture, Modes: modeReports})
+	}
+
+	reportPath := filepath.Join(t.TempDir(), "REPORT.md")
+	err := evalrun.WriteReport(reportPath, evalrun.Report{
+		GeneratedAt: time.Date(2026, time.August, 30, 10, 0, 0, 0, time.UTC),
+		Provider:    "fake-provider",
+		Model:       "fake-model",
+		Fixtures:    fixtureReports,
+	})
+	if err != nil {
+		t.Fatalf("WriteReport: %v", err)
+	}
+	reportBytes, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	report := string(reportBytes)
+	for _, want := range []string{
+		"| fixture | single | multi | reflect |",
+		"| 01-alpha.diff | ok | ok | ok |",
+		"| 02-beta.diff | ok | failed: injected fixture/mode failure | ok |",
+		"Totals: 5 ok, 1 failed",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report does not contain %q", want)
+		}
+	}
+	summaryIndex := strings.Index(report, "## Summary\n")
+	firstFixtureIndex := strings.Index(report, "## 01-alpha.diff\n")
+	if summaryIndex < 0 || firstFixtureIndex < 0 || summaryIndex >= firstFixtureIndex {
+		t.Errorf("Summary does not appear before the first fixture heading:\n%s", report)
+	}
+}
+
 func TestWriteReport_RendersAllPromptBreakdownsInLogOrder(t *testing.T) {
 	base := "Prompt composition breakdown (estimated tokens per section):\n" +
 		"| Section | Tokens | % of total |\n" +
@@ -585,6 +641,11 @@ func TestWriteReport_OnePromptBreakdownOutputUnchanged(t *testing.T) {
 		"Provider: `fake`\n\n" +
 		"Model: `fake-model`\n\n" +
 		"Fixtures: `01-breakdown.diff`\n\n" +
+		"## Summary\n\n" +
+		"| fixture | single |\n" +
+		"|---|---|\n" +
+		"| 01-breakdown.diff | ok |\n\n" +
+		"Totals: 1 ok, 0 failed\n\n" +
 		"## 01-breakdown.diff\n\n" +
 		"### single\n\n" +
 		"review body\n\n" +

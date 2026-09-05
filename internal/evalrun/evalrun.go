@@ -119,6 +119,7 @@ func WriteReport(path string, report Report) error {
 	}
 	rendered.WriteString(strings.Join(fixtureNames, ", "))
 	rendered.WriteString("\n\n")
+	writeReportSummary(&rendered, report.Fixtures)
 
 	for _, fixtureReport := range report.Fixtures {
 		fmt.Fprintf(&rendered, "## %s\n\n", fixtureReport.Fixture.Name)
@@ -175,6 +176,69 @@ func WriteReport(path string, report Report) error {
 		return fmt.Errorf("publish report: %w", err)
 	}
 	return nil
+}
+
+func writeReportSummary(rendered *strings.Builder, fixtures []FixtureReport) {
+	var modes []reviewer.EvalMode
+	if len(fixtures) > 0 {
+		modes = make([]reviewer.EvalMode, 0, len(fixtures[0].Modes))
+		for _, modeReport := range fixtures[0].Modes {
+			modes = append(modes, modeReport.Result.Mode)
+		}
+	}
+
+	rendered.WriteString("## Summary\n\n| fixture")
+	for _, mode := range modes {
+		fmt.Fprintf(rendered, " | %s", mode)
+	}
+	rendered.WriteString(" |\n|---")
+	for range modes {
+		rendered.WriteString("|---")
+	}
+	rendered.WriteString("|\n")
+
+	okCount := 0
+	failedCount := 0
+	for _, fixtureReport := range fixtures {
+		results := make(map[reviewer.EvalMode]ModeResult, len(fixtureReport.Modes))
+		for _, modeReport := range fixtureReport.Modes {
+			results[modeReport.Result.Mode] = modeReport.Result
+			if modeReport.Result.Err == nil {
+				okCount++
+			} else {
+				failedCount++
+			}
+		}
+
+		fmt.Fprintf(rendered, "| %s", fixtureReport.Fixture.Name)
+		for _, mode := range modes {
+			result, found := results[mode]
+			switch {
+			case !found:
+				rendered.WriteString(" | -")
+			case result.Err == nil:
+				rendered.WriteString(" | ok")
+			default:
+				fmt.Fprintf(rendered, " | failed: %s", summaryFailureReason(result.Err))
+			}
+		}
+		rendered.WriteString(" |\n")
+	}
+
+	fmt.Fprintf(rendered, "\nTotals: %d ok, %d failed\n\n", okCount, failedCount)
+}
+
+func summaryFailureReason(err error) string {
+	runes := []rune(rootCause(err).Error())
+	truncated := len(runes) > 60
+	if truncated {
+		runes = runes[:60]
+	}
+	reason := strings.NewReplacer("|", " ", "\r", " ", "\n", " ").Replace(string(runes))
+	if truncated {
+		reason += "…"
+	}
+	return reason
 }
 
 // SummarizeBudget logs usage and the optional MRI_DAILY_TOKEN_BUDGET comparison.
