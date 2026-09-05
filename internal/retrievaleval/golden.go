@@ -144,6 +144,9 @@ func (g Golden) validateCoverage(fixtures []string) error {
 		if !ok {
 			continue
 		}
+		if item.lanes[entry.Lane] {
+			return fmt.Errorf("load golden: duplicate entry for fixture %q lane %q", entry.Fixture, entry.Lane)
+		}
 		item.lanes[entry.Lane] = true
 		for _, target := range entry.Relevant {
 			item.sets[target.Set]++

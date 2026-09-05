@@ -104,6 +104,25 @@ func TestGolden_RejectsIncompleteCoverage(t *testing.T) {
 	}
 }
 
+func TestGolden_RejectsDuplicateFixtureLane(t *testing.T) {
+	golden := Golden{Entries: []Entry{
+		{Fixture: goldenFixture, Lane: "spec-conformance", Relevant: minimumTargets()},
+		{Fixture: goldenFixture, Lane: "spec-conformance"},
+		{Fixture: goldenFixture, Lane: "standards"},
+	}}
+	path := writeGoldenFile(t, golden)
+
+	_, err := LoadGolden(path, []string{goldenFixture})
+	if err == nil {
+		t.Fatal("LoadGolden error = nil, want duplicate fixture/lane error")
+	}
+	for _, want := range []string{"duplicate entry for fixture", goldenFixture, "spec-conformance"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("LoadGolden error = %q, want it to contain %q", err, want)
+		}
+	}
+}
+
 func indexGoldenStore(t *testing.T) string {
 	t.Helper()
 
