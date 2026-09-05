@@ -187,6 +187,18 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 
 const embeddingBatchSize = 64
 
+var embedRetryWait = func(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type embeddingChunk struct {
 	id      int64
 	heading string
@@ -213,6 +225,7 @@ func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progr
 	}
 	written := 0
 	for start := 0; start < len(chunks); start += embeddingBatchSize {
+		batch := start/embeddingBatchSize + 1
 		end := min(start+embeddingBatchSize, len(chunks))
 		texts := make([]string, end-start)
 		for index, item := range chunks[start:end] {
@@ -224,11 +237,21 @@ func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progr
 		}
 
 		vectors, err := embedder.Embed(ctx, texts)
+		for retry := 1; err != nil && embed.IsRateLimited(err) && retry <= 3; retry++ {
+			delay := time.Duration(retry) * 20 * time.Second
+			if _, progressErr := fmt.Fprintf(progress, "embedding batch %d/%d rate limited (HTTP 429); retrying in %ds\n", batch, requests, int(delay/time.Second)); progressErr != nil {
+				return fmt.Errorf("Index: write embedding progress: %w", progressErr)
+			}
+			if waitErr := embedRetryWait(ctx, delay); waitErr != nil {
+				return fmt.Errorf("Index: embed chunk batch %d: %w", batch, waitErr)
+			}
+			vectors, err = embedder.Embed(ctx, texts)
+		}
 		if err != nil {
-			return fmt.Errorf("Index: embed chunk batch %d: %w", start/embeddingBatchSize+1, err)
+			return fmt.Errorf("Index: embed chunk batch %d: %w", batch, err)
 		}
 		if len(vectors) != len(texts) {
-			return fmt.Errorf("Index: embed chunk batch %d returned %d vectors, want %d", start/embeddingBatchSize+1, len(vectors), len(texts))
+			return fmt.Errorf("Index: embed chunk batch %d returned %d vectors, want %d", batch, len(vectors), len(texts))
 		}
 		for index, vector := range vectors {
 			chunkID := chunks[start+index].id

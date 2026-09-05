@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +14,21 @@ const (
 	openAIBaseURL = "https://api.openai.com"
 	geminiBaseURL = "https://generativelanguage.googleapis.com"
 )
+
+// StatusError reports a non-successful HTTP response from a remote embedder.
+type StatusError struct {
+	Code int
+}
+
+func (err *StatusError) Error() string {
+	return fmt.Sprintf("HTTP %d", err.Code)
+}
+
+// IsRateLimited reports whether err or any wrapped error is an HTTP 429 response.
+func IsRateLimited(err error) bool {
+	var statusErr *StatusError
+	return errors.As(err, &statusErr) && statusErr != nil && statusErr.Code == http.StatusTooManyRequests
+}
 
 type remoteClient struct {
 	httpClient *http.Client
@@ -49,7 +65,7 @@ func (client remoteClient) postJSON(
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("HTTP %d", response.StatusCode)
+		return &StatusError{Code: response.StatusCode}
 	}
 	if err := json.NewDecoder(response.Body).Decode(responseBody); err != nil {
 		return fmt.Errorf("decode embedding response: %w", err)

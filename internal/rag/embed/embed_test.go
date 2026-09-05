@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -20,6 +21,63 @@ type countingTransport struct {
 func (transport *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	transport.calls.Add(1)
 	return nil, errors.New("unexpected HTTP request")
+}
+
+type statusTransport struct {
+	code int
+}
+
+func (transport statusTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: transport.code,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    request,
+	}, nil
+}
+
+func TestStatusError_IsRateLimited(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "429", err: &StatusError{Code: http.StatusTooManyRequests}, want: true},
+		{name: "500", err: &StatusError{Code: http.StatusInternalServerError}, want: false},
+		{name: "wrapped 429", err: fmt.Errorf("embed request: %w", &StatusError{Code: http.StatusTooManyRequests}), want: true},
+		{name: "nil", err: nil, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsRateLimited(tt.err); got != tt.want {
+				t.Errorf("IsRateLimited(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStatusError_RemoteClientsPreserveHTTP429(t *testing.T) {
+	client := &http.Client{Transport: statusTransport{code: http.StatusTooManyRequests}}
+
+	for _, provider := range []string{"openai", "gemini"} {
+		t.Run(provider, func(t *testing.T) {
+			embedder, err := New(provider, "test-key", WithBaseURL("https://embed.test"), WithHTTPClient(client))
+			if err != nil {
+				t.Fatalf("New(%s): %v", provider, err)
+			}
+			_, err = embedder.Embed(context.Background(), []string{"text"})
+			if err == nil {
+				t.Fatal("Embed error = nil, want HTTP 429")
+			}
+			if !strings.Contains(err.Error(), "HTTP 429") {
+				t.Errorf("Embed error = %q, want it to contain %q", err, "HTTP 429")
+			}
+			if !IsRateLimited(err) {
+				t.Errorf("IsRateLimited(%v) = false, want true", err)
+			}
+		})
+	}
 }
 
 // TestS03_ConstructorValidation verifies REQ-01 / S-03.

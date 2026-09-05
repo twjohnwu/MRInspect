@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"mrinspect/internal/rag"
 	"mrinspect/internal/rag/embed"
@@ -216,6 +218,84 @@ func indexTestSetWithChunks(t *testing.T, count int) resources.Set {
 		fmt.Fprintf(&source, "## Chunk %03d\nretrieval body %03d\n\n", index, index)
 	}
 	return indexTestSet(t, resources.ModeRetrieval, source.String())
+}
+
+func TestIndex_RetriesRateLimitedBatch(t *testing.T) {
+	const chunkCount = 130
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	fixture := embed.NewFixture(4)
+	fixture.FailOn = func(call int, _ []string) error {
+		if call == 2 {
+			return &embed.StatusError{Code: 429}
+		}
+		return nil
+	}
+	var waits []time.Duration
+	originalWait := embedRetryWait
+	embedRetryWait = func(_ context.Context, duration time.Duration) error {
+		waits = append(waits, duration)
+		return nil
+	}
+	t.Cleanup(func() { embedRetryWait = originalWait })
+	var progress bytes.Buffer
+
+	stats, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{indexTestSetWithChunks(t, chunkCount)},
+		Embedder:   fixture,
+		Progress:   &progress,
+	})
+	if err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+	if stats.Embeddings != chunkCount {
+		t.Errorf("IndexStats.Embeddings = %d, want %d", stats.Embeddings, chunkCount)
+	}
+	if calls := fixture.Calls(); calls != 4 {
+		t.Errorf("fixture Embed calls = %d, want 4", calls)
+	}
+	if got := progress.String(); !strings.Contains(got, "batch 2/") || !strings.Contains(got, "rate limited") {
+		t.Errorf("progress = %q, want batch 2 rate-limit retry message", got)
+	}
+	wantWaits := []time.Duration{20 * time.Second}
+	if !reflect.DeepEqual(waits, wantWaits) {
+		t.Errorf("retry waits = %v, want %v", waits, wantWaits)
+	}
+}
+
+func TestIndex_GivesUpAfterThreeRateLimitRetries(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "store.sqlite")
+	fixture := embed.NewFixture(4)
+	fixture.FailOn = func(_ int, _ []string) error {
+		return &embed.StatusError{Code: 429}
+	}
+	var waits []time.Duration
+	originalWait := embedRetryWait
+	embedRetryWait = func(_ context.Context, duration time.Duration) error {
+		waits = append(waits, duration)
+		return nil
+	}
+	t.Cleanup(func() { embedRetryWait = originalWait })
+
+	_, err := Index(context.Background(), IndexOptions{
+		OutputPath: output,
+		Sets:       []resources.Set{indexTestSetWithChunks(t, 130)},
+		Embedder:   fixture,
+		Progress:   &bytes.Buffer{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
+		t.Fatalf("Index error = %v, want it to contain %q", err, "HTTP 429")
+	}
+	if calls := fixture.Calls(); calls != 4 {
+		t.Errorf("fixture Embed calls = %d, want 4", calls)
+	}
+	wantWaits := []time.Duration{20 * time.Second, 40 * time.Second, 60 * time.Second}
+	if !reflect.DeepEqual(waits, wantWaits) {
+		t.Errorf("retry waits = %v, want %v", waits, wantWaits)
+	}
+	if _, statErr := os.Stat(output); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("failed index created output %q; stat error = %v, want not exist", output, statErr)
+	}
 }
 
 func TestIndex_EmbedsHeadingWhenTextEmpty(t *testing.T) {
