@@ -8,3 +8,5 @@ fixtures 均取自本 repo 已公開歷史；curation 準則見 `STDD/review-qua
 | `02-logger-metrics-race.diff` | `8e87066` | `refactor` | 併發 metrics 的 mutex 補強＋Makefile 連動、跨檔一致性 |
 | `03-lane-overlays-config.diff` | `7855389` | `config` | 純設定檔變更、lane overlay 語意 |
 | `04-lane-topk-default.diff` | `d420a64` | `logic` | 零值 TopK 預設補丁、防靜默 no-op |
+
+檢索對照表：`eval/retrieval-golden.yaml` 定義每個 fixture × lane 的相關段落，供 `mrinspect eval -retrieval` 使用；新增 fixture 時需同步補條目，否則 `TestCorpus_GoldenCoversAllFixtures` 會失敗。

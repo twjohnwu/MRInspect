@@ -22,6 +22,7 @@ import (
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/ragcmd"
 	"mrinspect/internal/ragwire"
+	"mrinspect/internal/retrievaleval"
 	"mrinspect/internal/reviewer"
 	"mrinspect/internal/validator"
 )
@@ -61,12 +62,45 @@ func main() {
 		flags := flag.NewFlagSet("eval", flag.ContinueOnError)
 		fixturesDir := flags.String("fixtures", "eval/fixtures", "directory containing evaluation fixtures")
 		reportPath := flags.String("report", "eval/REPORT.md", "evaluation report output path")
+		retrieval := flags.Bool("retrieval", false, "run the offline retrieval-quality check instead of the review evaluation")
+		storePath := flags.String("store", ".rag/mrinspect-rag.sqlite", "sqlite store used by the retrieval check")
 		if err := flags.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				return
 			}
 			slog.Error("evaluation arguments error", "error", err)
 			os.Exit(1)
+		}
+		if *retrieval {
+			report := *reportPath
+			reportPassed := false
+			flags.Visit(func(f *flag.Flag) {
+				if f.Name == "report" {
+					reportPassed = true
+				}
+			})
+			if !reportPassed {
+				report = "eval/RETRIEVAL.md"
+			}
+			cfg, err := config.LoadForIndex()
+			if err != nil {
+				slog.Error("retrieval evaluation configuration error", "error", err)
+				os.Exit(1)
+			}
+			if err := retrievaleval.Run(ctx, retrievaleval.Options{
+				RepoRoot:    ".",
+				System:      cfg.Service.Name,
+				FixturesDir: *fixturesDir,
+				GoldenPath:  "eval/retrieval-golden.yaml",
+				StorePath:   *storePath,
+				ReportPath:  report,
+				Embedding:   cfg.RAGEmbedding,
+			}); err != nil {
+				slog.Error("retrieval evaluation failed", "error", err)
+				os.Exit(1)
+			}
+			slog.Info("retrieval evaluation report written", "path", report)
+			return
 		}
 
 		cfg, err := config.LoadForEval()

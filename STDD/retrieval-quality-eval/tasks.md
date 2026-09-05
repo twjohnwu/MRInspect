@@ -65,7 +65,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
   內容不得含工作機或內部 repo 名
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestCorpus_MeetsSizeAndUniqueBreadcrumbs|TestCorpus_GoldenCoversAllFixtures' -count=1 -v`
 
-## T6 `[wip]` [INFRA] CLI 旗標與 docs
+## T6 `[x]` [INFRA] CLI 旗標與 docs
 
 - 原因：`main.go` 旗標接線無獨立行為可單測（guard 與 flag 解析屬既有路徑，S-10 手動覆蓋）；
   docs 為文件工件。

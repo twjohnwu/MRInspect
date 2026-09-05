@@ -79,6 +79,10 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `LOG_LEVEL` | `info` | 記錄層級：`debug` \| `info` |
 | `AI_REVIEW_METRICS_FILE` | `./mrinspect-metrics.json` | metrics JSON 的輸出路徑 |
 
+### 離線檢索檢查
+
+`mrinspect eval -retrieval [-store PATH] [-report PATH]` 會把 `eval/fixtures/` 的每個 fixture 走一次生產的 lane 查詢路徑，對本機 store 計算 rerank 關／開兩欄的 recall@k 與 MRR，寫到 `eval/RETRIEVAL.md`（預設）。各 fixture 的相關段落定義在 `eval/retrieval-golden.yaml`。整趟不呼叫生成 API；`MRI_RAG_EMBEDDINGS=true` 時每個 fixture × resource set 各一次 embedding 呼叫。store 若以舊 corpus 建置會被拒絕，請先重跑 `mrinspect index`。報告只列數字，不對檢索品質下結論。
+
 </details>
 
 <details>
