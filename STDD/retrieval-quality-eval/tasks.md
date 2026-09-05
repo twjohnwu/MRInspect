@@ -19,7 +19,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
 - GREEN：`LoadGolden`、`ValidateAgainstStore`（單一三表 SELECT 建集合）
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestGolden_RejectsIncompleteCoverage|TestGolden_RejectsUnknownEntriesBounded' -count=1 -v`
 
-## T2 `[ ]` `S-06` [NEW] 指標計算
+## T2 `[x]` `S-06` [NEW] 指標計算
 
 - 檔案：`internal/retrievaleval/metrics.go`＋`internal/retrievaleval/metrics_test.go`
 - RED：`TestMetrics_RecallMRRAndTruncation`（k=4 兩例；k=2 截斷例；空命中例）
