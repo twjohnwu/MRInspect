@@ -100,6 +100,10 @@ sequenceDiagram
 7. **漂移紀錄（S-17，2026-09-05）**：新鮮度指紋原設計以 plan 解析出的 set 計算，與 index 使用的全部
    registry set 不一致，真 repo（3 set，lane 只用 2）立即誤判 stale；改為與 index 相同的
    `resources.Load(...).Sets`。spec REQ-03 步 2「現行已解析 set」指 registry 解析結果，非 lane 選集。
+8. **漂移紀錄（S-17，2026-09-05）**：CLI 原以 `cfg.Service.Name` 當 lane/resource 的 system，但生產以
+   registry.yaml 把服務名映射到 system 目錄（`project.Loader.LoadProfile`），overlay 才會載入；改為同一映射。
+   另加守門：golden 有 (fixture, lane) 卻無三元組 → 回錯不寫報告，避免報告靘默少 lane。index 仍以原始
+   服務名呼叫 `resources.Load`；本 repo 無 per-system resources overlay 故指紋一致，此為既有不一致，記錄不修。
 
 ## Requirements Checklist（S-51，plan 版）
 

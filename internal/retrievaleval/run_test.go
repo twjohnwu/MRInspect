@@ -347,6 +347,44 @@ func TestRun_RefusesStaleStore(t *testing.T) {
 	}
 }
 
+func TestRun_RefusesWhenGoldenLaneHasNoTriples(t *testing.T) {
+	harness := newRunHarness(t, []harnessFixture{
+		{name: "01-x.diff", terms: "tomato basil oven"},
+	}, true)
+	writeHarnessFile(t, filepath.Join(harness.repoRoot, "projects", "lanes.yaml"), `lanes:
+  - id: spec-conformance
+    enabled: true
+    template: spec-conformance.tmpl.md
+    intent: verify pizza specifications
+    resources:
+      sets: []
+      tags: [docs]
+    topK: 3
+  - id: standards
+    enabled: true
+    template: standards.tmpl.md
+    intent: verify shared standards
+    resources:
+      sets: [shared-standards]
+      tags: []
+    topK: 3
+`)
+
+	err := Run(context.Background(), harness.options(embed.NewFixture(4)))
+	if err == nil {
+		t.Error("Run error = nil, want missing golden lane error")
+	} else {
+		for _, want := range []string{"spec-conformance", "no resource set"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("Run error = %q, want it to contain %q", err, want)
+			}
+		}
+	}
+	if _, statErr := os.Stat(harness.reportPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("report exists after missing golden lane rejection; stat error = %v", statErr)
+	}
+}
+
 func TestRun_FreshnessCoversAllRegistrySets(t *testing.T) {
 	harness := newRunHarness(t, []harnessFixture{
 		{name: "01-a.diff", terms: "tomato basil oven"},

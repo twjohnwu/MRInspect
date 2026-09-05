@@ -3,6 +3,7 @@ package retrievaleval
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -52,6 +53,24 @@ func Run(ctx context.Context, opts Options) error {
 	plan, err := BuildPlan(opts.RepoRoot, opts.System, fixtures)
 	if err != nil {
 		return errors.New("build retrieval plan failed")
+	}
+	type fixtureLane struct {
+		fixture string
+		lane    string
+	}
+	planned := make(map[fixtureLane]struct{}, len(plan))
+	for _, triple := range plan {
+		planned[fixtureLane{fixture: triple.Fixture, lane: triple.LaneID}] = struct{}{}
+	}
+	for _, entry := range golden.Entries {
+		if _, ok := planned[fixtureLane{fixture: entry.Fixture, lane: entry.Lane}]; !ok {
+			return fmt.Errorf(
+				"plan: golden lane %q resolved to no resource set for fixture %q (check lanes overlay for system %q)",
+				entry.Lane,
+				entry.Fixture,
+				opts.System,
+			)
+		}
 	}
 
 	registry, err := resources.Load(opts.RepoRoot, opts.System)

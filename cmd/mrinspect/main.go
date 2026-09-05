@@ -87,9 +87,14 @@ func main() {
 				slog.Error("retrieval evaluation configuration error", "error", err)
 				os.Exit(1)
 			}
+			loadedProject, err := project.NewLoader(cfg.Projects).LoadProfile(cfg.Service.Name, cfg.Service.Type)
+			if err != nil {
+				slog.Error("retrieval evaluation project load failed", "error", err)
+				os.Exit(1)
+			}
 			if err := retrievaleval.Run(ctx, retrievaleval.Options{
 				RepoRoot:    ".",
-				System:      cfg.Service.Name,
+				System:      loadedProject.SystemDirectory,
 				FixturesDir: *fixturesDir,
 				GoldenPath:  "eval/retrieval-golden.yaml",
 				StorePath:   *storePath,
