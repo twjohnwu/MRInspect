@@ -40,7 +40,12 @@ func main() {
 			slog.Error("index configuration error", "error", err)
 			os.Exit(1)
 		}
-		opts, err := ragcmd.ParseOptions(args, cfg.Service.Name, os.Stdout)
+		system, err := ragcmd.SystemDirectory(cfg)
+		if err != nil {
+			slog.Error("index project load failed", "error", err)
+			os.Exit(1)
+		}
+		opts, err := ragcmd.ParseOptions(args, system, os.Stdout)
 		if err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				os.Exit(0)
@@ -87,14 +92,14 @@ func main() {
 				slog.Error("retrieval evaluation configuration error", "error", err)
 				os.Exit(1)
 			}
-			loadedProject, err := project.NewLoader(cfg.Projects).LoadProfile(cfg.Service.Name, cfg.Service.Type)
+			system, err := ragcmd.SystemDirectory(cfg)
 			if err != nil {
 				slog.Error("retrieval evaluation project load failed", "error", err)
 				os.Exit(1)
 			}
 			if err := retrievaleval.Run(ctx, retrievaleval.Options{
 				RepoRoot:    ".",
-				System:      loadedProject.SystemDirectory,
+				System:      system,
 				FixturesDir: *fixturesDir,
 				GoldenPath:  "eval/retrieval-golden.yaml",
 				StorePath:   *storePath,
