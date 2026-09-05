@@ -5,6 +5,8 @@
 
 [English](README.md)
 
+**狀態：** v0.2.0，單人維護；目前沒有外部採用者。行為證據見 [`eval/`](eval/)（質性，不評分）。
+
 給 GitLab 用的 AI merge request 程式碼審查工具，可搭配 Claude、Gemini 或 OpenAI。MRInspect 以不阻擋流程的 CI/CD job 執行：讀取你的程式碼 diff，載入該團隊專屬的 review project，然後把結構化的審查留言直接貼到 MR——第一輪審查不需要人類 reviewer。
 
 ## 快速開始
