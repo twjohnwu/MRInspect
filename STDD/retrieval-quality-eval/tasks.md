@@ -77,7 +77,7 @@ loader 之後，讓真 golden 能被 T1 的驗證器直接檢查。
 
 ## Manual verification checklist
 
-- [ ] S-10：本機 `MRI_RAG_EMBEDDINGS=true`＋`MRI_EMBED_PROVIDER=gemini`＋`MRI_RAG_EMBED_KEY`，
+- [x] S-10：本機 `MRI_RAG_EMBEDDINGS=true`＋`MRI_EMBED_PROVIDER=gemini`＋`MRI_RAG_EMBED_KEY`，
   以擴大後 corpus 重跑 `./bin/mrinspect index`，執行 `./bin/mrinspect eval -retrieval`：
   `eval/RETRIEVAL.md` 產生、ON 欄無 `degraded`、`.ai-log` 檔數不變；
   `CI=true ./bin/mrinspect eval -retrieval` 非零碼；報告 commit。
@@ -97,5 +97,5 @@ flowchart LR
 
 ## Requirements Checklist（引 design-be.md S-51 節，approval 時逐項對）
 
-- [ ] REQ-01（T5）、REQ-02（T1/T5）、REQ-03（T3/T4/T6）、docs 與措辭（T6）、
+- [x] REQ-01（T5）、REQ-02（T1/T5）、REQ-03（T3/T4/T6）、docs 與措辭（T6）、
   既有不變量回歸（T3/T4 GREEN 條件）
