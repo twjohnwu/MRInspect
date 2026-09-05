@@ -347,6 +347,83 @@ func TestRun_RefusesStaleStore(t *testing.T) {
 	}
 }
 
+func TestRun_FreshnessCoversAllRegistrySets(t *testing.T) {
+	harness := newRunHarness(t, []harnessFixture{
+		{name: "01-a.diff", terms: "tomato basil oven"},
+	}, true)
+	friedChickenDir := filepath.Join(harness.repoRoot, "corpus", "fried-chicken")
+	if err := os.MkdirAll(friedChickenDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", friedChickenDir, err)
+	}
+	friedChickenPath := filepath.Join(friedChickenDir, "guide.md")
+	writeHarnessFile(t, friedChickenPath, `# Fried Chicken Manual
+
+Crispy coating and frying temperature guidance.
+`)
+	writeHarnessFile(t, filepath.Join(harness.repoRoot, "projects", "resources.yaml"), `sets:
+  - name: margherita-pizza-docs
+    tags: [pizza]
+    mode: retrieval
+    paths: [corpus/pizza]
+    include: ["*.md"]
+  - name: shared-standards
+    tags: [shared]
+    mode: retrieval
+    paths: [corpus/shared]
+    include: ["*.md"]
+  - name: fried-chicken-docs
+    tags: [fried-chicken]
+    mode: retrieval
+    paths: [corpus/fried-chicken]
+    include: ["*.md"]
+`)
+
+	registry, err := resources.Load(harness.repoRoot, "margherita-pizza")
+	if err != nil {
+		t.Fatalf("resources.Load: %v", err)
+	}
+	if len(registry.Sets) != 3 {
+		t.Fatalf("resources.Load returned %d sets, want 3", len(registry.Sets))
+	}
+	harness.index(t, harness.storePath, true, registry.Sets...)
+
+	if err := Run(context.Background(), harness.options(embed.NewFixture(4))); err != nil {
+		t.Fatalf("Run with all registry sets indexed: %v", err)
+	}
+	rows, _ := tableRows(t, readReport(t, harness.reportPath))
+	if len(rows) != 2 {
+		t.Fatalf("report has %d data rows, want 2", len(rows))
+	}
+	wantSets := map[string]bool{
+		"margherita-pizza-docs": false,
+		"shared-standards":      false,
+	}
+	for _, row := range rows {
+		if _, ok := wantSets[row[2]]; !ok {
+			t.Errorf("report contains row for non-lane set %q", row[2])
+			continue
+		}
+		wantSets[row[2]] = true
+	}
+	for set, found := range wantSets {
+		if !found {
+			t.Errorf("report missing row for lane-resolved set %q", set)
+		}
+	}
+
+	writeHarnessFile(t, friedChickenPath, `# Fried Chicken Manual
+
+Crispy coating, frying temperature guidance, and a changed brining rule.
+`)
+	err = Run(context.Background(), harness.options(embed.NewFixture(4)))
+	if err == nil {
+		t.Fatal("Run error = nil after unindexed third-set change, want stale-store error")
+	}
+	if !strings.Contains(err.Error(), "stale") {
+		t.Errorf("Run error = %q, want it to contain %q", err, "stale")
+	}
+}
+
 // TestRun_WritesReportAndSanitizesHeader verifies REQ-03 / S-07: the report
 // has paired numeric metrics, bounded metadata, and rejects unsafe metadata.
 func TestRun_WritesReportAndSanitizesHeader(t *testing.T) {

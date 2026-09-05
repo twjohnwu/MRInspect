@@ -54,8 +54,11 @@ func Run(ctx context.Context, opts Options) error {
 		return errors.New("build retrieval plan failed")
 	}
 
-	sets := distinctPlanSets(plan)
-	fingerprint, err := sqlite.ResourcesFingerprint(sets)
+	registry, err := resources.Load(opts.RepoRoot, opts.System)
+	if err != nil {
+		return errors.New("load retrieval resources failed")
+	}
+	fingerprint, err := sqlite.ResourcesFingerprint(registry.Sets)
 	if err != nil {
 		return errors.New("fingerprint retrieval resources failed")
 	}
@@ -85,6 +88,7 @@ func Run(ctx context.Context, opts Options) error {
 	// An injected embedder is a complete test/local dependency and does not
 	// require an otherwise-unused remote API key.
 	keyPresent := queryEmbedder != nil || opts.Embedding.Key != ""
+	sets := distinctPlanSets(plan)
 	off, err := sqlite.OpenRetriever(
 		opts.StorePath,
 		sets,

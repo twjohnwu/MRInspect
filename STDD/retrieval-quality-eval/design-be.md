@@ -18,7 +18,7 @@ backend/CLI：**design-fe.md 與 api.yml 均 N/A**（無 HTTP 面；embedding AP
 | `internal/retrievaleval/plan.go`（NEW） | `BuildPlan(repoRoot, system string, fixtures []evalrun.Fixture) ([]Triple, error)`：`lane.Load`＋`resources.Load`；只取 `Enabled` 且解析出 set 的 lane；TopK≤0 → `lane.DefaultLaneTopK`；每 fixture `terms := lane.Terms(fixture.Changes)`（`Fixture.Changes` 已由 `evalrun.LoadFixtures` 以 `SynthesizeChanges` 填好）；`Triple{Fixture, LaneID, Set, Terms, K}` | REQ-03 步 3 |
 | `internal/retrievaleval/metrics.go`（NEW） | `Score(hits []rag.Chunk, relevant []Target, k int) (recall, mrr float64)`：hits 先截前 k，命中比對三欄 `ResourceSet/Source/Heading` | REQ-03 步 6 |
 | `internal/retrievaleval/report.go`（NEW） | `Header{BuiltAt, ResourcesSHA, EmbedModel, Pool, GeneratedAt}` 驗證（RFC3339／64 hex／可列印 ASCII ≤64）；`Row{Fixture, Lane, Set, K, Off Cell, On Cell}`，`Cell{Value float64; Degraded string}`；`Render(w, Header, []Row) error` 轉義 `|` 與換行；平均列排除 degraded；寫檔 = 同目錄 temp＋`os.Rename` | REQ-03 步 7 |
-| `internal/retrievaleval/run.go`（NEW） | `Run(ctx, Options) error`，`Options{RepoRoot, System, FixturesDir, GoldenPath, StorePath, ReportPath, Embedding config.RAGEmbeddingConfig, Embedder embed.Embedder(可注入，nil 時依 Embedding 建 remote)}`。順序：fixtures→golden→plan→**freshness**（`sqlite.ResourcesFingerprint(sets)` vs `schema_meta.resources_sha256`）→ 開兩個 retriever（`sqlite.OpenRetriever(store, sets, sqlite.WithReadOnly(), ...)`）→ 逐三元組 OFF/ON → 失敗政策（OFF Degraded 非空或 ON 非 `rerank degraded:` 前綴 → 回錯，報告不動；ON 前綴匹配 → cell.Degraded=code）→ Render。**不呼叫 CIGuard、不 import internal/ai** | REQ-03 |
+| `internal/retrievaleval/run.go`（NEW） | `Run(ctx, Options) error`，`Options{RepoRoot, System, FixturesDir, GoldenPath, StorePath, ReportPath, Embedding config.RAGEmbeddingConfig, Embedder embed.Embedder(可注入，nil 時依 Embedding 建 remote)}`。順序：fixtures→golden→plan→**freshness**（對 `resources.Load(opts.RepoRoot, opts.System).Sets` 的完整 registry set 清單計算 `sqlite.ResourcesFingerprint`，與 index 相同，再比對 `schema_meta.resources_sha256`）→ 開兩個 retriever（`sqlite.OpenRetriever(store, sets, sqlite.WithReadOnly(), ...)`）→ 逐三元組 OFF/ON → 失敗政策（OFF Degraded 非空或 ON 非 `rerank degraded:` 前綴 → 回錯，報告不動；ON 前綴匹配 → cell.Degraded=code）→ Render。**不呼叫 CIGuard、不 import internal/ai** | REQ-03 |
 | `internal/evalrun/evalrun.go`（MODIFY：`synthesizeChanges` :546 → 匯出 `SynthesizeChanges`，內部呼叫點 :357 改名） | 讓 harness 與 eval 共用同一 diff→changes 合成器（生產同構） | REQ-03 步 3 |
 | `internal/rag/sqlite/indexer.go`（MODIFY：抽出 :162-179 的行雜湊為 `ResourcesFingerprint(sets []resources.Set) (string, error)`，indexer 內部改呼叫同一函式） | 新鮮度比對的單一真相；走訪與 index 同一 walker（`intake.Walk`）與 `relativePath`/`contentHash` | REQ-03 步 2 |
 | `internal/rag/sqlite/retriever.go`（MODIFY：新增 `WithReadOnly() RetrieverOption`；`OpenRetriever` :73 依選項把 DSN 改為 `file:<path>?mode=ro`） | 唯讀開啟 store；預設路徑行為不變 | 硬約束 |
@@ -97,6 +97,9 @@ sequenceDiagram
 5. **golden 存在性一次 SELECT 全表三欄**（≤數百列），在記憶體比對，不逐鍵查詢。
 6. **S-52 模式檢視**：既有 `RetrieverOption` 函式選項模式沿用（`WithReadOnly`）；無新 GoF
    模式——報告 Render 是單一模板，不設 Strategy；三元組展開是單一巢狀迴圈，不設 Builder。
+7. **漂移紀錄（S-17，2026-09-05）**：新鮮度指紋原設計以 plan 解析出的 set 計算，與 index 使用的全部
+   registry set 不一致，真 repo（3 set，lane 只用 2）立即誤判 stale；改為與 index 相同的
+   `resources.Load(...).Sets`。spec REQ-03 步 2「現行已解析 set」指 registry 解析結果，非 lane 選集。
 
 ## Requirements Checklist（S-51，plan 版）
 
