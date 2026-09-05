@@ -30,6 +30,7 @@ type Options struct {
 	ReportPath  string
 	Embedding   config.RAGEmbeddingConfig
 	Embedder    embed.Embedder
+	Progress    io.Writer
 }
 
 // Run executes the retrieval-quality evaluation harness.
@@ -50,10 +51,16 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return errors.New("load retrieval golden failed")
 	}
-	plan, err := BuildPlan(opts.RepoRoot, opts.System, fixtures)
+	builtPlan, err := BuildPlan(opts.RepoRoot, opts.System, fixtures)
 	if err != nil {
 		return errors.New("build retrieval plan failed")
 	}
+	if opts.Progress != nil {
+		for _, warning := range builtPlan.Warnings {
+			_, _ = fmt.Fprintln(opts.Progress, warning)
+		}
+	}
+	plan := builtPlan.Triples
 	type fixtureLane struct {
 		fixture string
 		lane    string

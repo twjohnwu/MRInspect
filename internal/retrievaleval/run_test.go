@@ -1,6 +1,7 @@
 package retrievaleval
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -229,8 +230,8 @@ func (h *runHarness) validateSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPlan harness data: %v", err)
 	}
-	if want := len(fixtures) * 2; len(plan) != want {
-		t.Fatalf("BuildPlan harness data returned %d triples, want %d", len(plan), want)
+	if want := len(fixtures) * 2; len(plan.Triples) != want {
+		t.Fatalf("BuildPlan harness data returned %d triples, want %d", len(plan.Triples), want)
 	}
 }
 
@@ -537,6 +538,32 @@ func TestRun_WritesReportAndSanitizesHeader(t *testing.T) {
 	}
 	if _, err := os.Stat(harness.reportPath); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("report exists after unsafe embed_model rejection; stat error = %v", err)
+	}
+}
+
+func TestRun_WritesPlanWarningsToProgress(t *testing.T) {
+	harness := newRunHarness(t, []harnessFixture{{name: "01-pizza.diff", terms: "tomato basil"}}, true)
+	lanesPath := filepath.Join(harness.repoRoot, "projects", "lanes.yaml")
+	lanesData, err := os.ReadFile(lanesPath)
+	if err != nil {
+		t.Fatalf("ReadFile lanes.yaml: %v", err)
+	}
+	updated := strings.Replace(string(lanesData), "tags: []", "tags: [missing]", 1)
+	writeHarnessFile(t, lanesPath, updated)
+
+	var progress bytes.Buffer
+	opts := harness.options(embed.NewFixture(4))
+	opts.Progress = &progress
+	if err := Run(context.Background(), opts); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	want := "warning: lane \"spec-conformance\" unknown resource selector: missing\n"
+	if got := progress.String(); got != want {
+		t.Errorf("progress = %q, want %q", got, want)
+	}
+	if report := readReport(t, harness.reportPath); strings.Contains(report, "unknown resource selector") {
+		t.Error("report contains unknown resource selector warning")
 	}
 }
 

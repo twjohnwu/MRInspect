@@ -71,10 +71,11 @@ func TestPlan_MatchesProductionLaneResolution(t *testing.T) {
 	}
 	wantTerms := lane.Terms(fixture.Changes)
 
-	got, err := BuildPlan(repoRoot, "", []evalrun.Fixture{fixture})
+	plan, err := BuildPlan(repoRoot, "", []evalrun.Fixture{fixture})
 	if err != nil {
 		t.Fatalf("BuildPlan() error = %v", err)
 	}
+	got := plan.Triples
 	if len(got) != 2 {
 		t.Fatalf("len(BuildPlan()) = %d, want 2; triples = %+v", len(got), got)
 	}
@@ -106,5 +107,62 @@ func TestPlan_MatchesProductionLaneResolution(t *testing.T) {
 		if triple.LaneID == "lane1" || triple.Set.Name == "" {
 			t.Errorf("triple[%d] includes a disabled lane or zero-set resolution: %+v", i, triple)
 		}
+	}
+}
+
+func TestPlan_ReportsUnknownSelectorsAsWarnings(t *testing.T) {
+	repoRoot := t.TempDir()
+	projectsDir := filepath.Join(repoRoot, "projects")
+	for _, path := range []string{
+		projectsDir,
+		filepath.Join(repoRoot, "docs", "set-a"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", path, err)
+		}
+	}
+
+	lanesYAML := []byte(`lanes:
+  - id: lane1
+    enabled: true
+    template: lane1.tmpl.md
+    intent: lane with one unknown selector
+    resources: {sets: [], tags: [alpha, missing]}
+`)
+	if err := os.WriteFile(filepath.Join(projectsDir, "lanes.yaml"), lanesYAML, 0o644); err != nil {
+		t.Fatalf("WriteFile lanes.yaml: %v", err)
+	}
+
+	resourcesYAML := []byte(`sets:
+  - name: set-a
+    tags: [alpha]
+    mode: retrieval
+    paths: [docs/set-a]
+`)
+	if err := os.WriteFile(filepath.Join(projectsDir, "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("WriteFile resources.yaml: %v", err)
+	}
+
+	fixture := evalrun.Fixture{
+		Name: "01-x.diff",
+		Changes: []gitlab.Change{{
+			NewPath: "internal/foo/bar.go",
+			Diff:    "@@ -1 +1 @@\n-old\n+new\n",
+		}},
+	}
+
+	plan, err := BuildPlan(repoRoot, "", []evalrun.Fixture{fixture})
+	if err != nil {
+		t.Fatalf("BuildPlan() error = %v", err)
+	}
+	if len(plan.Triples) != 1 {
+		t.Fatalf("len(BuildPlan().Triples) = %d, want 1; triples = %+v", len(plan.Triples), plan.Triples)
+	}
+	if got := plan.Triples[0].Set.Name; got != "set-a" {
+		t.Errorf("BuildPlan().Triples[0].Set.Name = %q, want %q", got, "set-a")
+	}
+	wantWarnings := []string{`warning: lane "lane1" unknown resource selector: missing`}
+	if !slices.Equal(plan.Warnings, wantWarnings) {
+		t.Errorf("BuildPlan().Warnings = %q, want %q", plan.Warnings, wantWarnings)
 	}
 }

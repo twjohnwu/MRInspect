@@ -100,6 +100,7 @@ func main() {
 				StorePath:   *storePath,
 				ReportPath:  report,
 				Embedding:   cfg.RAGEmbedding,
+				Progress:    os.Stdout,
 			}); err != nil {
 				slog.Error("retrieval evaluation failed", "error", err)
 				os.Exit(1)
