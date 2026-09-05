@@ -72,3 +72,17 @@ specific decision is later reversed.
 - **為什麼錯**：能力早已不對等——RAG、multi-lane、diff 縮減、佔比表都只在 Go 端，但文件把兩者並列，讀者會誤以為完整 parity；每個 Go 修復都要多做一次「要不要回移 TS」的判斷。官方 image 發佈後，「免編譯」的存在理由也消失了——拉 image 比 npm install 更快。
 - **現在做法**：移除 review.ts、src/、TS 測試與 npm 工具鏈；CI 只剩 Go job；template 移除 Layer 1b。Go 為唯一實作。
 - **學到什麼**：第二實作的維護稅是每次改動都付的隱形成本；當它的差異化理由被更好的分發方式取代，就該退場，而不是掛著誤導定位。
+
+## 6. 檢索品質量測：從「拒絕 precision/recall」到離線 golden harness；首輪結果無訊號
+
+1. **最初想法**：review-quality-eval 把 precision/recall 列為範圍外（dogfood 無答案卷），embedding-rerank 以「功能正確即可」驗收、明令不宣稱品質。corpus 只有 25 chunks，任何量測都無鑑別力，先不量。
+2. **為什麼錯**：不是錯，是沒做完——rerank 上線後仍無法回答「有沒有用」。真正缺的不是分數，是**答案卷**與**夠大的干擾集**；而檢索量測不需要生成呼叫，不受 20 req/日的免費層限制，可以離線做。
+3. **現在做法**：`mrinspect eval -retrieval`（`internal/retrievaleval`）重放每個 eval fixture 的生產 lane 查詢，對本機 store 算 recall@k／MRR，rerank 關／開兩欄，寫 `eval/RETRIEVAL.md`；答案卷是 `eval/retrieval-golden.yaml`（結構化 `{set,path,heading}`，每 fixture 兩 lane）；示範 corpus 擴到 211 段（pizza 5 新檔＋_shared 2 新檔，四主題各有相關段落，其餘干擾）。store 若非以現行 corpus 建置即拒跑；golden 有 lane 卻無三元組即報錯。報告只印數字，不寫結論（接手 embedding-rerank 的措辭紅線）。
+4. **學到什麼**：首輪 8 列全 1.00／1.00、兩欄零差異——**量測本身沒有訊號**。原因是 golden 段落用 diff 的字彙撰寫，BM25 靠字面重疊就排第一，k=8 又寬，rerank 沒有可改善的空間。harness 各路徑（新鮮度、雙欄、降級、守門）都經測試，所以這是 corpus/golden 設計問題，不是工具問題。要有鑑別力，下一步是讓 golden 段落**語意相關但字面不重疊**（改寫用詞）並縮 k；在那之前，任何「rerank 有用／沒用」的結論都沒有依據。另兩個執行期教訓：量測工具的 system 解析必須與生產走同一條映射（registry.yaml → system 目錄），否則 overlay 不載入、lane 靘默消失；新鮮度指紋必須與 index 用同一份 set 清單，否則真 repo 一跑就誤判。
+
+## 7. embedding 速率限制：client 不重試，index 批次層重試
+
+1. **最初想法**：embedding client 不重試、錯誤只留狀態碼（embedding-rerank REQ-01），查詢時 429 直接降級 BM25——對查詢端正確，索引端沿用同一 client、同樣不重試。
+2. **為什麼錯**：corpus 擴到 221 chunks 後，index 以 64 chunks 一批連發，第 2 批穩定撞 Gemini 免費層每分鐘 30k tokens 上限，整趟失敗；等一分鐘重跑也一樣，因為前兩批總是在同一分鐘內。索引是一次性批次作業，失敗代價是整趟重來，和查詢端「快速降級」的取捨完全不同。
+3. **現在做法**：client 仍不重試，但回傳型別化 `embed.StatusError`（`IsRateLimited` 判 429）；indexer 對同一批次最多重試 3 次、等 20／40／60 秒，每次等待前在進度輸出印一行；非 429 錯誤照舊立即失敗。查詢端 rerank 路徑不變，429 仍降級。
+4. **學到什麼**：重試策略屬於呼叫方的工作性質，不屬於 client——同一個 client 在「互動式查詢」與「批次索引」兩種呼叫方下需要相反的行為，所以把重試放在呼叫方那一層，client 只負責把狀態碼型別化讓呼叫方能判斷。
