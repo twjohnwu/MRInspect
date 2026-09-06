@@ -8,12 +8,28 @@ entries:
       - set: margherita-pizza-docs
         path: api-conventions.md
         heading: Margherita Pizza API Conventions > Quoted marker isolation
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > First signpost preserves the tasting note
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Review marker placard retirement
   - fixture: 01-echo-cut-earliest-marker.diff
     lane: standards
     relevant:
       - set: shared-standards
         path: review-checklist.md
         heading: Shared Review Checklist > Earliest marker review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Opening signpost keeps the useful inspection
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Review marker label sunset
 
   - fixture: 02-logger-metrics-race.diff
     lane: spec-conformance
@@ -27,12 +43,28 @@ entries:
       - set: margherita-pizza-docs
         path: testing.md
         heading: Margherita Pizza Testing Guide > Race detector execution
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Safe tally snapshots during a supper rush
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Logger metrics race billing archive
   - fixture: 02-logger-metrics-race.diff
     lane: standards
     relevant:
       - set: shared-standards
         path: concurrency.md
         heading: Shared Concurrency Standards > Concurrent metrics verification
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Stable counters while ovens work together
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Logger metrics race migration ledger
 
   - fixture: 03-lane-overlays-config.diff
     lane: spec-conformance
@@ -43,12 +75,28 @@ entries:
       - set: margherita-pizza-docs
         path: configuration.md
         heading: Margherita Pizza Configuration > Resource selectors
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Local recipe card replaces the house card
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Lane overlay config menu retirement
   - fixture: 03-lane-overlays-config.diff
     lane: standards
     relevant:
       - set: shared-standards
         path: review-checklist.md
         heading: Shared Review Checklist > Lane overlay review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Kitchen specific card selection
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Lane overlay config invoice migration
 
   - fixture: 04-lane-topk-default.diff
     lane: spec-conformance
@@ -59,9 +107,25 @@ entries:
       - set: margherita-pizza-docs
         path: runtime.md
         heading: Margherita Pizza Runtime Operations > Retriever boundary backstop
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Sensible serving count when the slip is blank
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > TopK default retriever coupon phaseout
   - fixture: 04-lane-topk-default.diff
     lane: standards
     relevant:
       - set: shared-standards
         path: review-checklist.md
         heading: Shared Review Checklist > TopK default review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Missing portion size receives a house amount
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > TopK default lane billing conversion
