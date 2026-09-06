@@ -14,6 +14,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"mrinspect/internal/evalrun"
+	"mrinspect/internal/gitlab"
 	"mrinspect/internal/rag/embed"
 	"mrinspect/internal/rag/resources"
 	"mrinspect/internal/rag/sqlite"
@@ -60,22 +62,6 @@ func TestGolden_RejectsIncompleteCoverage(t *testing.T) {
 				{Fixture: goldenFixture, Lane: "spec-conformance", Relevant: minimumTargets()},
 			}},
 			want: []string{goldenFixture, "standards"},
-		},
-		{
-			name:     "only one pizza target",
-			fixtures: []string{goldenFixture},
-			golden: Golden{Entries: []Entry{
-				{
-					Fixture: goldenFixture,
-					Lane:    "spec-conformance",
-					Relevant: []Target{
-						{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > A"},
-						{Set: "shared-standards", Path: "guide.md", Heading: "Guide > A"},
-					},
-				},
-				{Fixture: goldenFixture, Lane: "standards"},
-			}},
-			want: []string{goldenFixture, "margherita-pizza-docs"},
 		},
 		{
 			name:     "empty fixtures",
@@ -239,6 +225,259 @@ func TestGolden_RejectsUnknownEntriesBounded(t *testing.T) {
 		_, err := LoadGolden(path, []string{goldenFixture})
 		if err == nil || !strings.Contains(err.Error(), "golden exceeds 1 MiB") {
 			t.Fatalf("LoadGolden oversized error = %v, want it to contain %q", err, "golden exceeds 1 MiB")
+		}
+	})
+}
+
+func TestGolden_RequiresEveryTierPerTriple(t *testing.T) {
+	repoRoot := t.TempDir()
+	projectsDir := filepath.Join(repoRoot, "projects")
+	for _, path := range []string{
+		projectsDir,
+		filepath.Join(repoRoot, "docs", "pizza"),
+		filepath.Join(repoRoot, "docs", "standards"),
+		filepath.Join(repoRoot, "docs", "extra"),
+		filepath.Join(repoRoot, "docs", "chicken"),
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", path, err)
+		}
+	}
+
+	lanesYAML := []byte(`lanes:
+  - id: spec-conformance
+    enabled: true
+    template: spec-conformance.tmpl.md
+    intent: check the feature specification
+    resources: {sets: [margherita-pizza-docs], tags: []}
+  - id: standards
+    enabled: true
+    template: standards.tmpl.md
+    intent: check shared standards
+    resources: {sets: [shared-standards, shared-extra], tags: []}
+`)
+	if err := os.WriteFile(filepath.Join(projectsDir, "lanes.yaml"), lanesYAML, 0o644); err != nil {
+		t.Fatalf("WriteFile lanes.yaml: %v", err)
+	}
+	resourcesYAML := []byte(`sets:
+  - name: margherita-pizza-docs
+    mode: retrieval
+    paths: [docs/pizza]
+  - name: shared-standards
+    mode: retrieval
+    paths: [docs/standards]
+  - name: shared-extra
+    mode: retrieval
+    paths: [docs/extra]
+  - name: fried-chicken-docs
+    mode: retrieval
+    paths: [docs/chicken]
+`)
+	if err := os.WriteFile(filepath.Join(projectsDir, "resources.yaml"), resourcesYAML, 0o644); err != nil {
+		t.Fatalf("WriteFile resources.yaml: %v", err)
+	}
+
+	fixtures := []evalrun.Fixture{{
+		Name: goldenFixture,
+		Changes: []gitlab.Change{{
+			NewPath: "internal/pizza/service.go",
+			Diff:    "@@ -1 +1 @@\n-old\n+new\n",
+		}},
+	}}
+	plan, err := BuildPlan(repoRoot, "", fixtures)
+	if err != nil {
+		t.Fatalf("BuildPlan() error = %v", err)
+	}
+	if len(plan.Triples) != 3 {
+		t.Fatalf("len(BuildPlan().Triples) = %d, want 3; triples = %+v", len(plan.Triples), plan.Triples)
+	}
+
+	newGolden := func() Golden {
+		return Golden{Entries: []Entry{
+			{
+				Fixture: goldenFixture,
+				Lane:    "spec-conformance",
+				Relevant: []Target{
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > A"},
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > B"},
+				},
+				Paraphrase: []Target{
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Paraphrase"},
+				},
+				Distractors: []Target{
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"},
+				},
+			},
+			{
+				Fixture: goldenFixture,
+				Lane:    "standards",
+				Relevant: []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > A"},
+					{Set: "shared-extra", Path: "guide.md", Heading: "Guide > A"},
+				},
+				Paraphrase: []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Paraphrase"},
+					{Set: "shared-extra", Path: "guide.md", Heading: "Guide > Paraphrase"},
+				},
+				Distractors: []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"},
+					{Set: "shared-extra", Path: "guide.md", Heading: "Guide > Distractor"},
+				},
+			},
+		}}
+	}
+	loadAndValidate := func(t *testing.T, golden Golden) error {
+		t.Helper()
+		loaded, err := LoadGolden(writeGoldenFile(t, golden), []string{goldenFixture})
+		if err != nil {
+			return err
+		}
+		return loaded.ValidateAgainstPlan(plan.Triples)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Golden)
+		want   []string
+	}{
+		{
+			name: "empty paraphrase",
+			mutate: func(golden *Golden) {
+				golden.Entries[0].Paraphrase = nil
+			},
+			want: []string{"load golden:", goldenFixture, "spec-conformance", "paraphrase"},
+		},
+		{
+			name: "distractor belongs to another lane",
+			mutate: func(golden *Golden) {
+				golden.Entries[0].Distractors = []Target{{
+					Set: "fried-chicken-docs", Path: "guide.md", Heading: "Guide > Distractor",
+				}}
+			},
+			want: []string{"load golden:", goldenFixture, "spec-conformance", "fried-chicken-docs"},
+		},
+		{
+			name: "relevant misses one standards set",
+			mutate: func(golden *Golden) {
+				golden.Entries[1].Relevant = []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > A"},
+				}
+			},
+			want: []string{"load golden:", goldenFixture, "standards", "relevant", "shared-extra"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			golden := newGolden()
+			test.mutate(&golden)
+			err := loadAndValidate(t, golden)
+			if err == nil {
+				t.Fatal("LoadGolden + ValidateAgainstPlan error = nil, want validation error")
+			}
+			for _, want := range test.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("LoadGolden + ValidateAgainstPlan error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+
+	t.Run("valid golden", func(t *testing.T) {
+		if err := loadAndValidate(t, newGolden()); err != nil {
+			t.Fatalf("LoadGolden + ValidateAgainstPlan valid golden: %v", err)
+		}
+	})
+}
+
+func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
+	validEntry := func() Entry {
+		return Entry{
+			Fixture: goldenFixture,
+			Lane:    "spec-conformance",
+			Relevant: []Target{
+				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > A"},
+				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > B"},
+			},
+			Paraphrase: []Target{
+				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Paraphrase"},
+			},
+			Distractors: []Target{
+				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"},
+			},
+		}
+	}
+	standardsEntry := Entry{
+		Fixture: goldenFixture,
+		Lane:    "standards",
+		Relevant: []Target{
+			{Set: "shared-standards", Path: "guide.md", Heading: "Guide > A"},
+		},
+		Paraphrase: []Target{
+			{Set: "shared-standards", Path: "guide.md", Heading: "Guide > B"},
+		},
+		Distractors: []Target{
+			{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"},
+		},
+	}
+	triples := []Triple{
+		{Fixture: goldenFixture, LaneID: "spec-conformance", Set: resources.Set{Name: "margherita-pizza-docs"}},
+		{Fixture: goldenFixture, LaneID: "standards", Set: resources.Set{Name: "shared-standards"}},
+	}
+	loadAndValidate := func(t *testing.T, golden Golden) error {
+		t.Helper()
+		loaded, err := LoadGolden(writeGoldenFile(t, golden), []string{goldenFixture})
+		if err != nil {
+			return err
+		}
+		return loaded.ValidateAgainstPlan(triples)
+	}
+
+	t.Run("duplicate within distractors", func(t *testing.T) {
+		entry := validEntry()
+		duplicate := entry.Distractors[0]
+		entry.Distractors = append(entry.Distractors, duplicate)
+		err := loadAndValidate(t, Golden{Entries: []Entry{entry, standardsEntry}})
+		if err == nil {
+			t.Fatal("LoadGolden + ValidateAgainstPlan error = nil, want duplicate-target error")
+		}
+		for _, want := range []string{"load golden:", targetReference(duplicate)} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden + ValidateAgainstPlan error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("overlap between relevant and distractors", func(t *testing.T) {
+		entry := validEntry()
+		overlap := entry.Relevant[0]
+		entry.Distractors = []Target{overlap}
+		err := loadAndValidate(t, Golden{Entries: []Entry{entry, standardsEntry}})
+		if err == nil {
+			t.Fatal("LoadGolden + ValidateAgainstPlan error = nil, want overlapping-target error")
+		}
+		for _, want := range []string{"load golden:", targetReference(overlap)} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden + ValidateAgainstPlan error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("missing paraphrase target", func(t *testing.T) {
+		missing := Target{
+			Set: "margherita-pizza-docs", Path: "missing.md", Heading: "Missing paraphrase",
+		}
+		golden := Golden{Entries: []Entry{{
+			Fixture:    goldenFixture,
+			Lane:       "spec-conformance",
+			Paraphrase: []Target{missing},
+		}}}
+		err := golden.ValidateAgainstStore(context.Background(), indexGoldenStore(t))
+		if err == nil {
+			t.Fatal("ValidateAgainstStore error = nil, want missing-target error")
+		}
+		ref := targetReference(missing)
+		if listed := listedTargetLines(err.Error(), []string{ref}); !reflect.DeepEqual(listed, []string{ref}) {
+			t.Errorf("listed target lines = %q, want %q; error = %q", listed, []string{ref}, err)
 		}
 	})
 }
