@@ -8,24 +8,41 @@ import (
 	"time"
 )
 
-const reportPool = "off=TopK+1 on=4xTopK"
+const reportPool = "off=TopK+1 on=4xTopK shuffle=4xTopK×20"
+
+const (
+	metricOrigRecall = iota
+	metricOrigMRR
+	metricParaRecall
+	metricParaMRR
+	metricDistractors
+	metricCount
+)
 
 var resourcesSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Cell struct {
 	Value    float64
 	Degraded string
+	Integer  bool
+}
+
+type Triplet struct {
+	Off  Cell
+	Shuf Cell
+	On   Cell
+}
+
+func (t Triplet) cells() [3]Cell {
+	return [3]Cell{t.Off, t.Shuf, t.On}
 }
 
 type Row struct {
-	Fixture   string
-	Lane      string
-	Set       string
-	K         int
-	RecallOff Cell
-	RecallOn  Cell
-	MRROff    Cell
-	MRROn     Cell
+	Fixture string
+	Lane    string
+	Set     string
+	K       int
+	Metrics [metricCount]Triplet
 }
 
 type Header struct {
@@ -48,30 +65,31 @@ func Render(w io.Writer, h Header, rows []Row) error {
 	fmt.Fprintf(&report, "embed_model: %s\n", h.EmbedModel)
 	fmt.Fprintf(&report, "pool: %s\n", h.Pool)
 	fmt.Fprintf(&report, "generated_at: %s\n\n", h.GeneratedAt)
-	report.WriteString("| fixture | lane | set | k | recall_off | recall_on | mrr_off | mrr_on |\n")
-	report.WriteString("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |\n")
+	report.WriteString("| fixture | lane | set | k | orig_recall_off | orig_recall_shuf | orig_recall_on | orig_mrr_off | orig_mrr_shuf | orig_mrr_on | para_recall_off | para_recall_shuf | para_recall_on | para_mrr_off | para_mrr_shuf | para_mrr_on | distractors_off | distractors_shuf | distractors_on |\n")
+	report.WriteString("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, row := range rows {
 		fmt.Fprintf(
 			&report,
-			"| %s | %s | %s | %d | %s | %s | %s | %s |\n",
+			"| %s | %s | %s | %d",
 			escapeCell(row.Fixture),
 			escapeCell(row.Lane),
 			escapeCell(row.Set),
 			row.K,
-			renderCell(row.RecallOff),
-			renderCell(row.RecallOn),
-			renderCell(row.MRROff),
-			renderCell(row.MRROn),
 		)
+		for _, metric := range row.Metrics {
+			for _, cell := range metric.cells() {
+				fmt.Fprintf(&report, " | %s", renderCell(cell))
+			}
+		}
+		report.WriteString(" |\n")
 	}
-	fmt.Fprintf(
-		&report,
-		"| mean |  |  |  | %s | %s | %s | %s |\n",
-		meanCell(rows, func(row Row) Cell { return row.RecallOff }, false),
-		meanCell(rows, func(row Row) Cell { return row.RecallOn }, true),
-		meanCell(rows, func(row Row) Cell { return row.MRROff }, false),
-		meanCell(rows, func(row Row) Cell { return row.MRROn }, true),
-	)
+	report.WriteString("| mean |  |  | ")
+	for metricIndex := range metricCount {
+		for armIndex := range 3 {
+			fmt.Fprintf(&report, " | %s", meanCell(rows, metricIndex, armIndex))
+		}
+	}
+	report.WriteString(" |\n")
 
 	if _, err := io.WriteString(w, report.String()); err != nil {
 		return fmt.Errorf("render report: write: %w", err)
@@ -123,28 +141,25 @@ func renderCell(cell Cell) string {
 	if cell.Degraded != "" {
 		return "degraded: " + escapeCell(cell.Degraded)
 	}
+	if cell.Integer {
+		return fmt.Sprintf("%d", int(cell.Value))
+	}
 	return fmt.Sprintf("%.2f", cell.Value)
 }
 
-func meanCell(rows []Row, selectCell func(Row) Cell, withCount bool) string {
+func meanCell(rows []Row, metricIndex, armIndex int) string {
 	var sum float64
 	count := 0
 	for _, row := range rows {
-		cell := selectCell(row)
+		cell := row.Metrics[metricIndex].cells()[armIndex]
 		if cell.Degraded != "" {
 			continue
 		}
 		sum += cell.Value
 		count++
 	}
-	if withCount {
-		if count == 0 {
-			return "- (n=0)"
-		}
-		return fmt.Sprintf("%.2f (n=%d)", sum/float64(count), count)
-	}
 	if count == 0 {
-		return "0.00"
+		return "- (n=0)"
 	}
-	return fmt.Sprintf("%.2f", sum/float64(count))
+	return fmt.Sprintf("%.2f (n=%d)", sum/float64(count), count)
 }

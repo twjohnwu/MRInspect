@@ -95,6 +95,9 @@ func Run(ctx context.Context, opts Options) error {
 	if fingerprint != meta.ResourcesSHA256 {
 		return errors.New("store is stale; rerun mrinspect index")
 	}
+	if err := golden.ValidateAgainstPlan(builtPlan.Triples); err != nil {
+		return errors.New("validate retrieval golden failed")
+	}
 	if err := golden.ValidateAgainstStore(ctx, opts.StorePath); err != nil {
 		return errors.New("validate retrieval golden against store failed")
 	}
@@ -156,30 +159,47 @@ func Run(ctx context.Context, opts Options) error {
 		if len(offResult.Degraded) != 0 {
 			return errors.New("retrieval OFF store degraded")
 		}
+		poolQuery := query
+		poolQuery.TopK = 4 * triple.K
+		poolResult, err := off.Retrieve(ctx, poolQuery)
+		if err != nil {
+			return errors.New("retrieval shuffle pool query failed")
+		}
+		if len(poolResult.Degraded) != 0 {
+			return errors.New("retrieval shuffle pool store degraded")
+		}
 		onResult, err := on.Retrieve(ctx, query)
 		if err != nil {
 			return errors.New("retrieval ON query failed")
 		}
 
-		relevant := relevantTargets(golden, triple.Fixture, triple.LaneID, triple.Set.Name)
-		recallOff, mrrOff := Score(offResult.Chunks, relevant, triple.K)
+		targets := scoringTargetsFor(golden, triple.Fixture, triple.LaneID, triple.Set.Name)
+		offScores := scoreRetrievedArm(offResult.Chunks, targets, triple.K)
+		shufScores := scoreShuffleArm(poolResult.Chunks, targets, triple.K)
 		row := Row{
-			Fixture:   triple.Fixture,
-			Lane:      triple.LaneID,
-			Set:       triple.Set.Name,
-			K:         triple.K,
-			RecallOff: Cell{Value: recallOff},
-			MRROff:    Cell{Value: mrrOff},
+			Fixture: triple.Fixture,
+			Lane:    triple.LaneID,
+			Set:     triple.Set.Name,
+			K:       triple.K,
+		}
+		for index := range row.Metrics {
+			integer := index == metricDistractors
+			row.Metrics[index].Off = Cell{Value: offScores[index], Integer: integer}
+			row.Metrics[index].Shuf = Cell{Value: shufScores[index]}
 		}
 		if len(onResult.Degraded) != 0 {
 			code, ok := parseRerankDegradation(onResult.Degraded)
 			if !ok {
 				return errors.New("retrieval ON store degraded")
 			}
-			row.RecallOn.Degraded = code
-			row.MRROn.Degraded = code
+			for index := range row.Metrics {
+				row.Metrics[index].On = Cell{Degraded: code, Integer: index == metricDistractors}
+			}
 		} else {
-			row.RecallOn.Value, row.MRROn.Value = Score(onResult.Chunks, relevant, triple.K)
+			onScores := scoreRetrievedArm(onResult.Chunks, targets, triple.K)
+			for index := range row.Metrics {
+				row.Metrics[index].On = Cell{Value: onScores[index], Integer: index == metricDistractors}
+			}
 		}
 		rows = append(rows, row)
 	}
@@ -213,19 +233,52 @@ func evaluationEmbedder(opts Options) (embed.Embedder, error) {
 	return embed.New(opts.Embedding.Provider, opts.Embedding.Key)
 }
 
-func relevantTargets(golden Golden, fixture, lane, set string) []Target {
-	var targets []Target
+type scoringTargets struct {
+	original    []Target
+	paraphrase  []Target
+	distractors []Target
+}
+
+func scoringTargetsFor(golden Golden, fixture, lane, set string) scoringTargets {
 	for _, entry := range golden.Entries {
 		if entry.Fixture != fixture || entry.Lane != lane {
 			continue
 		}
-		for _, target := range entry.Relevant {
-			if target.Set == set {
-				targets = append(targets, target)
-			}
+		return scoringTargets{
+			original:    targetsInSet(entry.Relevant, set),
+			paraphrase:  targetsInSet(entry.Paraphrase, set),
+			distractors: targetsInSet(entry.Distractors, set),
+		}
+	}
+	return scoringTargets{}
+}
+
+func targetsInSet(candidates []Target, set string) []Target {
+	targets := make([]Target, 0, len(candidates))
+	for _, target := range candidates {
+		if target.Set == set {
+			targets = append(targets, target)
 		}
 	}
 	return targets
+}
+
+type armScores [metricCount]float64
+
+func scoreRetrievedArm(hits []rag.Chunk, targets scoringTargets, k int) armScores {
+	var scores armScores
+	scores[metricOrigRecall], scores[metricOrigMRR] = Score(hits, targets.original, k)
+	scores[metricParaRecall], scores[metricParaMRR] = Score(hits, targets.paraphrase, k)
+	scores[metricDistractors] = float64(Distractors(hits, targets.distractors, k))
+	return scores
+}
+
+func scoreShuffleArm(pool []rag.Chunk, targets scoringTargets, k int) armScores {
+	var scores armScores
+	scores[metricOrigRecall], scores[metricOrigMRR] = ShuffleScore(pool, targets.original, k, DefaultShuffleSeeds)
+	scores[metricParaRecall], scores[metricParaMRR] = ShuffleScore(pool, targets.paraphrase, k, DefaultShuffleSeeds)
+	scores[metricDistractors] = ShuffleDistractors(pool, targets.distractors, k, DefaultShuffleSeeds)
+	return scores
 }
 
 func parseRerankDegradation(reasons []string) (string, bool) {

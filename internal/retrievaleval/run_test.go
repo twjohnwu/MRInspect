@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,7 @@ type runHarness struct {
 }
 
 var numericCell = regexp.MustCompile(`^[0-9]\.[0-9]+$`)
+var integerCell = regexp.MustCompile(`^[0-9]+$`)
 
 func newRunHarness(t *testing.T, fixtures []harnessFixture, withVectors bool) *runHarness {
 	t.Helper()
@@ -103,6 +105,14 @@ Tomato basil oven cheese standard audit policy searchable vocabulary.
 ## Oven Cheese Contract
 
 Oven cheese tomato basil standard audit policy searchable vocabulary.
+
+## Sauce Herb Guidance
+
+Sauce herb baking dairy specification review guidance searchable vocabulary.
+
+## Crust Timing Note
+
+Crust timing preparation checklist searchable vocabulary.
 `)
 	writeHarnessFile(t, sharedPath, `# Shared Manual
 
@@ -111,6 +121,14 @@ Tomato basil oven cheese standard audit policy searchable vocabulary.
 ## Review Safety
 
 Standard audit policy tomato basil oven cheese searchable vocabulary.
+
+## Inspection Guardrails
+
+Inspection controls governance tomato basil oven cheese searchable vocabulary.
+
+## Delivery Checklist
+
+Delivery checklist records searchable vocabulary.
 `)
 
 	for _, fixture := range fixtures {
@@ -128,12 +146,24 @@ Standard audit policy tomato basil oven cheese searchable vocabulary.
 					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Tomato Basil Procedure"},
 					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Oven Cheese Contract"},
 				},
+				Paraphrase: []Target{
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Sauce Herb Guidance"},
+				},
+				Distractors: []Target{
+					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Crust Timing Note"},
+				},
 			},
 			Entry{
 				Fixture: fixture.name,
 				Lane:    "standards",
 				Relevant: []Target{
 					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Review Safety"},
+				},
+				Paraphrase: []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Inspection Guardrails"},
+				},
+				Distractors: []Target{
+					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Delivery Checklist"},
 				},
 			},
 		)
@@ -230,6 +260,9 @@ func (h *runHarness) validateSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPlan harness data: %v", err)
 	}
+	if err := golden.ValidateAgainstPlan(plan.Triples); err != nil {
+		t.Fatalf("ValidateAgainstPlan harness data: %v", err)
+	}
 	if want := len(fixtures) * 2; len(plan.Triples) != want {
 		t.Fatalf("BuildPlan harness data returned %d triples, want %d", len(plan.Triples), want)
 	}
@@ -269,11 +302,12 @@ func tableRows(t *testing.T, report string) (data [][]string, mean []string) {
 		trimmed := strings.TrimSpace(line)
 		trimmed = strings.TrimPrefix(trimmed, "|")
 		trimmed = strings.TrimSuffix(trimmed, "|")
-		parts := strings.Split(trimmed, "|")
+		const escapedPipe = "\x00"
+		parts := strings.Split(strings.ReplaceAll(trimmed, `\|`, escapedPipe), "|")
 		for i := range parts {
-			parts[i] = strings.TrimSpace(parts[i])
+			parts[i] = strings.ReplaceAll(strings.TrimSpace(parts[i]), escapedPipe, "|")
 		}
-		if len(parts) != 8 {
+		if len(parts) != 19 {
 			continue
 		}
 		switch parts[0] {
@@ -297,6 +331,13 @@ func requireNumeric(t *testing.T, value, location string) {
 	t.Helper()
 	if !numericCell.MatchString(value) {
 		t.Errorf("%s = %q, want numeric cell matching %s", location, value, numericCell)
+	}
+}
+
+func requireInteger(t *testing.T, value, location string) {
+	t.Helper()
+	if !integerCell.MatchString(value) {
+		t.Errorf("%s = %q, want integer cell matching %s", location, value, integerCell)
 	}
 }
 
@@ -488,14 +529,14 @@ func TestRun_WritesReportAndSanitizesHeader(t *testing.T) {
 	if got := headerValue(t, report, "embed_model"); got != embed.FixtureModel {
 		t.Errorf("embed_model = %q, want %q", got, embed.FixtureModel)
 	}
-	if got := headerValue(t, report, "pool"); got != "off=TopK+1 on=4xTopK" {
-		t.Errorf("pool = %q, want %q", got, "off=TopK+1 on=4xTopK")
+	if got := headerValue(t, report, "pool"); got != "off=TopK+1 on=4xTopK shuffle=4xTopK×20" {
+		t.Errorf("pool = %q, want %q", got, "off=TopK+1 on=4xTopK shuffle=4xTopK×20")
 	}
 	if _, err := time.Parse(time.RFC3339, headerValue(t, report, "generated_at")); err != nil {
 		t.Errorf("generated_at is not RFC3339: %v", err)
 	}
 
-	wantTableHeader := "| fixture | lane | set | k | recall_off | recall_on | mrr_off | mrr_on |"
+	wantTableHeader := "| fixture | lane | set | k | orig_recall_off | orig_recall_shuf | orig_recall_on | orig_mrr_off | orig_mrr_shuf | orig_mrr_on | para_recall_off | para_recall_shuf | para_recall_on | para_mrr_off | para_mrr_shuf | para_mrr_on | distractors_off | distractors_shuf | distractors_on |"
 	if !strings.Contains(report, wantTableHeader) {
 		t.Errorf("report missing table header %q", wantTableHeader)
 	}
@@ -504,11 +545,14 @@ func TestRun_WritesReportAndSanitizesHeader(t *testing.T) {
 		t.Fatalf("report has %d data rows, want %d", len(rows), want)
 	}
 	for rowIndex, row := range rows {
-		for _, column := range []int{4, 5, 6, 7} {
+		for _, column := range []int{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17} {
 			requireNumeric(t, row[column], fmt.Sprintf("row %d column %d", rowIndex+1, column+1))
 		}
+		for _, column := range []int{16, 18} {
+			requireInteger(t, row[column], fmt.Sprintf("row %d column %d", rowIndex+1, column+1))
+		}
 	}
-	for _, column := range []int{5, 7} {
+	for _, column := range []int{6, 9, 12, 15, 18} {
 		if !strings.HasSuffix(mean[column], ")") || !strings.Contains(mean[column], " (n=") {
 			t.Errorf("mean ON cell %q does not end with (n=N)", mean[column])
 		}
@@ -587,20 +631,24 @@ func TestRun_DegradationPolicy(t *testing.T) {
 			t.Fatalf("report has %d rows, want 4", len(rows))
 		}
 		for rowIndex, row := range rows {
-			requireNumeric(t, row[4], fmt.Sprintf("row %d recall_off", rowIndex+1))
-			requireNumeric(t, row[6], fmt.Sprintf("row %d mrr_off", rowIndex+1))
+			for _, column := range []int{4, 5, 7, 8, 10, 11, 13, 14, 17} {
+				requireNumeric(t, row[column], fmt.Sprintf("row %d column %d", rowIndex+1, column+1))
+			}
+			requireInteger(t, row[16], fmt.Sprintf("row %d distractors_off", rowIndex+1))
 			if rowIndex == 2 {
-				for _, column := range []int{5, 7} {
+				for _, column := range []int{6, 9, 12, 15, 18} {
 					if row[column] != "degraded: embed-call-failed" {
 						t.Errorf("row 3 ON cell = %q, want degraded: embed-call-failed", row[column])
 					}
 				}
 				continue
 			}
-			requireNumeric(t, row[5], fmt.Sprintf("row %d recall_on", rowIndex+1))
-			requireNumeric(t, row[7], fmt.Sprintf("row %d mrr_on", rowIndex+1))
+			for _, column := range []int{6, 9, 12, 15} {
+				requireNumeric(t, row[column], fmt.Sprintf("row %d column %d", rowIndex+1, column+1))
+			}
+			requireInteger(t, row[18], fmt.Sprintf("row %d distractors_on", rowIndex+1))
 		}
-		for _, column := range []int{5, 7} {
+		for _, column := range []int{6, 9, 12, 15, 18} {
 			if !strings.HasSuffix(mean[column], "(n=3)") {
 				t.Errorf("mean ON cell = %q, want suffix %q", mean[column], "(n=3)")
 			}
@@ -617,15 +665,17 @@ func TestRun_DegradationPolicy(t *testing.T) {
 			t.Fatalf("report has %d rows, want 4", len(rows))
 		}
 		for rowIndex, row := range rows {
-			requireNumeric(t, row[4], fmt.Sprintf("row %d recall_off", rowIndex+1))
-			requireNumeric(t, row[6], fmt.Sprintf("row %d mrr_off", rowIndex+1))
-			for _, column := range []int{5, 7} {
+			for _, column := range []int{4, 5, 7, 8, 10, 11, 13, 14, 17} {
+				requireNumeric(t, row[column], fmt.Sprintf("row %d column %d", rowIndex+1, column+1))
+			}
+			requireInteger(t, row[16], fmt.Sprintf("row %d distractors_off", rowIndex+1))
+			for _, column := range []int{6, 9, 12, 15, 18} {
 				if row[column] != "degraded: no-vectors" {
 					t.Errorf("row %d ON cell = %q, want degraded: no-vectors", rowIndex+1, row[column])
 				}
 			}
 		}
-		for _, column := range []int{5, 7} {
+		for _, column := range []int{6, 9, 12, 15, 18} {
 			if !strings.HasSuffix(mean[column], "(n=0)") {
 				t.Errorf("mean ON cell = %q, want suffix %q", mean[column], "(n=0)")
 			}
@@ -646,21 +696,101 @@ func TestRun_DegradationPolicy(t *testing.T) {
 	})
 }
 
-// TestRun_EmbedsOncePerRerankedTriple verifies REQ-03 / S-09: ON embeds once
-// for each non-empty BM25 candidate pool and never embeds without vectors.
+func TestRun_RendersThreeArmTable(t *testing.T) {
+	harness := newRunHarness(t, []harnessFixture{
+		{name: "01-neutral.diff", terms: "tomato basil standard audit"},
+	}, true)
+
+	for _, path := range []string{
+		filepath.Join(harness.repoRoot, "projects", "lanes.yaml"),
+		filepath.Join(harness.repoRoot, "projects", "resources.yaml"),
+		harness.goldenPath,
+	} {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile %s: %v", path, err)
+		}
+		writeHarnessFile(t, path, strings.ReplaceAll(string(content), "shared-standards", "pipe|set"))
+	}
+	registry, err := resources.Load(harness.repoRoot, "margherita-pizza")
+	if err != nil {
+		t.Fatalf("resources.Load: %v", err)
+	}
+	harness.sets = registry.Sets
+	harness.index(t, harness.storePath, true)
+
+	queryEmbedder := embed.NewFixture(4)
+	queryEmbedder.ErrAt = 2
+	if err := Run(context.Background(), harness.options(queryEmbedder)); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	report := readReport(t, harness.reportPath)
+	const tableHeader = "| fixture | lane | set | k | orig_recall_off | orig_recall_shuf | orig_recall_on | orig_mrr_off | orig_mrr_shuf | orig_mrr_on | para_recall_off | para_recall_shuf | para_recall_on | para_mrr_off | para_mrr_shuf | para_mrr_on | distractors_off | distractors_shuf | distractors_on |"
+	if got := strings.Count(report, tableHeader); got != 1 {
+		t.Errorf("table header count = %d, want 1", got)
+	}
+	if !strings.Contains(report, `| pipe\|set |`) {
+		t.Error(`report does not contain escaped set name "pipe\|set"`)
+	}
+	if got := headerValue(t, report, "pool"); !strings.Contains(got, "shuffle=") {
+		t.Errorf("pool = %q, want it to contain shuffle=", got)
+	}
+	meanRows := 0
+	for _, line := range strings.Split(report, "\n") {
+		if strings.HasPrefix(line, "| mean |") {
+			meanRows++
+			if !strings.Contains(line, "(n=1)") {
+				t.Errorf("mean row = %q, want it to contain (n=1)", line)
+			}
+		}
+	}
+	if meanRows != 1 {
+		t.Errorf("mean row count = %d, want 1", meanRows)
+	}
+
+	rows, _ := tableRows(t, report)
+	if len(rows) != 2 {
+		t.Fatalf("report has %d data rows, want 2", len(rows))
+	}
+	var degraded []string
+	for _, row := range rows {
+		if row[2] == "pipe|set" {
+			degraded = row
+			break
+		}
+	}
+	if degraded == nil {
+		t.Fatal("report has no row for pipe|set")
+	}
+	for _, column := range []int{6, 9, 12, 15, 18} {
+		if degraded[column] != "degraded: embed-call-failed" {
+			t.Errorf("degraded row column %d = %q, want degraded: embed-call-failed", column+1, degraded[column])
+		}
+	}
+	for _, column := range []int{4, 5, 7, 8, 10, 11, 13, 14, 16, 17} {
+		if _, err := strconv.ParseFloat(degraded[column], 64); err != nil {
+			t.Errorf("degraded row column %d = %q, want a number", column+1, degraded[column])
+		}
+	}
+	if forbidden := regexp.MustCompile(`(?i)better|worse|improve|good|bad|較好|較差|改善|好|差`); forbidden.MatchString(report) {
+		t.Errorf("report contains conclusion word matched by %s", forbidden)
+	}
+}
+
+// TestRun_EmbedsOncePerRerankedTriple verifies REQ-03 / S-07: ON embeds once
+// for each triple and never embeds without vectors.
 func TestRun_EmbedsOncePerRerankedTriple(t *testing.T) {
 	fixtures := []harnessFixture{
-		{name: "01-zero.diff", terms: "quasarzebranull voidglyph"},
-		{name: "02-hit.diff", terms: "tomato basil"},
+		{name: "01-hit.diff", terms: "tomato basil standard audit"},
 	}
 	harness := newRunHarness(t, fixtures, true)
 	queryEmbedder := embed.NewFixture(4)
 	if err := Run(context.Background(), harness.options(queryEmbedder)); err != nil {
 		t.Fatalf("Run with vectors: %v", err)
 	}
-	const matchedTriples = 2
-	if got := queryEmbedder.Calls(); got != matchedTriples {
-		t.Errorf("Embedder.Calls() = %d, want %d non-empty triples", got, matchedTriples)
+	const triples = 2
+	if got := queryEmbedder.Calls(); got != triples {
+		t.Errorf("Embedder.Calls() = %d, want %d triples", got, triples)
 	}
 
 	noVectorPath := filepath.Join(harness.repoRoot, "store-no-vectors.sqlite")
