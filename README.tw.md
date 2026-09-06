@@ -74,4 +74,5 @@ make build        # compiles to ./bin/mrinspect
 | [整合](docs/tw/integration.md) | 另一個 repository 如何從 GitLab CI 或 GitHub Actions 觸發 MRInspect |
 | [Project 系統](docs/tw/project-system.md) | 團隊如何在 `projects/` 底下定義自己的審查標準、resource set 與 lane |
 | [開發](docs/tw/development.md) | 每個套件放在哪裡，以及哪些 Make 指令負責建置、測試與 lint |
+| [Case study](docs/tw/case-study.md) | 虛構 demo 專案上的一次 multi-lane 審查，從 diff 走到貼出的審查與 token 花費 |
 | [設計決策記錄](docs/decisions_log.md) | 設計為何走到今天這樣（本檔為繁體中文） |

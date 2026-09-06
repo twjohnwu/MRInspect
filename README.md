@@ -74,4 +74,5 @@ make build        # compiles to ./bin/mrinspect
 | [Integration](docs/us/integration.md) | How another repository triggers MRInspect from GitLab CI or GitHub Actions |
 | [Project system](docs/us/project-system.md) | How a team defines its own review standards, resource sets, and lanes under `projects/` |
 | [Development](docs/us/development.md) | Where each package lives, and which Make commands build, test, and lint the code |
+| [Case study](docs/us/case-study.md) | One multi-lane review on the fictional demo project, from diff to posted review and token cost |
 | [設計決策記錄](docs/decisions_log.md) | Why the design went the way it did (Traditional Chinese) |
