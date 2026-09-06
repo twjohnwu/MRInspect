@@ -8,7 +8,7 @@ language: zh-TW
 `S-03,S-04` 共用 `corpus_test.go`；`S-05` 一檔。corpus 內容（T4）排在 harness 之後，因為名次守門
 測試要用 T3 完成的三元組驗證與既有 retriever。
 
-## T1 `[ ]` `S-01,S-02` [MODIFY] golden 三清單與三元組驗證
+## T1 `[x]` `S-01,S-02` [MODIFY] golden 三清單與三元組驗證
 
 - 檔案：`internal/retrievaleval/golden.go`（`Entry` :38、`validateCoverage` :129、`ValidateAgainstStore` :79、
   刪 `requiredSets` :23-29）＋`internal/retrievaleval/golden_test.go`
@@ -21,7 +21,7 @@ language: zh-TW
   `TestGolden_*` 改接新規則（`minimumTargets` helper 改為三元組形式）
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestGolden_RequiresEveryTierPerTriple|TestGolden_RejectsDuplicatesOverlapAndMissingTargets' -count=1 -v`
 
-## T2 `[ ]` `S-05` [MODIFY] shuffle 臂與 distractors 計分
+## T2 `[x]` `S-05` [MODIFY] shuffle 臂與 distractors 計分
 
 - 檔案：`internal/retrievaleval/metrics.go`（`Score` :7 不動；新增 `Distractors`、`ShuffleScore`、
   `ShuffleDistractors`、`DefaultShuffleSeeds`）＋`internal/retrievaleval/metrics_test.go`
@@ -32,7 +32,7 @@ language: zh-TW
 - GREEN：Fisher–Yates on copy、`rand.NewSource(seed)`、平均
 - Verification command: `go test ./internal/retrievaleval/ -run TestMetrics_ShuffleArmAndDistractorCount -count=1 -v`
 
-## T3 `[ ]` `S-06,S-07` [MODIFY] 三臂主流程與單表報告
+## T3 `[x]` `S-06,S-07` [MODIFY] 三臂主流程與單表報告
 
 - 檔案：`internal/retrievaleval/run.go`（`Run` :37，per-triple 迴圈 :145-190，`Row` 建構 :166-173）、
   `internal/retrievaleval/report.go`（`Row` :20-29、`Cell` :15-18、`Render` :40、`renderCell` :122-127、
@@ -47,7 +47,7 @@ language: zh-TW
   `Run` 在 `BuildPlan` 後呼叫 `ValidateAgainstPlan`
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestRun_RendersThreeArmTable|TestRun_EmbedsOncePerRerankedTriple' -count=1 -v && go test ./internal/retrievaleval/ -count=1`
 
-## T4 `[ ]` `S-03,S-04` [MODIFY] 分層 corpus、golden 擴寫與名次守門
+## T4 `[x]` `S-03,S-04` [MODIFY] 分層 corpus、golden 擴寫與名次守門
 
 - 檔案：`projects/margherita-pizza/*.md`、`projects/_shared/*.md`（新增段落，可新增檔）、
   `eval/retrieval-golden.yaml`（8 條目各加 `paraphrase`、`distractors`）、`internal/retrievaleval/corpus_test.go`
@@ -62,7 +62,7 @@ language: zh-TW
 - 內容約束：全虛構；不含工作機或內部 repo 名；heading 不含 ` > `；檔內 breadcrumb 唯一
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestCorpus_TierRankBands|TestCorpus_MeetsSizeAndUniqueBreadcrumbs|TestCorpus_GoldenCoversAllFixtures' -count=1 -v`
 
-## T5 `[ ]` [INFRA] docs 一句更新
+## T5 `[x]` [INFRA] docs 一句更新
 
 - 原因：文件工件，無可單測行為；措辭紅線由 eagle 讀回
 - 檔案：`eval/README.md` Offline retrieval check 段、`docs/us/configuration.md`、`docs/tw/configuration.md`

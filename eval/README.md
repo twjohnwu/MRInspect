@@ -24,11 +24,15 @@ See `eval/REPORT.md` for the full raw output per fixture/mode, and
 ## Offline retrieval check
 
 `mrinspect eval -retrieval` replays each fixture through the production lane
-query path against a local store and computes recall@k and MRR per
-fixture/lane/set, with reranking off and on. Relevant sections per fixture
-come from `eval/retrieval-golden.yaml`. The numbers are written to
-`eval/RETRIEVAL.md`. The report lists numbers only — it does not summarise
-or draw any conclusion about retrieval quality; readers draw their own.
+query path against a local store. For every fixture/lane/set it reports three
+arms — `off` (BM25 top-k), `shuffle` (the same 4×k BM25 candidate pool
+reordered with fixed seeds, averaged over 20 runs; a control arm with no
+embedding calls) and `on` (embedding rerank) — over three golden tiers from
+`eval/retrieval-golden.yaml`: `relevant` and `paraphrase` sections score
+recall@k and MRR, `distractors` sections are counted when they appear in the
+top k. The numbers are written to `eval/RETRIEVAL.md` as one table with a mean
+row. The report lists numbers only — it does not summarise or draw any
+conclusion about retrieval quality; readers draw their own.
 
 ## How to rerun
 

@@ -81,7 +81,7 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 
 ### 離線檢索檢查
 
-`mrinspect eval -retrieval [-store PATH] [-report PATH]` 會把 `eval/fixtures/` 的每個 fixture 走一次生產的 lane 查詢路徑，對本機 store 計算 rerank 關／開兩欄的 recall@k 與 MRR，寫到 `eval/RETRIEVAL.md`（預設）。各 fixture 的相關段落定義在 `eval/retrieval-golden.yaml`。整趟不呼叫生成 API；`MRI_RAG_EMBEDDINGS=true` 時每個 fixture × resource set 各一次 embedding 呼叫。store 若以舊 corpus 建置會被拒絕，請先重跑 `mrinspect index`。報告只列數字，不對檢索品質下結論。
+`mrinspect eval -retrieval [-store PATH] [-report PATH]` 會把 `eval/fixtures/` 的每個 fixture 走一次生產的 lane 查詢路徑，對本機 store 產出單一表格寫到 `eval/RETRIEVAL.md`（預設）。每個 fixture × lane × set 有三臂：`off`（BM25 前 k）、`shuffle`（同一 4×k BM25 候選池以固定 seed 重排、20 次平均，不呼叫 embedding，作為控制組）、`on`（embedding rerank）；分別對 `eval/retrieval-golden.yaml` 的 `relevant`、`paraphrase`、`distractors` 三層計分（前兩層算 recall@k 與 MRR，第三層計數進入前 k 的干擾段）。整趟不呼叫生成 API；`MRI_RAG_EMBEDDINGS=true` 時每個 fixture × resource set 各一次 embedding 呼叫。store 若以舊 corpus 建置會被拒絕，請先重跑 `mrinspect index`。報告只列數字，不對檢索品質下結論。
 
 </details>
 

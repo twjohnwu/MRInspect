@@ -81,7 +81,7 @@ Any of the variables below can also be supplied via a `.env` file in the working
 
 ### Offline retrieval check
 
-`mrinspect eval -retrieval [-store PATH] [-report PATH]` replays each fixture in `eval/fixtures/` through the production lane query path against the local store and writes recall@k / MRR with reranking off and on to `eval/RETRIEVAL.md` (default). Relevant sections per fixture come from `eval/retrieval-golden.yaml`. The run makes no generation calls; with `MRI_RAG_EMBEDDINGS=true` it makes one embedding call per fixture and resource set. A store built from an older corpus is refused; rerun `mrinspect index` first. The report lists numbers only and draws no conclusion about retrieval quality.
+`mrinspect eval -retrieval [-store PATH] [-report PATH]` replays each fixture in `eval/fixtures/` through the production lane query path against the local store and writes one table to `eval/RETRIEVAL.md` (default) with three arms per fixture/lane/set — `off` (BM25 top-k), `shuffle` (the same 4×k BM25 pool reordered with fixed seeds, averaged over 20 runs, no embedding calls) and `on` (embedding rerank) — scored against the `relevant`, `paraphrase` and `distractors` tiers of `eval/retrieval-golden.yaml` (recall@k and MRR for the first two, a count of distractors in the top k for the third). The run makes no generation calls; with `MRI_RAG_EMBEDDINGS=true` it makes one embedding call per fixture and resource set. A store built from an older corpus is refused; rerun `mrinspect index` first. The report lists numbers only and draws no conclusion about retrieval quality.
 
 </details>
 
