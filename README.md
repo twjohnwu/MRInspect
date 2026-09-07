@@ -5,7 +5,7 @@
 
 [繁體中文版](README.tw.md)
 
-**Status:** v0.2.0, maintained by one person; no external adopters yet. Evidence of behaviour lives in [`eval/`](eval/) (qualitative, no scores).
+**Status:** v0.3.0, maintained by one person; no external adopters yet. Evidence of behaviour lives in [`eval/`](eval/) (qualitative, no scores).
 
 AI-powered merge request code review for GitLab, powered by Claude, Gemini, or OpenAI. MRInspect runs as a non-blocking CI/CD job: it reads your code diff, loads a team-specific review project, and posts a structured review comment directly to the MR — no human reviewer required for the first pass.
 
@@ -21,7 +21,7 @@ Add this job to the target repository's `.gitlab-ci.yml`, and set `AI_PROVIDER_K
 ai-review:
   stage: test
   image:
-    name: ghcr.io/twjohnwu/mrinspect:v0.2.0
+    name: ghcr.io/twjohnwu/mrinspect:v0.3.0
     entrypoint: [""]
   script:
     - mrinspect
