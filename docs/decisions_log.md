@@ -86,3 +86,21 @@ specific decision is later reversed.
 2. **為什麼錯**：corpus 擴到 221 chunks 後，index 以 64 chunks 一批連發，第 2 批穩定撞 Gemini 免費層每分鐘 30k tokens 上限，整趟失敗；等一分鐘重跑也一樣，因為前兩批總是在同一分鐘內。索引是一次性批次作業，失敗代價是整趟重來，和查詢端「快速降級」的取捨完全不同。
 3. **現在做法**：client 仍不重試，但回傳型別化 `embed.StatusError`（`IsRateLimited` 判 429）；indexer 對同一批次最多重試 3 次、等 20／40／60 秒，每次等待前在進度輸出印一行；非 429 錯誤照舊立即失敗。查詢端 rerank 路徑不變，429 仍降級。
 4. **學到什麼**：重試策略屬於呼叫方的工作性質，不屬於 client——同一個 client 在「互動式查詢」與「批次索引」兩種呼叫方下需要相反的行為，所以把重試放在呼叫方那一層，client 只負責把狀態碼型別化讓呼叫方能判斷。
+
+## 8. 檢索量測第二輪：三臂＋分層 golden 有訊號；判準結果＝保留 rerank
+
+1. **最初想法**：#6 結論是量測無訊號，補救方向定為「改寫 golden 段落用詞＋縮 k」。explore 時原擬：正控制組做成 Go 測試（打亂 OFF 命中再計分）、干擾層用 precision@k、判準只比 ON／OFF 兩欄。
+2. **為什麼錯**：三點都被 panel 推翻。(a) OFF 只回 k 筆，k 內打亂 recall 不變，控制組測試必紅；(b) ON 候選池 4×TopK 嚴格包含 OFF 池（TopK+1），ON 命中率高於 OFF 可能只是池變大，沒有控制臂無法歸因給 embedding；(c) precision@k 等於兩層 recall 的線性組合，對干擾段與無關段一視同仁，量不到干擾。縮 k 也無意義：MRR 已為 1.00，相關段落已在第 1 位。
+3. **現在做法**：golden 每條目三清單 `relevant`／`paraphrase`／`distractors`，層歸屬以 BM25 名次守門（改寫層 k<r≤4k、干擾層與原層 r≤k；`TestCorpus_TierRankBands` 對真 corpus 建暫存 store 查名次）。報告三臂 off／shuffle／on：shuffle 是同一 4×TopK 候選池的 20 次固定 seed 隨機重排平均，充當「池變大」的控制臂；干擾層直接數 `distractors@k`。判準（spec REQ-04）只寫在 spec 與本檔，報告只印數字。corpus 擴到 239 段（新增 `kitchen-notices.md`、`archive-notices.md`），golden 8 條目各加 1 個改寫層、1 個干擾層目標。
+4. **結果與判準**（2026-09-07 實跑，8 列皆無降級）mean 列：
+
+   | 層 | off | shuf | on |
+   |---|---:|---:|---:|
+   | orig_recall | 1.00 | 0.27 | 1.00 |
+   | orig_mrr | 0.81 | 0.16 | 0.94 |
+   | para_recall | 0.00 | 0.21 | 0.88 |
+   | para_mrr | 0.00 | 0.05 | 0.22 |
+   | distractors | 1.00 | 0.21 | 1.00 |
+
+   改寫層 `on`（0.88／0.22）同時高於 `shuf`（0.21／0.05）與 `off`（0.00／0.00）；原層 `on` recall 持平、MRR 0.94 ≥ 0.81；干擾層 `on` 1.00 ≤ 1.00。落在 REQ-04 第一列：**保留 rerank，預設是否開啟另議**。逐列異常照錄（判準只看 mean，不改結論）：03 standards 改寫層 `on` recall 0.00（該改寫段未進前 8）；04 standards 原層 `on` MRR 0.50 低於 `off` 1.00（相關段被擠到第 2 位）；干擾層 `on` 與 `off` 皆為 1，rerank 沒有把語意近鄰的干擾段擠出前 k。
+5. **學到什麼**：(a) 比較候選池大小不同的兩個系統，必須有一個在較大池上的無資訊基線（shuffle），否則差異可能全來自池大小；(b) 答案卷要含「進得了候選池但字面不重疊」的目標，量測才有訊號——shuffle 0.21 對 off 0.00 證明改寫段在池內、只是 BM25 排不上；(c) 衍生指標若是既有欄的線性函數就不要印（precision@k）；(d) 每分鐘額度型限流下，批次索引重試耗盡額度後緊接查詢會降級，批次與查詢之間要留窗口。

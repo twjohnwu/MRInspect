@@ -72,7 +72,7 @@ language: zh-TW
 
 ## Manual verification checklist
 
-- [ ] S-08：本機 `MRI_RAG_EMBEDDINGS=true`＋Gemini key；`./bin/mrinspect index` 後等 ≥60 秒；
+- [x] S-08：本機 `MRI_RAG_EMBEDDINGS=true`＋Gemini key；`./bin/mrinspect index` 後等 ≥60 秒；
   `./bin/mrinspect eval -retrieval && ! grep -q 'degraded' eval/RETRIEVAL.md`；以 spec REQ-04 表套用判準，
   結果與 mean 列記入 `docs/decisions_log.md` 新條目；報告 commit
 
@@ -91,9 +91,9 @@ flowchart LR
 
 ## Requirements Checklist（引 spec 尾節，approval 時逐項對）
 
-- [ ] golden 三清單、每三元組最低數量、set 歸屬、清單內重複、跨清單重疊、存在性、錯誤前綴（T1）
-- [ ] 每三元組各 ≥1 改寫層／干擾層段落；層歸屬以 BM25 名次守門、各目標獨立失敗（T4）
-- [ ] 既有 corpus 規則仍綠；fried-chicken 不動（T4）
-- [ ] 三臂、shuffle 不呼叫 embedding、seed 固定、單表、mean、降級格、轉義、標頭（T2/T3）
-- [ ] 去留判準只在 spec 與 decisions_log；報告只印數字（T5 讀回、S-08）
-- [ ] 全部測試為資料有效性守門、隔離；凍結介面零變更（每 task GREEN 條件）
+- [x] golden 三清單、每三元組最低數量、set 歸屬、清單內重複、跨清單重疊、存在性、錯誤前綴（T1）
+- [x] 每三元組各 ≥1 改寫層／干擾層段落；層歸屬以 BM25 名次守門、各目標獨立失敗（T4）
+- [x] 既有 corpus 規則仍綠；fried-chicken 不動（T4）
+- [x] 三臂、shuffle 不呼叫 embedding、seed 固定、單表、mean、降級格、轉義、標頭（T2/T3）
+- [x] 去留判準只在 spec 與 decisions_log；報告只印數字（T5 讀回、S-08）
+- [x] 全部測試為資料有效性守門、隔離；凍結介面零變更（每 task GREEN 條件）
