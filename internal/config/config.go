@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type AIProvider string
@@ -61,6 +62,16 @@ type RAGEmbeddingConfig struct {
 	Key      string
 }
 
+// EnrichmentConfig controls the optional tool-calling enrichment round
+// (REQ-01).
+type EnrichmentConfig struct {
+	Enabled     bool
+	RemoteState string
+	MaxCalls    int
+	ResultBytes int
+	ToolTimeout time.Duration
+}
+
 type Config struct {
 	AIProvider    AIProvider
 	AIProviderKey string
@@ -92,6 +103,8 @@ type Config struct {
 	MetricsFile    string
 	LogLevel       string
 	ErrorReporting ErrorReportingConfig
+
+	Enrichment EnrichmentConfig
 }
 
 func Load() (Config, error) {
@@ -123,6 +136,23 @@ func load(requireGitLabToken bool) (Config, error) {
 	projectsDir := getEnv("PROJECTS_DIR", "./projects")
 	laneConcurrency, laneConcurrencySet := os.LookupEnv("MRI_LANE_CONCURRENCY")
 	ragEmbedding := LoadRAGEmbedding()
+
+	remoteState := getEnv("MRI_AI_REMOTE_STATE", "disabled")
+	if remoteState != "disabled" && remoteState != "enabled" {
+		return Config{}, fmt.Errorf("MRI_AI_REMOTE_STATE: invalid value %q (want disabled|enabled)", remoteState)
+	}
+	maxCalls, err := parseBoundedInt("MRI_ENRICHMENT_MAX_CALLS", 3, 1, 10)
+	if err != nil {
+		return Config{}, err
+	}
+	resultBytes, err := parseBoundedInt("MRI_ENRICHMENT_RESULT_BYTES", 8192, 256, 65536)
+	if err != nil {
+		return Config{}, err
+	}
+	toolTimeoutMs, err := parseBoundedInt("MRI_ENRICHMENT_TOOL_TIMEOUT_MS", 5000, 1, 60000)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AIProvider:    provider,
@@ -201,6 +231,14 @@ func load(requireGitLabToken bool) (Config, error) {
 			PostToMR:              true,
 			MaxErrorMessageLength: 2000,
 		},
+
+		Enrichment: EnrichmentConfig{
+			Enabled:     getEnv("MRI_REVIEW_ENRICHMENT", "false") == "true",
+			RemoteState: remoteState,
+			MaxCalls:    maxCalls,
+			ResultBytes: resultBytes,
+			ToolTimeout: time.Duration(toolTimeoutMs) * time.Millisecond,
+		},
 	}
 
 	return cfg, nil
@@ -262,4 +300,19 @@ func getEnvInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// parseBoundedInt reads key from the environment, falling back to def when
+// unset. A value that fails to parse as an integer or falls outside
+// [lo, hi] is a validation error (REQ-01), not a silent fallback.
+func parseBoundedInt(key string, def, lo, hi int) (int, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < lo || n > hi {
+		return 0, fmt.Errorf("%s: invalid value %q (want %d..%d)", key, raw, lo, hi)
+	}
+	return n, nil
 }

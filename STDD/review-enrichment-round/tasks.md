@@ -13,7 +13,7 @@ language: zh-TW
 - 檔案：`go.mod`、`go.sum`
 - Verification command: `grep -q 'google.golang.org/genai v1.8.0' go.mod && go test ./internal/ai/ ./internal/rag/... -count=1`
 
-## T1 `[ ]` `S-01` [MODIFY] Enrichment 設定與值域
+## T1 `[x]` `S-01` [MODIFY] Enrichment 設定與值域
 
 - 檔案：`internal/config/config.go`（`Config` :64-95、`load` :108、helper :251/:258）、`internal/config/envexample_test.go`（canonical :14-54）、`.env.example`（`# ── Review behavior` :43 段）、`internal/config/enrichment_test.go`（NEW）
 - RED：`TestEnrichmentConfig`（預設五值；`yes` 不報錯為 false；五個值域外案例各含變數名與 `invalid value`；canonical 含五名）
