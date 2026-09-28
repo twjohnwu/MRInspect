@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"mrinspect/internal/ai"
+	"mrinspect/internal/enrich"
 	"mrinspect/internal/rag"
 )
 
@@ -197,20 +198,39 @@ func Parse(raw string, limits ParseLimits) (ParsedLane, error) {
 }
 
 func ExecuteLane(ctx context.Context, input ComposeInput, provider ai.Provider, attempts int) LaneResult {
-	return executeLaneWithOptions(ctx, input, provider, attempts, ai.GenerateOptions{})
+	return executeLaneWithOptions(ctx, input, provider, attempts, ai.GenerateOptions{}, nil)
 }
 
-func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai.Provider, attempts int, opts ai.GenerateOptions) LaneResult {
+func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai.Provider, attempts int, opts ai.GenerateOptions, enrichment *enrich.Executor) LaneResult {
 	composed, err := Compose(ctx, input)
 	if err != nil {
 		return failedLane(input.Lane.ID, FailureKindCompose, fmt.Sprintf("compose lane prompt: %v", err))
+	}
+
+	var turnProvider ai.TurnProvider
+	if enrichment != nil {
+		var ok bool
+		turnProvider, ok = provider.(ai.TurnProvider)
+		if !ok {
+			return failedLane(input.Lane.ID, FailureKindGenerate, "enrichment: provider does not support tool calls")
+		}
 	}
 
 	prompt := composed.Prompt
 	var lastErr error
 	lastFailureKind := FailureKindParse
 	for attempt := 1; attempt <= attempts; attempt++ {
-		output, generateErr := provider.Generate(ctx, prompt, opts)
+		var output string
+		var roundDegraded []string
+		var generateErr error
+		if enrichment != nil {
+			var round enrich.RoundResult
+			round, generateErr = enrich.RunRound(ctx, turnProvider, prompt, enrichment, opts)
+			output = round.Text
+			roundDegraded = round.Degraded
+		} else {
+			output, generateErr = provider.Generate(ctx, prompt, opts)
+		}
 		if generateErr != nil {
 			lastErr = fmt.Errorf("generate lane response: %w", generateErr)
 			lastFailureKind = FailureKindGenerate
@@ -232,7 +252,7 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 				LaneID:     input.Lane.ID,
 				Findings:   parsed.Findings,
 				ParseStats: parsed.Stats,
-				Degraded:   composed.Degraded,
+				Degraded:   appendDegradations(composed.Degraded, roundDegraded),
 				Chunks:     composed.Chunks,
 				Breakdown:  composed.Breakdown,
 			}
@@ -251,6 +271,15 @@ func executeLaneWithOptions(ctx context.Context, input ComposeInput, provider ai
 		failureReason = fmt.Sprintf("lane response generation failed after %d attempts: %v", attempts, lastErr)
 	}
 	return failedLane(input.Lane.ID, lastFailureKind, failureReason)
+}
+
+func appendDegradations(composed, round []string) []string {
+	if len(round) == 0 {
+		return composed
+	}
+	combined := make([]string, 0, len(composed)+len(round))
+	combined = append(combined, composed...)
+	return append(combined, round...)
 }
 
 func defaultParseLimits() ParseLimits {

@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"mrinspect/internal/ai"
+	"mrinspect/internal/enrich"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/project"
 	"mrinspect/internal/prompt"
@@ -33,6 +34,9 @@ type FanoutInput struct {
 	Concurrency             string
 	ConcurrencySet          bool
 	Logger                  WarningLogger
+	// Enrichment, when non-nil, is the shared enrich.Executor each lane
+	// attempt uses for its tool-calling round (REQ-04).
+	Enrichment *enrich.Executor
 }
 
 // WarningLogger is the minimal logging seam needed for fan-out configuration warnings.
@@ -94,6 +98,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 				input.Provider,
 				input.Attempts,
 				ai.GenerateOptions{Model: lane.model},
+				input.Enrichment,
 			)
 			return nil
 		})

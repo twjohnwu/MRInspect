@@ -3,6 +3,8 @@ package testfake
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,12 +45,26 @@ type FakeProvider struct {
 	DefaultTurnResponse TurnResponse
 	Barrier             *ProviderBarrier
 
+	// ResponsesByPromptContains routes a lane's turn-1 responses by a
+	// substring match against the turn-1 prompt (map key -> that lane's own
+	// response queue) — used by multi-lane tests where each lane's prompt
+	// carries a distinct marker (e.g. its lane id) and each lane must get
+	// its own independent turn 1 -> turn 2 chain. Turn 2 requests carry no
+	// prompt (REQ-02: "turn 2 SHALL 忽略" Prompt), so the routing key chosen
+	// at turn 1 is remembered by the identity of the Continuation this fake
+	// hands back, and looked up again when that same Continuation comes
+	// back on turn 2. Unset (nil) leaves the plain TurnResponses queue
+	// behavior below unchanged.
+	ResponsesByPromptContains map[string][]TurnResponse
+
 	mu                sync.Mutex
 	responseIndex     int
 	generateCalls     []ProviderCall
 	nameCalls         int
 	turnResponseIndex int
 	turnCalls         []TurnCall
+	promptRouteIndex  map[string]int
+	continuationRoute map[*ai.Continuation]string
 }
 
 // Generate records its arguments and returns the next programmed response.
@@ -138,13 +154,36 @@ type TurnCall struct {
 }
 
 // GenerateTurn records its arguments and returns the next programmed
-// TurnResponse (or DefaultTurnResponse). Full programmable behavior
-// (ResponsesByPromptContains) lands with the task that needs it.
+// TurnResponse. When ResponsesByPromptContains is set, a turn 1 request
+// (Continuation == nil) is routed to the first key whose substring appears
+// in the prompt, consuming that key's own queue; a turn 2 request is routed
+// back to the same key via the Continuation this fake returned for its
+// turn 1. Unrouted requests (no match, or ResponsesByPromptContains unset)
+// fall back to the plain TurnResponses queue / DefaultTurnResponse.
 func (f *FakeProvider) GenerateTurn(ctx context.Context, req ai.TurnRequest) (ai.TurnResult, error) {
 	f.mu.Lock()
 	f.turnCalls = append(f.turnCalls, TurnCall{Context: ctx, Request: req})
+
+	routeKey := ""
+	if req.Continuation != nil {
+		routeKey = f.continuationRoute[req.Continuation]
+	} else {
+		routeKey = f.matchPromptRouteLocked(req.Prompt)
+	}
+
 	response := f.DefaultTurnResponse
-	if f.turnResponseIndex < len(f.TurnResponses) {
+	switch {
+	case routeKey != "":
+		queue := f.ResponsesByPromptContains[routeKey]
+		if f.promptRouteIndex == nil {
+			f.promptRouteIndex = make(map[string]int)
+		}
+		idx := f.promptRouteIndex[routeKey]
+		if idx < len(queue) {
+			response = queue[idx]
+			f.promptRouteIndex[routeKey] = idx + 1
+		}
+	case f.turnResponseIndex < len(f.TurnResponses):
 		response = f.TurnResponses[f.turnResponseIndex]
 		f.turnResponseIndex++
 	}
@@ -153,11 +192,42 @@ func (f *FakeProvider) GenerateTurn(ctx context.Context, req ai.TurnRequest) (ai
 	if response.Err != nil {
 		return ai.TurnResult{}, response.Err
 	}
+
+	continuation := ai.NewLocalContinuation(routeKey)
+	if routeKey != "" {
+		f.mu.Lock()
+		if f.continuationRoute == nil {
+			f.continuationRoute = make(map[*ai.Continuation]string)
+		}
+		f.continuationRoute[continuation] = routeKey
+		f.mu.Unlock()
+	}
+
 	return ai.TurnResult{
 		Text:         response.Text,
 		ToolCalls:    response.ToolCalls,
-		Continuation: ai.NewLocalContinuation(nil),
+		Continuation: continuation,
 	}, nil
+}
+
+// matchPromptRouteLocked returns the first ResponsesByPromptContains key
+// (in sorted order, for determinism) whose substring appears in prompt, or
+// "" if none matches or no routes are configured. Callers must hold f.mu.
+func (f *FakeProvider) matchPromptRouteLocked(prompt string) string {
+	if len(f.ResponsesByPromptContains) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(f.ResponsesByPromptContains))
+	for key := range f.ResponsesByPromptContains {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.Contains(prompt, key) {
+			return key
+		}
+	}
+	return ""
 }
 
 // GenerateTurnCalls returns a snapshot of recorded GenerateTurn calls.

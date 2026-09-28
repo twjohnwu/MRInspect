@@ -53,6 +53,9 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 		ConcurrencySet:          r.cfg.LaneConcurrencySet,
 		Logger:                  r.log,
 	}
+	if r.cfg.Enrichment.Enabled {
+		input.Enrichment = r.enrich
+	}
 	fanout := r.multi.Fanout
 	if fanout == nil {
 		fanout = lane.Fanout

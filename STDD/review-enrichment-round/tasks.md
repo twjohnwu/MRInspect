@@ -52,7 +52,7 @@ language: zh-TW
 - GREEN：`RunRound`＋`RoundResult`；reviewer 接線；footer 欄位；既有 `reviewer_test.go` 全綠
 - Verification command: `go test ./internal/reviewer/ -run 'TestEnrichment_' -count=1 -v && go test ./internal/reviewer/ -count=1`
 
-## T6 `[ ]` `S-11` [MODIFY] multi 模式每 lane 接線與檢索不變量
+## T6 `[x]` `S-11` [MODIFY] multi 模式每 lane 接線與檢索不變量
 
 - 檔案：`internal/lane/fanout.go`（`FanoutInput` :19-36、:90-99）、`internal/lane/parse.go`（:203-253）、`internal/reviewer/multilane.go`（:38-55）、`internal/lane/enrichment_test.go`（NEW；沿 `fanout_test.go:27-78` 的 prompt 路由 fake 或 `testfake.FakeProvider.ResponsesByPromptContains`；`testfake.FakeRetriever.RetrieveCalls()` 計數）
 - 依賴：T5
