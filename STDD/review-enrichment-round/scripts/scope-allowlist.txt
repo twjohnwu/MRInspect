@@ -1,0 +1,5 @@
+internal/config/config.go
+internal/config/enrichment_test.go
+internal/config/envexample_test.go
+.env.example
+STDD/review-enrichment-round/tasks.md
