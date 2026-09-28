@@ -25,7 +25,7 @@ language: zh-TW
   精確 enum、`CategoryCounts()`；既有 `TestGolden_*` 與 `eval/retrieval-golden.yaml` 8 條目暫時各加 `category`（T6 再擴）
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestGolden_' -count=1 -v`
 
-## T2 `[ ]` `S-09` [NEW] `embed.WithRateLimitRetry` decorator；index 改用；eval 接線
+## T2 `[x]` `S-09` [NEW] `embed.WithRateLimitRetry` decorator；index 改用；eval 接線
 
 - 檔案：`internal/rag/embed/retry.go`＋`retry_test.go`（NEW）；`internal/rag/sqlite/indexer.go`（`embedChunks` :227-249
   刪內嵌迴圈、同迴圈內每批包一次 decorator，閉包供批次序號）；`internal/retrievaleval/run.go`（embedder 接線 :137-139）＋`run_test.go`

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -895,5 +896,61 @@ func TestRun_EmbedsOncePerRerankedTriple(t *testing.T) {
 	}
 	if got := noVectorEmbedder.Calls(); got != 0 {
 		t.Errorf("Embedder.Calls() without vectors = %d, want 0", got)
+	}
+}
+
+// TestRun_RetriesRateLimitedEmbedding verifies REQ-05 / S-09: eval-side
+// embedding calls retry HTTP 429 with the same decorator the indexer uses,
+// so a transient rate limit does not degrade the ON cell. Every fixture
+// resolves both required lanes (run.go rejects a lane that resolves to no
+// resource set), so this harness's one fixture yields two triples; the
+// first triple's embed request is rate-limited twice then succeeds, and
+// the second triple's embed request succeeds on its first attempt.
+func TestRun_RetriesRateLimitedEmbedding(t *testing.T) {
+	fixtures := []harnessFixture{{name: "01-retry.diff", terms: "standard audit policy"}}
+	harness := newRunHarness(t, fixtures, true)
+
+	queryEmbedder := embed.NewFixture(4)
+	queryEmbedder.FailOn = func(call int, _ []string) error {
+		if call <= 2 {
+			return &embed.StatusError{Code: 429}
+		}
+		return nil
+	}
+	var waits []time.Duration
+	opts := harness.options(queryEmbedder)
+	opts.RetryWait = func(_ context.Context, duration time.Duration) error {
+		waits = append(waits, duration)
+		return nil
+	}
+	var progress bytes.Buffer
+	opts.Progress = &progress
+
+	if err := Run(context.Background(), opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	rows, _ := tableRows(t, readReport(t, harness.reportPath))
+	if len(rows) != 2 {
+		t.Fatalf("report has %d data rows, want 2", len(rows))
+	}
+	for rowIndex, row := range rows {
+		for _, column := range []int{6, 9, 12, 15, 18} {
+			if row[column] == "degraded: embed-call-failed" {
+				t.Errorf("row %d ON cell column %d = %q, want a non-degraded value", rowIndex+1, column+1, row[column])
+			}
+		}
+	}
+
+	const wantCalls = 3 /* retried triple */ + 1 /* second triple, first attempt */
+	if got := queryEmbedder.Calls(); got != wantCalls {
+		t.Errorf("Embedder.Calls() = %d, want %d", got, wantCalls)
+	}
+	wantWaits := []time.Duration{20 * time.Second, 40 * time.Second}
+	if !reflect.DeepEqual(waits, wantWaits) {
+		t.Errorf("retry waits = %v, want %v", waits, wantWaits)
+	}
+	if got := strings.Count(progress.String(), "rate limited"); got != 2 {
+		t.Errorf("progress rate-limited line count = %d, want 2; progress = %q", got, progress.String())
 	}
 }

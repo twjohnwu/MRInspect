@@ -31,6 +31,7 @@ type Options struct {
 	Embedding   config.RAGEmbeddingConfig
 	Embedder    embed.Embedder
 	Progress    io.Writer
+	RetryWait   func(ctx context.Context, d time.Duration) error
 }
 
 type systemFixtures struct {
@@ -182,6 +183,16 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	queryEmbedder, embedderErr := evaluationEmbedder(opts)
+	if queryEmbedder != nil {
+		queryEmbedder = embed.WithRateLimitRetry(queryEmbedder, embed.RetryOptions{
+			Wait: opts.RetryWait,
+			OnRetry: func(attempt int, delay time.Duration) {
+				if opts.Progress != nil {
+					fmt.Fprintf(opts.Progress, "embedding rate limited (HTTP 429); retrying in %ds\n", int(delay.Seconds()))
+				}
+			},
+		})
+	}
 	// An injected embedder is a complete test/local dependency and does not
 	// require an otherwise-unused remote API key.
 	keyPresent := queryEmbedder != nil || opts.Embedding.Key != ""

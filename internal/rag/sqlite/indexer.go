@@ -236,16 +236,18 @@ func embedChunks(ctx context.Context, tx *sql.Tx, embedder embed.Embedder, progr
 			texts[index] = input
 		}
 
-		vectors, err := embedder.Embed(ctx, texts)
-		for retry := 1; err != nil && embed.IsRateLimited(err) && retry <= 3; retry++ {
-			delay := time.Duration(retry) * 20 * time.Second
-			if _, progressErr := fmt.Fprintf(progress, "embedding batch %d/%d rate limited (HTTP 429); retrying in %ds\n", batch, requests, int(delay/time.Second)); progressErr != nil {
-				return fmt.Errorf("Index: write embedding progress: %w", progressErr)
-			}
-			if waitErr := embedRetryWait(ctx, delay); waitErr != nil {
-				return fmt.Errorf("Index: embed chunk batch %d: %w", batch, waitErr)
-			}
-			vectors, err = embedder.Embed(ctx, texts)
+		var progressErr error
+		retrying := embed.WithRateLimitRetry(embedder, embed.RetryOptions{
+			Wait: embedRetryWait,
+			OnRetry: func(attempt int, delay time.Duration) {
+				if _, werr := fmt.Fprintf(progress, "embedding batch %d/%d rate limited (HTTP 429); retrying in %ds\n", batch, requests, int(delay.Seconds())); werr != nil && progressErr == nil {
+					progressErr = werr
+				}
+			},
+		})
+		vectors, err := retrying.Embed(ctx, texts)
+		if progressErr != nil {
+			return fmt.Errorf("Index: write embedding progress: %w", progressErr)
 		}
 		if err != nil {
 			return fmt.Errorf("Index: embed chunk batch %d: %w", batch, err)
