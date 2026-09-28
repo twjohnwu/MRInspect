@@ -1,3 +1,4 @@
 4811d71b07e634e0bbcca387557def0ba82a32b0d8b23ff9cd9c3db43aa54275  ../../internal/retrievaleval/golden_test.go
-bd342f89748d338c7a35f06be96830cd4839a4b2ebb2097a29f835d5f715fd27  ../../internal/retrievaleval/run_test.go
+f3e0080448a307f45cd9bc3740770c89edd123833d5f6cecb145d12612c55b21  ../../internal/retrievaleval/run_test.go
 c936a472c19a4f1af808c005fb10d63bd3c0d1d08961052e17e724010a16aee3  ../../internal/retrievaleval/corpus_test.go
+662349e34b308ab59390177257a78afa48622355241b4c0bec537da899ef496f  ../../internal/rag/embed/retry_test.go
