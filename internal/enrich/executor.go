@@ -2,6 +2,7 @@ package enrich
 
 import (
 	"context"
+	"sort"
 	"sync/atomic"
 
 	"mrinspect/internal/ai"
@@ -95,3 +96,24 @@ func (e *Executor) reserveCall() bool {
 // Executed returns the number of tool calls this Executor has run so far
 // against its total budget.
 func (e *Executor) Executed() int64 { return atomic.LoadInt64(&e.executed) }
+
+// MaxCalls returns this Executor's configured per-round tool-call limit
+// (Limits.MaxCalls), for callers (the round loop) that must bound turn 1's
+// tool calls without reaching into the Executor's private Limits.
+func (e *Executor) MaxCalls() int { return e.lim.MaxCalls }
+
+// Specs returns the ai.ToolSpec definitions for every tool in this
+// Executor's registry, in stable (name-sorted) order, for passing to a
+// TurnProvider's tool-definition request.
+func (e *Executor) Specs() []ai.ToolSpec {
+	names := make([]string, 0, len(e.registry))
+	for name := range e.registry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	specs := make([]ai.ToolSpec, 0, len(names))
+	for _, name := range names {
+		specs = append(specs, e.registry[name].Spec())
+	}
+	return specs
+}

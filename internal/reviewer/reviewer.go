@@ -10,6 +10,7 @@ import (
 	"mrinspect/internal/config"
 	"mrinspect/internal/diff"
 	"mrinspect/internal/diffbudget"
+	"mrinspect/internal/enrich"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/interfaces"
 	"mrinspect/internal/lane"
@@ -67,6 +68,7 @@ type footerAggregation struct {
 	laneEvictions      []string
 	droppedFiles       []string
 	degradedToSingle   bool
+	enrichmentDegraded []string
 }
 
 type namedLaneDegradation struct {
@@ -102,6 +104,20 @@ type MRInspectReviewer struct {
 		State      ReviewRAGState
 	}
 	multi MultiLaneReviewPath
+
+	// enrich is the optional tool-calling executor for the enrichment round
+	// (REQ-04). A nil executor preserves the default review behavior even
+	// when Enrichment.Enabled is set.
+	enrich *enrich.Executor
+
+	// enrichDegraded carries the deduped enrichment degradation codes from
+	// the most recent generateReview call's successful attempt, so
+	// generateReviewForExplicitModeWithStatus can fold them into that
+	// call's footerAggregation without changing generateReview's return
+	// signature (reviewer_test.go binds it to exactly two return values).
+	// generateReview resets it on every call; callers must read it
+	// immediately after generateReview returns.
+	enrichDegraded []string
 }
 
 func New(
@@ -142,6 +158,15 @@ func (r *MRInspectReviewer) SetRAGReviewPath(path RAGReviewPath) {
 func (r *MRInspectReviewer) SetMultiLaneReviewPath(path MultiLaneReviewPath) {
 	if r != nil {
 		r.multi = path
+	}
+}
+
+// SetEnrichment installs the tool-calling executor used by the enrichment
+// round (REQ-04). A nil executor disables enrichment even when
+// Enrichment.Enabled is set, preserving the default review behavior.
+func (r *MRInspectReviewer) SetEnrichment(exec *enrich.Executor) {
+	if r != nil {
+		r.enrich = exec
 	}
 }
 
@@ -231,15 +256,16 @@ func (r *MRInspectReviewer) generateReviewForExplicitModeWithStatus(ctx context.
 	switch mode {
 	case EvalModeSingle:
 		content, err := r.generateReview(ctx, codeDiff, mr)
-		return content, footerAggregation{}, generationStatus{}, err
+		return content, footerAggregation{enrichmentDegraded: r.enrichDegraded}, generationStatus{}, err
 	case EvalModeReflect:
 		content, err := r.generateReview(ctx, codeDiff, mr)
+		footer := footerAggregation{enrichmentDegraded: r.enrichDegraded}
 		reflectApplied := false
 		reflectChanged := false
 		if err == nil {
 			content, reflectApplied, reflectChanged = r.selfReflectWithStatus(ctx, content)
 		}
-		return content, footerAggregation{}, generationStatus{
+		return content, footer, generationStatus{
 			reflectApplied: reflectApplied,
 			reflectChanged: reflectChanged,
 		}, err
@@ -366,6 +392,7 @@ func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change)
 func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string, mr gitlab.MergeRequest) (string, error) {
 	start := time.Now()
 	r.retrieveReviewRAG(ctx, codeDiff)
+	r.enrichDegraded = nil
 
 	var reviewPrompt string
 	loadedProject, projectErr := r.loadServiceProject()
@@ -383,6 +410,16 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 	}
 	r.logSinglePromptBreakdown(reviewPrompt, codeDiff)
 
+	enrichmentActive := r.cfg.Enrichment.Enabled && r.enrich != nil
+	var turnProvider ai.TurnProvider
+	if enrichmentActive {
+		var ok bool
+		turnProvider, ok = r.ai.(ai.TurnProvider)
+		if !ok {
+			return "", fmt.Errorf("enrichment: provider does not support tool calls")
+		}
+	}
+
 	var reviewContent string
 	var lastErr error
 	dumpsEnabled := r.cfg.ReviewDumpEnabled
@@ -392,7 +429,17 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 			r.log.Info("retrying AI call", "attempt", attempt, "reason", lastErr.Error())
 		}
 
-		rawResponse, err := r.callAI(ctx, reviewPrompt)
+		var rawResponse string
+		var err error
+		var degraded []string
+		if enrichmentActive {
+			var round enrich.RoundResult
+			round, err = enrich.RunRound(ctx, turnProvider, reviewPrompt, r.enrich, r.aiOptions())
+			rawResponse = round.Text
+			degraded = round.Degraded
+		} else {
+			rawResponse, err = r.callAI(ctx, reviewPrompt)
+		}
 		if err != nil {
 			lastErr = err
 			continue
@@ -406,6 +453,7 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 		}
 
 		reviewContent = cleaned
+		r.enrichDegraded = degraded
 		break
 	}
 
@@ -422,11 +470,17 @@ func (r *MRInspectReviewer) generateReview(ctx context.Context, codeDiff string,
 }
 
 func (r *MRInspectReviewer) callAI(ctx context.Context, reviewPrompt string) (string, error) {
-	opts := ai.GenerateOptions{
+	return r.ai.Generate(ctx, reviewPrompt, r.aiOptions())
+}
+
+// aiOptions builds the GenerateOptions shared by callAI and the enrichment
+// round loop (enrich.RunRound), so both paths call the provider with the
+// same model/token configuration.
+func (r *MRInspectReviewer) aiOptions() ai.GenerateOptions {
+	return ai.GenerateOptions{
 		Model:     r.cfg.Providers[r.cfg.AIProvider].Model,
 		MaxTokens: r.cfg.Providers[r.cfg.AIProvider].MaxTokens,
 	}
-	return r.ai.Generate(ctx, reviewPrompt, opts)
 }
 
 func (r *MRInspectReviewer) selfReflect(ctx context.Context, review string) string {

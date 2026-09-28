@@ -58,11 +58,11 @@ func (r *MRInspectReviewer) ragFooterWithAggregation(aggregation footerAggregati
 
 func (r *MRInspectReviewer) ragProvenanceFooter(aggregation footerAggregation) string {
 	state := r.rag.State
-	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 && aggregation.additionalDegraded == 0 {
+	if !state.StorePresent && len(state.Degraded) == 0 && len(state.Composition.Evicted) == 0 && len(state.Composition.Degraded) == 0 && aggregation.additionalDegraded == 0 && len(aggregation.enrichmentDegraded) == 0 {
 		return ""
 	}
 
-	degradedCount := len(state.Degraded) + len(state.Composition.Degraded) + aggregation.additionalDegraded
+	degradedCount := len(state.Degraded) + len(state.Composition.Degraded) + aggregation.additionalDegraded + len(aggregation.enrichmentDegraded)
 	parts := []string{fmt.Sprintf("Degraded entries: %d", degradedCount), fmt.Sprintf("skipped files: %d", state.SkippedFiles)}
 	if state.StorePresent {
 		parts = append([]string{
@@ -85,6 +85,9 @@ func (r *MRInspectReviewer) ragProvenanceFooter(aggregation footerAggregation) s
 	}
 	for _, degraded := range append(append([]string(nil), state.Degraded...), state.Composition.Degraded...) {
 		parts = append(parts, "degraded: "+strings.Join(strings.Fields(degraded), " "))
+	}
+	for _, degraded := range aggregation.enrichmentDegraded {
+		parts = append(parts, "degraded: "+degraded)
 	}
 	parts = append(parts, aggregation.laneEvictions...)
 	return "\n\n---\nRAG provenance: " + strings.Join(parts, "; ")

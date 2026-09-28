@@ -44,7 +44,7 @@ language: zh-TW
 - GREEN：remote 分支；`retryProvider.GenerateTurn`；transcript 欄位；`NewProvider` 接線；fake 擴充（fake 只在測試用，其 `GenerateTurn` 於此任務落地供 T5／T6 使用）
 - Verification command: `go test ./internal/ai/ -run 'TestGenerateTurn_OpenAIRemoteContinuation|TestGenerateTurn_TranscriptPerTurnNoContent|TestNewProvider_StoreFollowsRemoteState' -count=1 -v && go test ./internal/ai/ ./internal/testfake/ -count=1`
 
-## T5 `[ ]` `S-02,S-09,S-10` [MODIFY] `enrich.RunRound` 與 single 模式接線、footer
+## T5 `[x]` `S-02,S-09,S-10` [MODIFY] `enrich.RunRound` 與 single 模式接線、footer
 
 - 檔案：`internal/enrich/round.go`（NEW）、`internal/reviewer/reviewer.go`（struct :84-105、`SetEnrichment`、`generateReview` :389-410、:234 aggregation）、`internal/reviewer/footer.go`（:59-91）、`internal/reviewer/reviewer.go`（`footerAggregation` :65-70）、`internal/reviewer/enrichment_test.go`（NEW；用 `newReviewerFixture` :651 樣式＋`testfake.FakeProvider.TurnResponses`＋暫存 repo）
 - 依賴：T2、T4
