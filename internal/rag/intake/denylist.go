@@ -1,6 +1,9 @@
 package intake
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // secretDenylist lists the filename-shaped patterns that must never enter
 // the index, regardless of Include (REQ-03, REQ-11, S-12). This is the
@@ -18,6 +21,8 @@ var secretDenylist = []string{
 	".npmrc",
 	".netrc",
 	".git-credentials",
+	".pypirc",
+	"auth.json",
 	"kubeconfig",
 	"*.kubeconfig",
 	"kubeconfig.*",
@@ -31,9 +36,10 @@ var secretDenylist = []string{
 	"*.pem.backup",
 }
 
-// isDenylisted reports whether base (a file's name, with no directory
+// IsDenylisted reports whether base (a file's name, with no directory
 // component) matches one of secretDenylist's patterns.
-func isDenylisted(base string) bool {
+func IsDenylisted(base string) bool {
+	base = strings.ToLower(base)
 	for _, pattern := range secretDenylist {
 		if ok, _ := filepath.Match(pattern, base); ok {
 			return true
@@ -41,3 +47,6 @@ func isDenylisted(base string) bool {
 	}
 	return false
 }
+
+// isDenylisted preserves the package-private entry point used by older callers.
+func isDenylisted(base string) bool { return IsDenylisted(base) }

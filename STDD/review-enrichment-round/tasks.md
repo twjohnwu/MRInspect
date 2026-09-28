@@ -20,7 +20,7 @@ language: zh-TW
 - GREEN：`EnrichmentConfig` 型別、解析與檢查；canonical／`.env.example` 五行
 - Verification command: `go test ./internal/config/ -run 'TestEnrichmentConfig|TestEnvExample' -count=1 -v`
 
-## T2 `[ ]` `S-06,S-07,S-08` [NEW] `internal/enrich` 工具、路徑安全、執行器與總預算
+## T2 `[x]` `S-06,S-07,S-08` [NEW] `internal/enrich` 工具、路徑安全、執行器與總預算
 
 - 檔案：`internal/enrich/{tool,registry,search,readrange,paths,executor}.go`（NEW）、`internal/enrich/tools_test.go`（NEW）、`internal/rag/intake/denylist.go`（`isDenylisted` :36-43 匯出＋lower、清單 :13-32 加兩項）、`internal/rag/intake/walk.go`（:134 改名）、`internal/rag/intake/denylist_test.go`
 - 依賴：無（`Limits` 型別自持，不依賴 T1）

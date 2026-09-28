@@ -69,3 +69,21 @@ func TestDenylist_LegitimateDocsPass(t *testing.T) {
 		})
 	}
 }
+
+func TestDenylist_CaseInsensitiveAndAdditionalNames(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"ID_RSA",
+		".ENV",
+		".pypirc",
+		"auth.json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if !IsDenylisted(name) {
+				t.Errorf("IsDenylisted(%q) = false, want true", name)
+			}
+		})
+	}
+}

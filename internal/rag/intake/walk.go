@@ -131,7 +131,7 @@ func (w *walker) visit(path string, d fs.DirEntry, err error) error {
 		return nil // not selected by Include/Exclude — not an error
 	}
 
-	if isDenylisted(filepath.Base(path)) {
+	if IsDenylisted(filepath.Base(path)) {
 		w.skip(path, SkipReasonDenylist)
 		return nil
 	}
