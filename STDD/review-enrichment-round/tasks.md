@@ -6,7 +6,7 @@ language: zh-TW
 
 任務依 test-file 收斂。例外：`internal/ai/turn_test.go` 承 `S-03,S-05` 與 `S-04,S-12,S-13` 兩個任務——合併後要動 9 個檔（三 provider、retry、transcript、provider、turn、testfake、測試），超過單一 agent 約 5 檔範圍，且 remote／transcript 接線需在三家 turn 1／本地重送先綠後分開 commit。
 
-## T0 `[ ]` [INFRA] genai bump 至 v1.8.0
+## T0 `[x]` [INFRA] genai bump 至 v1.8.0
 
 - 原因：依賴版本工件，無新行為可單測；正確性由既有 Gemini 測試守門
 - 步驟：`go get google.golang.org/genai@v1.8.0 && go mod tidy`；`go doc google.golang.org/genai.Part | grep ThoughtSignature` 印出 `ThoughtSignature []byte`；`go build ./... && go test ./internal/ai/ -count=1`
