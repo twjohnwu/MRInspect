@@ -247,7 +247,7 @@ func scoringTargetsFor(golden Golden, fixture, lane, set string) scoringTargets 
 		return scoringTargets{
 			original:    targetsInSet(entry.Relevant, set),
 			paraphrase:  targetsInSet(entry.Paraphrase, set),
-			distractors: targetsInSet(entry.Distractors, set),
+			distractors: targetsInSet(distractorTargets(entry.Distractors), set),
 		}
 	}
 	return scoringTargets{}

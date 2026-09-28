@@ -1,6 +1,7 @@
 package retrievaleval
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -19,7 +20,14 @@ const (
 )
 
 var (
-	requiredLanes = []string{"spec-conformance", "standards"}
+	requiredLanes   = []string{"spec-conformance", "standards"}
+	validCategories = map[string]struct{}{
+		"scope":          {},
+		"version":        {},
+		"responsibility": {},
+		"lexical":        {},
+		"neighbor":       {},
+	}
 )
 
 type Target struct {
@@ -28,12 +36,17 @@ type Target struct {
 	Heading string `yaml:"heading"`
 }
 
+type Distractor struct {
+	Target   `yaml:",inline"`
+	Category string `yaml:"category"`
+}
+
 type Entry struct {
-	Fixture     string   `yaml:"fixture"`
-	Lane        string   `yaml:"lane"`
-	Relevant    []Target `yaml:"relevant"`
-	Paraphrase  []Target `yaml:"paraphrase"`
-	Distractors []Target `yaml:"distractors"`
+	Fixture     string       `yaml:"fixture"`
+	Lane        string       `yaml:"lane"`
+	Relevant    []Target     `yaml:"relevant"`
+	Paraphrase  []Target     `yaml:"paraphrase"`
+	Distractors []Distractor `yaml:"distractors"`
 }
 
 type Golden struct {
@@ -121,8 +134,13 @@ func LoadGolden(path string, fixtures []string) (Golden, error) {
 	}
 
 	var golden Golden
-	if err := yaml.Unmarshal(content, &golden); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&golden); err != nil {
 		return Golden{}, fmt.Errorf("load golden: parse YAML: %w", err)
+	}
+	if err := golden.validateDistractorCategories(); err != nil {
+		return Golden{}, err
 	}
 	if err := golden.validateCoverage(fixtures); err != nil {
 		return Golden{}, err
@@ -182,6 +200,33 @@ func (g Golden) ValidateAgainstStore(ctx context.Context, storePath string) erro
 	return fmt.Errorf("%s", message.String())
 }
 
+func (g Golden) CategoryCounts() map[string]int {
+	counts := make(map[string]int)
+	for _, entry := range g.Entries {
+		for _, d := range entry.Distractors {
+			counts[d.Category]++
+		}
+	}
+	return counts
+}
+
+func (g Golden) validateDistractorCategories() error {
+	for _, entry := range g.Entries {
+		for _, d := range entry.Distractors {
+			if _, ok := validCategories[d.Category]; !ok {
+				return fmt.Errorf(
+					"load golden: fixture %q lane %q distractor %s has invalid category %q",
+					entry.Fixture,
+					entry.Lane,
+					targetReference(d.Target),
+					d.Category,
+				)
+			}
+		}
+	}
+	return nil
+}
+
 func (g Golden) validateCoverage(fixtures []string) error {
 	type coverage struct {
 		lanes map[string]bool
@@ -236,11 +281,19 @@ type targetList struct {
 	targets []Target
 }
 
+func distractorTargets(distractors []Distractor) []Target {
+	targets := make([]Target, len(distractors))
+	for i, d := range distractors {
+		targets[i] = d.Target
+	}
+	return targets
+}
+
 func targetLists(entry Entry) []targetList {
 	return []targetList{
 		{name: "relevant", targets: entry.Relevant},
 		{name: "paraphrase", targets: entry.Paraphrase},
-		{name: "distractors", targets: entry.Distractors},
+		{name: "distractors", targets: distractorTargets(entry.Distractors)},
 	}
 }
 

@@ -1,0 +1,8 @@
+internal/retrievaleval/golden.go
+internal/retrievaleval/golden_test.go
+internal/retrievaleval/run.go
+internal/retrievaleval/corpus_test.go
+internal/retrievaleval/metrics.go
+eval/retrieval-golden.yaml
+STDD/retrieval-golden-scale/tasks.md
+internal/retrievaleval/run_test.go

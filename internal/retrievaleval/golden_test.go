@@ -304,8 +304,8 @@ func TestGolden_RequiresEveryTierPerTriple(t *testing.T) {
 				Paraphrase: []Target{
 					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Paraphrase"},
 				},
-				Distractors: []Target{
-					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"},
+				Distractors: []Distractor{
+					{Target: Target{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope"},
 				},
 			},
 			{
@@ -319,9 +319,9 @@ func TestGolden_RequiresEveryTierPerTriple(t *testing.T) {
 					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Paraphrase"},
 					{Set: "shared-extra", Path: "guide.md", Heading: "Guide > Paraphrase"},
 				},
-				Distractors: []Target{
-					{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"},
-					{Set: "shared-extra", Path: "guide.md", Heading: "Guide > Distractor"},
+				Distractors: []Distractor{
+					{Target: Target{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope"},
+					{Target: Target{Set: "shared-extra", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope"},
 				},
 			},
 		}}
@@ -350,8 +350,8 @@ func TestGolden_RequiresEveryTierPerTriple(t *testing.T) {
 		{
 			name: "distractor belongs to another lane",
 			mutate: func(golden *Golden) {
-				golden.Entries[0].Distractors = []Target{{
-					Set: "fried-chicken-docs", Path: "guide.md", Heading: "Guide > Distractor",
+				golden.Entries[0].Distractors = []Distractor{{
+					Target: Target{Set: "fried-chicken-docs", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope",
 				}}
 			},
 			want: []string{"load golden:", goldenFixture, "spec-conformance", "fried-chicken-docs"},
@@ -389,6 +389,112 @@ func TestGolden_RequiresEveryTierPerTriple(t *testing.T) {
 	})
 }
 
+// distractorCategoryGolden builds a raw golden YAML document (not via struct
+// marshaling, since Distractor.Category does not exist yet) with a valid
+// spec-conformance entry plus a standards entry whose relevant/paraphrase/
+// distractors bodies are supplied verbatim by the caller.
+func distractorCategoryGolden(relevantExtra, distractorBody string) string {
+	return fmt.Sprintf(`entries:
+  - fixture: margherita-pizza/01-a
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: guide.md
+        heading: "Guide > A"
+  - fixture: margherita-pizza/01-a
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: guide.md
+        heading: "Guide > A"%s
+    paraphrase:
+      - set: shared-standards
+        path: guide.md
+        heading: "Guide > Paraphrase"
+    distractors:
+      - set: shared-standards
+        path: guide.md
+        heading: "Guide > Distractor"%s
+`, relevantExtra, distractorBody)
+}
+
+// TestGolden_DistractorCategory verifies REQ-03 / S-05: distractors.category
+// is required and must exactly match one of scope/version/responsibility/
+// lexical/neighbor, and a category key on a relevant/paraphrase target (which
+// is not a Distractor) is rejected during decoding.
+func TestGolden_DistractorCategory(t *testing.T) {
+	const fixture = "margherita-pizza/01-a"
+	const lane = "standards"
+
+	t.Run("a: missing category", func(t *testing.T) {
+		content := distractorCategoryGolden("", "")
+		path := filepath.Join(t.TempDir(), "retrieval-golden.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile golden: %v", err)
+		}
+		_, err := LoadGolden(path, []string{fixture})
+		if err == nil {
+			t.Fatal("LoadGolden error = nil, want invalid-category error")
+		}
+		for _, want := range []string{"load golden:", fixture, lane, "invalid category"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("b: category fuzzy", func(t *testing.T) {
+		content := distractorCategoryGolden("", "\n        category: fuzzy")
+		path := filepath.Join(t.TempDir(), "retrieval-golden.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile golden: %v", err)
+		}
+		_, err := LoadGolden(path, []string{fixture})
+		if err == nil {
+			t.Fatal("LoadGolden error = nil, want invalid-category error")
+		}
+		for _, want := range []string{"load golden:", fixture, lane, "invalid category"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("c: category Scope wrong case", func(t *testing.T) {
+		content := distractorCategoryGolden("", "\n        category: Scope")
+		path := filepath.Join(t.TempDir(), "retrieval-golden.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile golden: %v", err)
+		}
+		_, err := LoadGolden(path, []string{fixture})
+		if err == nil {
+			t.Fatal("LoadGolden error = nil, want invalid-category error")
+		}
+		for _, want := range []string{"load golden:", fixture, lane, "invalid category"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("d: relevant target carries category", func(t *testing.T) {
+		content := distractorCategoryGolden("\n        category: scope", "\n        category: scope")
+		path := filepath.Join(t.TempDir(), "retrieval-golden.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile golden: %v", err)
+		}
+		_, err := LoadGolden(path, []string{fixture})
+		if err == nil {
+			t.Fatal("LoadGolden error = nil, want decode error")
+		}
+		for _, want := range []string{"load golden:", "category"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("LoadGolden error = %q, want it to contain %q", err, want)
+			}
+		}
+	})
+}
+
 func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
 	validEntry := func() Entry {
 		return Entry{
@@ -401,8 +507,8 @@ func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
 			Paraphrase: []Target{
 				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Paraphrase"},
 			},
-			Distractors: []Target{
-				{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"},
+			Distractors: []Distractor{
+				{Target: Target{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope"},
 			},
 		}
 	}
@@ -415,8 +521,8 @@ func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
 		Paraphrase: []Target{
 			{Set: "shared-standards", Path: "guide.md", Heading: "Guide > B"},
 		},
-		Distractors: []Target{
-			{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"},
+		Distractors: []Distractor{
+			{Target: Target{Set: "shared-standards", Path: "guide.md", Heading: "Guide > Distractor"}, Category: "scope"},
 		},
 	}
 	triples := []Triple{
@@ -440,7 +546,7 @@ func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
 		if err == nil {
 			t.Fatal("LoadGolden + ValidateAgainstPlan error = nil, want duplicate-target error")
 		}
-		for _, want := range []string{"load golden:", targetReference(duplicate)} {
+		for _, want := range []string{"load golden:", targetReference(duplicate.Target)} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("LoadGolden + ValidateAgainstPlan error = %q, want it to contain %q", err, want)
 			}
@@ -450,7 +556,7 @@ func TestGolden_RejectsDuplicatesOverlapAndMissingTargets(t *testing.T) {
 	t.Run("overlap between relevant and distractors", func(t *testing.T) {
 		entry := validEntry()
 		overlap := entry.Relevant[0]
-		entry.Distractors = []Target{overlap}
+		entry.Distractors = []Distractor{{Target: overlap, Category: "scope"}}
 		err := loadAndValidate(t, Golden{Entries: []Entry{entry, standardsEntry}})
 		if err == nil {
 			t.Fatal("LoadGolden + ValidateAgainstPlan error = nil, want overlapping-target error")

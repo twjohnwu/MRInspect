@@ -149,8 +149,8 @@ Delivery checklist records searchable vocabulary.
 				Paraphrase: []Target{
 					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Sauce Herb Guidance"},
 				},
-				Distractors: []Target{
-					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Crust Timing Note"},
+				Distractors: []Distractor{
+					{Target: Target{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Crust Timing Note"}, Category: "scope"},
 				},
 			},
 			Entry{
@@ -162,8 +162,8 @@ Delivery checklist records searchable vocabulary.
 				Paraphrase: []Target{
 					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Inspection Guardrails"},
 				},
-				Distractors: []Target{
-					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Delivery Checklist"},
+				Distractors: []Distractor{
+					{Target: Target{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Delivery Checklist"}, Category: "scope"},
 				},
 			},
 		)

@@ -16,6 +16,7 @@ entries:
       - set: margherita-pizza-docs
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Review marker placard retirement
+        category: scope
   - fixture: 01-echo-cut-earliest-marker.diff
     lane: standards
     relevant:
@@ -30,6 +31,7 @@ entries:
       - set: shared-standards
         path: archive-notices.md
         heading: Shared Archive Notices > Review marker label sunset
+        category: version
 
   - fixture: 02-logger-metrics-race.diff
     lane: spec-conformance
@@ -51,6 +53,7 @@ entries:
       - set: margherita-pizza-docs
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Logger metrics race billing archive
+        category: scope
   - fixture: 02-logger-metrics-race.diff
     lane: standards
     relevant:
@@ -65,6 +68,7 @@ entries:
       - set: shared-standards
         path: archive-notices.md
         heading: Shared Archive Notices > Logger metrics race migration ledger
+        category: version
 
   - fixture: 03-lane-overlays-config.diff
     lane: spec-conformance
@@ -83,6 +87,7 @@ entries:
       - set: margherita-pizza-docs
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Lane overlay config menu retirement
+        category: scope
   - fixture: 03-lane-overlays-config.diff
     lane: standards
     relevant:
@@ -97,6 +102,7 @@ entries:
       - set: shared-standards
         path: archive-notices.md
         heading: Shared Archive Notices > Lane overlay config invoice migration
+        category: version
 
   - fixture: 04-lane-topk-default.diff
     lane: spec-conformance
@@ -115,6 +121,7 @@ entries:
       - set: margherita-pizza-docs
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > TopK default retriever coupon phaseout
+        category: scope
   - fixture: 04-lane-topk-default.diff
     lane: standards
     relevant:
@@ -129,3 +136,4 @@ entries:
       - set: shared-standards
         path: archive-notices.md
         heading: Shared Archive Notices > TopK default lane billing conversion
+        category: version

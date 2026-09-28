@@ -15,7 +15,7 @@ language: zh-TW
 - 步驟：改句 → `tail -n +8 spec.md | shasum -a 256` → 寫回 `approved_fingerprint`（`approved_date` 不變）→ eagle 讀回
 - Verification command: `test "$(tail -n +8 STDD/retrieval-golden-scale/spec.md | shasum -a 256 | cut -d' ' -f1)" = "$(sed -n 's/^approved_fingerprint: //p' STDD/retrieval-golden-scale/spec.md)" && echo fp-ok`
 
-## T1 `[wip]` `S-05` [MODIFY] golden `Distractor` 型別、`KnownFields`、category 驗證
+## T1 `[x]` `S-05` [MODIFY] golden `Distractor` 型別、`KnownFields`、category 驗證
 
 - 檔案：`internal/retrievaleval/golden.go`（`Entry.Distractors` :31-37、`LoadGolden` :102-124、`ValidateAgainstPlan` :43）＋
   `internal/retrievaleval/golden_test.go`；計分呼叫端 `run.go`／`corpus_test.go` 改傳 `d.Target`
