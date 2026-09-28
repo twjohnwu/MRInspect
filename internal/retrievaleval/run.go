@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -231,7 +232,9 @@ func Run(ctx context.Context, opts Options) error {
 			Intent: triple.LaneID,
 			TopK:   triple.K,
 		}
+		offStarted := time.Now()
 		offResult, err := off.Retrieve(ctx, query)
+		offMs := time.Since(offStarted).Milliseconds()
 		if err != nil {
 			return errors.New("retrieval OFF query failed")
 		}
@@ -247,7 +250,9 @@ func Run(ctx context.Context, opts Options) error {
 		if len(poolResult.Degraded) != 0 {
 			return errors.New("retrieval shuffle pool store degraded")
 		}
+		onStarted := time.Now()
 		onResult, err := on.Retrieve(ctx, query)
+		onMs := time.Since(onStarted).Milliseconds()
 		if err != nil {
 			return errors.New("retrieval ON query failed")
 		}
@@ -255,17 +260,28 @@ func Run(ctx context.Context, opts Options) error {
 		targets := scoringTargetsFor(golden, triple.Fixture, triple.LaneID, triple.Set.Name)
 		offScores := scoreRetrievedArm(offResult.Chunks, targets, triple.K)
 		shufScores := scoreShuffleArm(poolResult.Chunks, targets, triple.K)
+		system, bareFixture, found := strings.Cut(triple.Fixture, "/")
+		if !found {
+			system = ""
+			bareFixture = triple.Fixture
+		}
 		row := Row{
-			Fixture: triple.Fixture,
-			Lane:    triple.LaneID,
-			Set:     triple.Set.Name,
-			K:       triple.K,
+			System:     system,
+			Fixture:    bareFixture,
+			Lane:       triple.LaneID,
+			Set:        triple.Set.Name,
+			K:          triple.K,
+			RecallByK:  make(map[int]RecallByK),
+			Categories: make(map[string]Triplet),
+			OffMs:      offMs,
+			OnMs:       onMs,
 		}
 		for index := range row.Metrics {
 			integer := index == metricDistractors
 			row.Metrics[index].Off = Cell{Value: offScores[index], Integer: integer}
 			row.Metrics[index].Shuf = Cell{Value: shufScores[index]}
 		}
+		var degradation string
 		if len(onResult.Degraded) != 0 {
 			code, ok := parseRerankDegradation(onResult.Degraded)
 			if !ok {
@@ -274,16 +290,70 @@ func Run(ctx context.Context, opts Options) error {
 			for index := range row.Metrics {
 				row.Metrics[index].On = Cell{Degraded: code, Integer: index == metricDistractors}
 			}
+			degradation = code
 		} else {
 			onScores := scoreRetrievedArm(onResult.Chunks, targets, triple.K)
 			for index := range row.Metrics {
 				row.Metrics[index].On = Cell{Value: onScores[index], Integer: index == metricDistractors}
 			}
 		}
+
+		for _, k := range []int{1, 3, triple.K} {
+			origOff, _ := Score(offResult.Chunks, targets.original, k)
+			origShuf, _ := ShuffleScore(poolResult.Chunks, targets.original, k, DefaultShuffleSeeds)
+			paraOff, _ := Score(offResult.Chunks, targets.paraphrase, k)
+			paraShuf, _ := ShuffleScore(poolResult.Chunks, targets.paraphrase, k, DefaultShuffleSeeds)
+			row.RecallByK[k] = RecallByK{
+				Orig: Triplet{
+					Off:  Cell{Value: origOff},
+					Shuf: Cell{Value: origShuf},
+					On:   onCell(degradation, false, func() float64 { v, _ := Score(onResult.Chunks, targets.original, k); return v }),
+				},
+				Para: Triplet{
+					Off:  Cell{Value: paraOff},
+					Shuf: Cell{Value: paraShuf},
+					On:   onCell(degradation, false, func() float64 { v, _ := Score(onResult.Chunks, targets.paraphrase, k); return v }),
+				},
+			}
+		}
+
+		for category, categoryTargets := range targets.categories {
+			row.Categories[category] = Triplet{
+				Off:  Cell{Value: float64(Distractors(offResult.Chunks, categoryTargets, triple.K)), Integer: true},
+				Shuf: Cell{Value: ShuffleDistractors(poolResult.Chunks, categoryTargets, triple.K, DefaultShuffleSeeds)},
+				On:   onCell(degradation, true, func() float64 { return float64(Distractors(onResult.Chunks, categoryTargets, triple.K)) }),
+			}
+		}
 		rows = append(rows, row)
 	}
 
-	if err := writeReport(opts.ReportPath, header, rows); err != nil {
+	var offTotal int64
+	var onTotal int64
+	onCount := 0
+	for _, row := range rows {
+		offTotal += row.OffMs
+		if row.Metrics[metricOrigRecall].On.Degraded == "" {
+			onTotal += row.OnMs
+			onCount++
+		}
+	}
+	offMean := int64(0)
+	if len(rows) != 0 {
+		offMean = int64(math.Round(float64(offTotal) / float64(len(rows))))
+	}
+	if onCount == 0 {
+		header.RetrieveMs = fmt.Sprintf("off_mean=%d on_mean=- (n=0)", offMean)
+	} else {
+		onMean := int64(math.Round(float64(onTotal) / float64(onCount)))
+		header.RetrieveMs = fmt.Sprintf("off_mean=%d on_mean=%d (n=%d)", offMean, onMean, onCount)
+	}
+	topK := 0
+	for _, triple := range plan {
+		if triple.K > topK {
+			topK = triple.K
+		}
+	}
+	if err := writeReport(opts.ReportPath, header, rows, topK, golden.CategoryCounts()); err != nil {
 		return errors.New("write retrieval report failed")
 	}
 	return nil
@@ -316,6 +386,7 @@ type scoringTargets struct {
 	original    []Target
 	paraphrase  []Target
 	distractors []Target
+	categories  map[string][]Target
 }
 
 func scoringTargetsFor(golden Golden, fixture, lane, set string) scoringTargets {
@@ -323,10 +394,20 @@ func scoringTargetsFor(golden Golden, fixture, lane, set string) scoringTargets 
 		if entry.Fixture != fixture || entry.Lane != lane {
 			continue
 		}
+		categories := make(map[string][]Target)
+		for _, distractor := range entry.Distractors {
+			if _, exists := categories[distractor.Category]; !exists {
+				categories[distractor.Category] = nil
+			}
+			if distractor.Set == set {
+				categories[distractor.Category] = append(categories[distractor.Category], distractor.Target)
+			}
+		}
 		return scoringTargets{
 			original:    targetsInSet(entry.Relevant, set),
 			paraphrase:  targetsInSet(entry.Paraphrase, set),
 			distractors: targetsInSet(distractorTargets(entry.Distractors), set),
+			categories:  categories,
 		}
 	}
 	return scoringTargets{}
@@ -360,6 +441,20 @@ func scoreShuffleArm(pool []rag.Chunk, targets scoringTargets, k int) armScores 
 	return scores
 }
 
+// onCell renders an ON-arm cell that degrades uniformly with the row's ON
+// arm (a rerank failure, an embed-call failure, missing vectors): if
+// degradation is non-empty, compute is never called and the cell just
+// carries the same degradation code as the row's main On cells; otherwise
+// compute produces the cell's value. Shared by the main table, "## Mean by
+// k", and "## Distractors by category" On cells, which all follow this same
+// degrade-or-compute shape.
+func onCell(degradation string, integer bool, compute func() float64) Cell {
+	if degradation != "" {
+		return Cell{Degraded: degradation, Integer: integer}
+	}
+	return Cell{Value: compute(), Integer: integer}
+}
+
 func parseRerankDegradation(reasons []string) (string, bool) {
 	const prefix = "rerank degraded: "
 	var code string
@@ -381,7 +476,7 @@ func parseRerankDegradation(reasons []string) (string, bool) {
 	return code, code != ""
 }
 
-func writeReport(path string, header Header, rows []Row) (err error) {
+func writeReport(path string, header Header, rows []Row, topK int, categoryCounts map[string]int) (err error) {
 	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
@@ -393,7 +488,7 @@ func writeReport(path string, header Header, rows []Row) (err error) {
 		}
 	}()
 
-	if err = Render(temporary, header, rows); err != nil {
+	if err = Render(temporary, header, rows, topK, categoryCounts); err != nil {
 		_ = temporary.Close()
 		return err
 	}

@@ -49,7 +49,7 @@ language: zh-TW
   `TestRun_EmbedsOncePerRerankedTriple` 等既有測試改接新目錄結構後全綠
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestRun_LoadsFixturesPerSystemDir|TestRun_' -count=1`
 
-## T4 `[ ]` `S-06,S-07,S-08` [MODIFY] system 欄、`retrieve_ms`、Mean by k、Distractors by category
+## T4 `[x]` `S-06,S-07,S-08` [MODIFY] system 欄、`retrieve_ms`、Mean by k、Distractors by category
 
 - 檔案：`internal/retrievaleval/report.go`（`Header` :48-54、`Row` :40-46、標頭 :68、`renderCell` :140-147、新增兩個 render）、
   `run.go`（per-triple 迴圈 :148-205 計時與 k∈{1,3,K}、category 命中）、`run_test.go`
