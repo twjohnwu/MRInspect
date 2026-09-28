@@ -67,6 +67,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string, opts Gener
 		"model":             model,
 		"input":             prompt,
 		"max_output_tokens": maxTokens,
+		"store":             false,
 	}
 
 	text, status, durationMs, usage, err := p.doRequest(ctx, reqBody)
