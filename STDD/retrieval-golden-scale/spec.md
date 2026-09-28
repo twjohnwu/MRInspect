@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-09-07
-approved_fingerprint: 0fadfe64b5ad66154a701011b79291fe63ab9e2339272cbfd89e657df5cb9a90
+approved_fingerprint: 4a603eaa636e07da12e6dc7df295b5eca7ea30d7de721fd5714402cbb5ebbb9e
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -47,8 +47,8 @@ language: zh-TW
   `<system>/<檔名>`；`LoadGolden` 仍只呼叫一次，涵蓋全部 system。
 - **每 system 建計畫**：對每個 system 各呼叫 `BuildPlan(repoRoot, system, fixtures)`（`plan.go:24`）；lane 解析沿既有
   overlay 規則。`Options.System` 移除；`main.go:95` 的 `ragcmd.SystemDirectory(cfg)` 不再用於 `-retrieval` 分支
-  （index 分支不變）。新鮮度檢查 `resources.Load(opts.RepoRoot, systems[0])`——loader 無 per-system overlay
-  （`internal/rag/resources/loader.go:44-50`），結果與 system 無關。
+  （index 分支不變）。新鮮度檢查 `resources.Load(opts.RepoRoot, systems[0])`——loader 支援 per-system overlay
+  （`internal/rag/resources/loader.go:44-50` 讀 `projects/<system>/resources.yaml`），今日 repo 無任何 overlay 檔，結果與 system 無關；此不變量由 S-03 守門。
 - **預檢先於任何檢索**：全部 system 的 fixtures 載入、`BuildPlan`、`ValidateAgainstPlan`、store 新鮮度與
   `ValidateAgainstStore` 全部通過後，才開始第一個 `Retrieve`；任一失敗 → 零次檢索、零次 embedding、不寫報告。
 - store 仍單一份、涵蓋全部 resource set；header 五欄不變。
@@ -92,7 +92,7 @@ language: zh-TW
 - WHEN 測試載入並統計
 - THEN `margherita-pizza` 14 個 fixture、`fried-chicken` 10 個；golden 條目 48；每個 fixture id 兩個 lane 都有條目；
   五類 category 各 ≥6 個干擾目標；`eval/fixtures/*.diff` 每檔在 `retrieval-fixtures/margherita-pizza/` 有同名且
-  位元組相同的複本；全部三元組 `K` 相同。違反逐項列出
+  位元組相同的複本；全部三元組 `K` 相同；`projects/*/resources.yaml` 不存在（新鮮度不變量）。違反逐項列出
 - Test mapping: `internal/retrievaleval/corpus_test.go` `TestCorpus_GoldenScale`
 - Verification command: `go test ./internal/retrievaleval/ -run TestCorpus_GoldenScale -count=1 -v`
 
@@ -179,7 +179,7 @@ para_mrr_on 0.22，k=1／3 有資訊，故以聚合表重審。
 
 ## REQ-05 eval 端 embedding 429 重試
 
-- harness 把 `Options.Embedder` 包進 eval 專用 decorator：`Embed` 遇 `embed.IsRateLimited` 錯誤最多重試 3 次，
+- harness 把 `Options.Embedder` 包進 `embed.WithRateLimitRetry` decorator（eval 與 index 兩個批次呼叫方共用）：`Embed` 遇 `embed.IsRateLimited` 錯誤最多重試 3 次，
   等待 20／40／60 秒，每次等待前經 `Options.Progress` 印一行；非 429 錯誤立即回傳。等待函式可注入（測試傳零等待）。
   生產查詢路徑（`retriever.go:210`）不變——重試屬批次呼叫方（decisions_log #7）。
 
@@ -259,6 +259,6 @@ para_mrr_on 0.22，k=1／3 有資訊，故以聚合表重審。
 - [ ] 24 diff、48 條目、14/10 分佈、五類各 ≥6、4 複本位元組相同、K 唯一、`_shared` 擴寫、兩系統名次守門（REQ-02）
 - [ ] `Distractor` 型別、`KnownFields`、精確 enum、錯誤前綴（REQ-03）
 - [ ] 主表 system 欄、header `retrieve_ms` 行、Mean by k 六格、Distractors by category、零額外 Retrieve、`math.Round`、轉義、措辭（REQ-04）
-- [ ] eval 端 429 重試 3 次、可注入等待、生產路徑不變（REQ-05）
+- [ ] `embed.WithRateLimitRetry` 3 次、可注入等待、index 共用、生產查詢路徑不變（REQ-05）
 - [ ] 可引用門檻兩條只在 spec 與 decisions_log；報告只印數字（REQ-06）
 - [ ] Supersedes 兩條明文；凍結介面零變更；`eval/fixtures/` 原檔不動；錯誤訊息不含路徑

@@ -8,14 +8,14 @@ language: zh-TW
 （system 載入／報表／embed 重試），合併會超過單一 agent 約 5 檔的範圍，且需分開 commit 以便回退（module-convergence
 例外，理由如上）。內容撰寫（T6）排在 harness 之後，名次守門要用 T1 的 category 載入與 T3 的 system 目錄。
 
-## T0 `[ ]` [INFRA] spec REQ-05 措辭修訂與重算 fingerprint
+## T0 `[x]` [INFRA] spec REQ-05 措辭修訂與重算 fingerprint
 
 - 原因：文件工件，無可單測行為；修訂 (a) 由使用者於 stdd-plan 模式建議選定（Decorator 放 `embed`、index 共用），(b)(c) 由 plan 階段 eagle 讀回指出（原句「loader 無 per-system overlay」與 `loader.go:44-50` 相反）
 - 檔案：`STDD/retrieval-golden-scale/spec.md`：(a) REQ-05 首句、Requirements Checklist 第 5 項；(b) REQ-01 新鮮度句；(c) S-03 THEN 加「`projects/*/resources.yaml` 不存在」。逐字措辭見 design-be 第 7 條
 - 步驟：改句 → `tail -n +8 spec.md | shasum -a 256` → 寫回 `approved_fingerprint`（`approved_date` 不變）→ eagle 讀回
 - Verification command: `test "$(tail -n +8 STDD/retrieval-golden-scale/spec.md | shasum -a 256 | cut -d' ' -f1)" = "$(sed -n 's/^approved_fingerprint: //p' STDD/retrieval-golden-scale/spec.md)" && echo fp-ok`
 
-## T1 `[ ]` `S-05` [MODIFY] golden `Distractor` 型別、`KnownFields`、category 驗證
+## T1 `[wip]` `S-05` [MODIFY] golden `Distractor` 型別、`KnownFields`、category 驗證
 
 - 檔案：`internal/retrievaleval/golden.go`（`Entry.Distractors` :31-37、`LoadGolden` :102-124、`ValidateAgainstPlan` :43）＋
   `internal/retrievaleval/golden_test.go`；計分呼叫端 `run.go`／`corpus_test.go` 改傳 `d.Target`
