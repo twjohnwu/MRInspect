@@ -28,7 +28,7 @@ language: zh-TW
 - GREEN：`Tool` 介面、`Registry.Default()`、`Executor.New/Execute/Executed`、`paths.resolve`（`EvalSymlinks`、整段比對、目錄排除、`intake.IsDenylisted`、`credential`／`secret`）、`isBinary`、工作量常數、截斷、ctx timeout 每檔檢查；`intake` 既有三測試仍綠並加大小寫案例
 - Verification command: `go test ./internal/enrich/ ./internal/rag/intake/ -count=1 -v`
 
-## T3 `[ ]` `S-03,S-05` [MODIFY] 三家 `GenerateTurn`：工具定義、提示句、本地重送
+## T3 `[x]` `S-03,S-05` [MODIFY] 三家 `GenerateTurn`：工具定義、提示句、本地重送
 
 - 檔案：`internal/ai/turn.go`（NEW：型別、常數）、`internal/ai/openai.go`（`doRequest` :105、`openaiResponse` :93-103、新 `GenerateTurn`）、`internal/ai/anthropic.go`（新 `GenerateTurn`）、`internal/ai/gemini.go`（新 `GenerateTurn`）、`internal/ai/turn_test.go`（NEW）
 - 依賴：T0
