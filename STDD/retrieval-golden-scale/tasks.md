@@ -31,7 +31,7 @@ language: zh-TW
   刪內嵌迴圈、同迴圈內每批包一次 decorator，閉包供批次序號）；`internal/retrievaleval/run.go`（embedder 接線 :137-139）＋`run_test.go`
 - 依賴：T0、T3
 - RED：`run_test.go` `TestRun_RetriesRateLimitedEmbedding`（fixture `FailOn` 前兩次回 `&embed.StatusError{Code: 429}`；
-  `Options.RetryWait` 零等待並記錄；斷言 ON 不降級、呼叫 3 次、等待 `[20s,40s]`、Progress 兩行含 `rate limited`）；
+  `Options.RetryWait` 零等待並記錄；斷言 ON 不降級、呼叫 4 次、等待 `[20s,40s]`、Progress 兩行含 `rate limited`）；
   `retry_test.go` `TestWithRateLimitRetry_StopsAfterMaxRetries`（第四次仍 429 → 回原錯誤）
 - GREEN：decorator；indexer 改用（`embedRetryWait` 傳入 `Wait`、`OnRetry` 印既有字面）；`Options` 加 `RetryWait`
   （nil → `time.NewTimer` 實等）；既有 `TestIndex_RetriesRateLimitedBatch`、`TestIndex_GivesUpAfterThreeRateLimitRetries`
@@ -55,7 +55,7 @@ language: zh-TW
   `run.go`（per-triple 迴圈 :148-205 計時與 k∈{1,3,K}、category 命中）、`run_test.go`
 - 依賴：T3
 - RED：`TestRun_RendersSystemColumnAndRetrieveMs`（20 欄標頭字面、`system` 欄、set 含 `|` 轉義、fixture 第二次呼叫失敗
-  → 降級列五個 `_on` 格、header `retrieve_ms` 含 `(n=1)`、禁字掃描、各表列 `|` 數相等）；`TestRun_RendersMeanByK`
+  → 降級列五個 `_on` 格、header `retrieve_ms` 含 `(n=3)`、禁字掃描、各表列 `|` 數相等）；`TestRun_RendersMeanByK`
   （三列、`k=8` 列六格＝主表 mean、`TestRun_EmbedsOncePerRerankedTriple` 仍綠）；`TestRun_RendersDistractorsByCategory`
   （scope n=2 `1.00 (n=1)`、lexical n=1 `1.00 (n=1)`、其餘 `- (n=0)`）
 - GREEN：`Row` 新欄、`Header.RetrieveMs`、`math.Round`、`renderMeanByK`、`renderByCategory`；既有

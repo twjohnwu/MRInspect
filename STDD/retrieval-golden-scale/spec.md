@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-09-07
-approved_fingerprint: 4a603eaa636e07da12e6dc7df295b5eca7ea30d7de721fd5714402cbb5ebbb9e
+approved_fingerprint: aefe2edfe8c82c8f1f203a225f07433016063aace8c6258a327b34b6f27ab84e
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -150,18 +150,18 @@ para_mrr_on 0.22，k=1／3 有資訊，故以聚合表重審。
 
 ### S-06 主表 system 欄、header 耗時行、降級列、措辭
 
-- GIVEN 兩個 system 各一個三元組，embedder 為 `embed.NewFixture` 設定第二次呼叫失敗（ON 只有第二個三元組降級
+- GIVEN 兩個 system 各一個 fixture（每 fixture 兩個 lane → 各兩個三元組，共四個），embedder 為 `embed.NewFixture` 設定第二次呼叫失敗（ON 只有第二個三元組降級
   `rerank degraded: embed-call-failed`）；測試 `resources.yaml` 的 set 名含 `|`
 - WHEN `Run`
 - THEN 主表恰一張、標頭字面如 REQ-04（20 欄）；每列 `system` 欄為子目錄名，`set` 欄 `|` 已轉義；降級列五個 `_on`
-  格皆 `degraded: embed-call-failed`；header 含 `retrieve_ms: off_mean=` 與 `on_mean=` 且 `(n=1)`；全文無
+  格皆 `degraded: embed-call-failed`；header 含 `retrieve_ms: off_mean=` 與 `on_mean=` 且 `(n=3)`（四個三元組中一個降級）；全文無
   `better`／`worse`／`improve`／`good`／`bad`／`更好`／`更差`／`改善`；每張表各列 `|` 數相等
 - Test mapping: `internal/retrievaleval/run_test.go` `TestRun_RendersSystemColumnAndRetrieveMs`
 - Verification command: `go test ./internal/retrievaleval/ -run TestRun_RendersSystemColumnAndRetrieveMs -count=1 -v`
 
 ### S-07 Mean by k 不多呼叫檢索
 
-- GIVEN S-06 的兩個三元組、TopK=8，embedder 呼叫計數
+- GIVEN S-06 的四個三元組、TopK=8，embedder 呼叫計數
 - WHEN `Run`
 - THEN 報告含 `## Mean by k` 表三列 `k=1`／`k=3`／`k=8`，`k=8` 列六格與主表 mean 列對應格相等；ON 未降級三元組各
   恰一次 embedding 呼叫（既有 `TestRun_EmbedsOncePerRerankedTriple` 仍綠）
@@ -170,7 +170,7 @@ para_mrr_on 0.22，k=1／3 有資訊，故以聚合表重審。
 
 ### S-08 Distractors by category
 
-- GIVEN 單一三元組，golden 干擾目標：`scope` 兩個（OFF 命中一個）、`lexical` 一個（OFF 命中），其餘類別零個
+- GIVEN 單一 fixture（兩個三元組：`scope` 干擾目標宣告在 `spec-conformance` lane 的條目、`lexical` 在 `standards` lane 的條目），golden 干擾目標：`scope` 兩個（OFF 命中一個）、`lexical` 一個（OFF 命中），其餘類別零個
 - WHEN `Run`
 - THEN `## Distractors by category` 表五列固定順序；`scope` 列 `n`=2、`distractors_off` 為 `1.00 (n=1)`；`lexical`
   列 `n`=1、`distractors_off` 為 `1.00 (n=1)`；`version`／`responsibility`／`neighbor` 列三臂格皆 `- (n=0)`
@@ -186,8 +186,8 @@ para_mrr_on 0.22，k=1／3 有資訊，故以聚合表重審。
 ### S-09 429 重試
 
 - GIVEN embedder fixture 前兩次呼叫回 429 `StatusError`、第三次成功；等待函式為零等待並記錄呼叫
-- WHEN `Run` 一個三元組
-- THEN 該列 ON 不降級；embedder 呼叫 3 次；等待記錄為 `[20s, 40s]`；Progress 收到 2 行含 `rate limited`
+- WHEN `Run` 一個 fixture（兩個三元組）
+- THEN 該列 ON 不降級；embedder 呼叫 4 次（第一個三元組 429、429、成功；第二個三元組一次成功）；等待記錄為 `[20s, 40s]`；Progress 收到 2 行含 `rate limited`
 - Test mapping: `internal/retrievaleval/run_test.go` `TestRun_RetriesRateLimitedEmbedding`
 - Verification command: `go test ./internal/retrievaleval/ -run TestRun_RetriesRateLimitedEmbedding -count=1 -v`
 
