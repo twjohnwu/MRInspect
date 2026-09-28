@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,6 +65,9 @@ func loadSystems(fixturesDir, repoRoot string, log *logger.Logger) ([]systemFixt
 	systems := make([]systemFixtures, 0, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
 		if !isPlainSystemDir(filepath.Join(fixturesDir, name), name) {
 			return nil, fmt.Errorf(
 				"load retrieval fixtures: entry %q is not a plain directory with a valid system name",
@@ -234,7 +236,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		offStarted := time.Now()
 		offResult, err := off.Retrieve(ctx, query)
-		offMs := time.Since(offStarted).Milliseconds()
+		offDuration := time.Since(offStarted)
 		if err != nil {
 			return errors.New("retrieval OFF query failed")
 		}
@@ -252,7 +254,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		onStarted := time.Now()
 		onResult, err := on.Retrieve(ctx, query)
-		onMs := time.Since(onStarted).Milliseconds()
+		onDuration := time.Since(onStarted)
 		if err != nil {
 			return errors.New("retrieval ON query failed")
 		}
@@ -273,8 +275,8 @@ func Run(ctx context.Context, opts Options) error {
 			K:          triple.K,
 			RecallByK:  make(map[int]RecallByK),
 			Categories: make(map[string]Triplet),
-			OffMs:      offMs,
-			OnMs:       onMs,
+			OffMs:      offDuration,
+			OnMs:       onDuration,
 		}
 		for index := range row.Metrics {
 			integer := index == metricDistractors
@@ -327,26 +329,15 @@ func Run(ctx context.Context, opts Options) error {
 		rows = append(rows, row)
 	}
 
-	var offTotal int64
-	var onTotal int64
-	onCount := 0
+	offDurations := make([]time.Duration, 0, len(rows))
+	onDurations := make([]time.Duration, 0, len(rows))
 	for _, row := range rows {
-		offTotal += row.OffMs
+		offDurations = append(offDurations, row.OffMs)
 		if row.Metrics[metricOrigRecall].On.Degraded == "" {
-			onTotal += row.OnMs
-			onCount++
+			onDurations = append(onDurations, row.OnMs)
 		}
 	}
-	offMean := int64(0)
-	if len(rows) != 0 {
-		offMean = int64(math.Round(float64(offTotal) / float64(len(rows))))
-	}
-	if onCount == 0 {
-		header.RetrieveMs = fmt.Sprintf("off_mean=%d on_mean=- (n=0)", offMean)
-	} else {
-		onMean := int64(math.Round(float64(onTotal) / float64(onCount)))
-		header.RetrieveMs = fmt.Sprintf("off_mean=%d on_mean=%d (n=%d)", offMean, onMean, onCount)
-	}
+	header.RetrieveMs = retrieveMsLine(offDurations, onDurations)
 	topK := 0
 	for _, triple := range plan {
 		if triple.K > topK {
@@ -396,12 +387,10 @@ func scoringTargetsFor(golden Golden, fixture, lane, set string) scoringTargets 
 		}
 		categories := make(map[string][]Target)
 		for _, distractor := range entry.Distractors {
-			if _, exists := categories[distractor.Category]; !exists {
-				categories[distractor.Category] = nil
+			if distractor.Set != set {
+				continue
 			}
-			if distractor.Set == set {
-				categories[distractor.Category] = append(categories[distractor.Category], distractor.Target)
-			}
+			categories[distractor.Category] = append(categories[distractor.Category], distractor.Target)
 		}
 		return scoringTargets{
 			original:    targetsInSet(entry.Relevant, set),

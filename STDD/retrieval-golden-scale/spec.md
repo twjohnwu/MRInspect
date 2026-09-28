@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-09-07
-approved_fingerprint: aefe2edfe8c82c8f1f203a225f07433016063aace8c6258a327b34b6f27ab84e
+approved_fingerprint: 538519b9b0da80c8d0e728dfbcab0a92382c75aee34cc22111084d802fba7b39
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -38,7 +38,7 @@ language: zh-TW
   的 `-fixtures` 旗標在 `-retrieval` 模式下只有使用者明確給值才傳入（以 `flags.Visit` 判斷，沿 `main.go:80-88`
   `-report` 旗標的既有做法）；判斷邏輯抽成 `ragcmd.EvalFixturesDir(retrieval, explicit bool, value string) string`
   供單元測試。review eval 預設不變。
-- **子目錄即 system**：`Run` 以 `os.ReadDir` 列出 `FixturesDir` 直屬項目（排序）；每個項目須是**一般目錄**（`Lstat`
+- **子目錄即 system**：`Run` 以 `os.ReadDir` 列出 `FixturesDir` 直屬項目（排序）；名稱以 `.` 開頭的項目（如 `.DS_Store`）靜默略過；其餘每個項目須是**一般目錄**（`Lstat`
   非 symlink）且名稱符合 `^[a-z0-9][a-z0-9-]*$`，否則錯誤 `load retrieval fixtures: entry %q is not a plain
   directory with a valid system name`；`projects/<system>/` 須為目錄，否則 `load retrieval fixtures: system %q has
   no projects directory`；沒有任何合格子目錄 → `load retrieval fixtures: no system directories found`。錯誤訊息不含
@@ -55,7 +55,7 @@ language: zh-TW
 
 ### S-01 子目錄即 system；預檢失敗零檢索
 
-- GIVEN 暫存 `retrieval-fixtures/` 含 `alpha/01-a.diff`、`beta/01-b.diff`、一個 symlink `gamma -> alpha`、一個檔案
+- GIVEN 暫存 `retrieval-fixtures/` 含 `alpha/01-a.diff`、`beta/01-b.diff`、一個 symlink `gamma -> alpha`、一個檔案 `.DS_Store`（須被略過）、一個檔案
   `notes.txt`；`projects/alpha/` 存在、`projects/beta/` 不存在；embedder 為呼叫計數 fixture
 - WHEN 呼叫 `Run`
 - THEN 回傳錯誤含 `load retrieval fixtures:` 且含 `"beta" has no projects directory` 或 `"gamma" is not a plain directory`

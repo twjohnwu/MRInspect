@@ -55,11 +55,13 @@ type Row struct {
 	Metrics    [metricCount]Triplet
 	RecallByK  map[int]RecallByK
 	Categories map[string]Triplet
-	// OffMs and OnMs are the OFF/ON Retrieve durations for this triple, in
-	// milliseconds. Populated by run.go, rendered into the retrieve_ms
-	// header line (REQ-04); GREEN fills these in.
-	OffMs int64
-	OnMs  int64
+	// OffMs and OnMs are the OFF/ON Retrieve durations for this triple.
+	// Populated by run.go, aggregated by retrieveMsLine into the
+	// retrieve_ms header line (REQ-04); kept as time.Duration (not
+	// pre-rounded milliseconds) so the mean is computed before rounding,
+	// not after.
+	OffMs time.Duration
+	OnMs  time.Duration
 }
 
 type Header struct {
@@ -215,6 +217,33 @@ func meanOfCells(cells []Cell) string {
 		return "- (n=0)"
 	}
 	return fmt.Sprintf("%.2f (n=%d)", sum/float64(count), count)
+}
+
+// retrieveMsLine renders the "off_mean=<int> on_mean=<int> (n=<int>)"
+// retrieve_ms header line (REQ-04). off holds one sample per triple; on
+// holds one sample per non-degraded triple (degraded triples are excluded
+// by the caller before this is invoked, since a degraded ON call did not
+// complete a real ON retrieve). Each mean is computed over the raw
+// durations first and rounded once at the end — never per-sample — so
+// sub-millisecond samples don't get truncated away before averaging.
+func retrieveMsLine(off, on []time.Duration) string {
+	offMean := roundMeanMs(off)
+	if len(on) == 0 {
+		return fmt.Sprintf("off_mean=%d on_mean=- (n=0)", offMean)
+	}
+	onMean := roundMeanMs(on)
+	return fmt.Sprintf("off_mean=%d on_mean=%d (n=%d)", offMean, onMean, len(on))
+}
+
+func roundMeanMs(samples []time.Duration) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, sample := range samples {
+		sum += float64(sample) / float64(time.Millisecond)
+	}
+	return int64(math.Round(sum / float64(len(samples))))
 }
 
 func meanCell(rows []Row, metricIndex, armIndex int) string {

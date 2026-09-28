@@ -257,6 +257,7 @@ func TestRun_LoadsFixturesPerSystemDir(t *testing.T) {
 		if err := os.Symlink(filepath.Join(fixturesDir, "alpha"), filepath.Join(fixturesDir, "gamma")); err != nil {
 			t.Fatalf("Symlink gamma: %v", err)
 		}
+		writeHarnessFile(t, filepath.Join(fixturesDir, ".DS_Store"), "metadata\n")
 		writeHarnessFile(t, filepath.Join(fixturesDir, "notes.txt"), "not a system directory\n")
 
 		reportPath := filepath.Join(root, "retrieval-report.md")
@@ -319,6 +320,17 @@ func TestRun_LoadsFixturesPerSystemDir(t *testing.T) {
 		}
 		if _, statErr := os.Stat(reportPath); !errors.Is(statErr, os.ErrNotExist) {
 			t.Errorf("report exists after no-system-directories rejection; stat error = %v", statErr)
+		}
+	})
+
+	t.Run("dotfile entry is ignored", func(t *testing.T) {
+		harness := newRunHarness(t, []harnessFixture{
+			{name: "01-a.diff", terms: "tomato basil oven"},
+		}, true)
+		writeHarnessFile(t, filepath.Join(filepath.Dir(harness.fixturesDir), ".DS_Store"), "metadata\n")
+
+		if err := Run(context.Background(), harness.options(embed.NewFixture(4))); err != nil {
+			t.Fatalf("Run: %v", err)
 		}
 	})
 }
