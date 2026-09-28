@@ -36,3 +36,7 @@ internal/lane/enrichment_test.go
 cmd/mrinspect/main.go
 docs/us/configuration.md
 docs/tw/configuration.md
+internal/enrich/paths_test.go
+internal/enrich/readrange_test.go
+internal/reviewer/enrichment_footer_test.go
+internal/rag/intake/denylist_more_test.go

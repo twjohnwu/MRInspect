@@ -1,6 +1,10 @@
 192997f204285e126ddc97395ea16890a4123a3acaf8549a8b84fa6daa3e3559  ../../internal/config/enrichment_test.go
 cf9ecf6e30ad2ab754e17d4b944557feb7bc31f601804df9601ea88498b2adaf  ../../internal/enrich/tools_test.go
 d2eaa461cd2ca90f4b43c30ff453dbfe77a5fe5c88e4e15f63065640a475a1a9  ../../internal/rag/intake/denylist_test.go
-5271dc08176fce68da3c080fc1df23ce36426f3101059ed690da7be6f161f78d  ../../internal/ai/turn_test.go
+c05ccbf54af8a3fc8025e3df96559be44defef552b584b942cbea0186b86f815  ../../internal/ai/turn_test.go
 3cf726f795865ebacc8607294cc5ba7350f18cff303fb5a1b1dae617b5486a04  ../../internal/reviewer/enrichment_test.go
 fcdf173780e381234e9cb2b0255cba18cb0e8c05a969a4a9f06a2a60e20bc821  ../../internal/lane/enrichment_test.go
+d8b63944a1d82b0efdfeb421d3eaaa22932bc42b94c26c5d995c263cd24ce0c2  ../../internal/enrich/paths_test.go
+1374325ef2ba58e56081a860e39f3bf6a4586f5ba2c1730d2ba3bde3fe239f78  ../../internal/enrich/readrange_test.go
+2b2b76c6cb7fe788a843740a529da3ed160ad05c860d5de7d2266ae0e9b63466  ../../internal/reviewer/enrichment_footer_test.go
+8292f30a582d74c23d05da422301c0c7e860fcc3e529f375a70e56389096274d  ../../internal/rag/intake/denylist_more_test.go
