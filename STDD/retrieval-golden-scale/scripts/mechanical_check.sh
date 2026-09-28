@@ -13,8 +13,8 @@ ledger='scripts/test-fingerprints.sha256'
 allowlist='scripts/scope-allowlist.txt'
 spec_file='spec.md'
 design_file=''
-test_command='cd ../.. && go test ./internal/retrievaleval/ ./internal/rag/embed/ ./internal/rag/sqlite/ -count=1 -v'
-generated_expected='66'
+test_command='cd ../.. && go test ./internal/retrievaleval/ ./internal/rag/embed/ ./internal/rag/sqlite/ ./internal/ragcmd/ -count=1 -v'
+generated_expected='76'
 expected_passed=${1-$generated_expected}
 log_file=${MECH_LOG:-${TMPDIR:-/tmp}/stdd-mechanical-check.log}
 overall_status=0
