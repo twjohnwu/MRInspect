@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
 	"mrinspect/internal/diff"
+	"mrinspect/internal/enrich"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/evalrun"
 	"mrinspect/internal/gitlab"
@@ -207,6 +209,32 @@ func main() {
 		FullLoader:       productionRAG.FullLoader,
 		ModelLimits:      modelLimits,
 	})
+
+	if cfg.Enrichment.Enabled {
+		enrichRoot, err := filepath.Abs(repoRoot)
+		if err != nil {
+			log.Error("failed to resolve enrichment repo root", "error", err)
+			os.Exit(1)
+		}
+		enrichRoot, err = filepath.EvalSymlinks(enrichRoot)
+		if err != nil {
+			log.Error("failed to resolve enrichment repo root", "error", err)
+			os.Exit(1)
+		}
+		exec, err := enrich.New(enrichRoot, enrich.Limits{
+			MaxCalls:    cfg.Enrichment.MaxCalls,
+			ResultBytes: cfg.Enrichment.ResultBytes,
+			ToolTimeout: cfg.Enrichment.ToolTimeout,
+		})
+		if err != nil {
+			log.Error("failed to initialize enrichment executor", "error", err)
+			os.Exit(1)
+		}
+		r.SetEnrichment(exec)
+		if cfg.Enrichment.RemoteState == "enabled" {
+			log.Info("enrichment: remote state enabled; OpenAI retains stored responses per its data policy (documented 30 days)")
+		}
+	}
 
 	r.Run(ctx)
 }

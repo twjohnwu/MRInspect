@@ -60,7 +60,7 @@ language: zh-TW
 - GREEN：`FanoutInput.Enrichment`、`executeLaneWithOptions` 改走 `RunRound`、`LaneResult.Degraded` 併入；既有 `fanout_test.go`／`parse_test.go` 全綠
 - Verification command: `go test ./internal/lane/ -run TestEnrichment_PerLaneContinuationAndRetrievalInvariant -count=1 -v && go test ./internal/lane/ ./internal/reviewer/ -count=1`
 
-## T7 `[ ]` [INFRA] main 接線與 docs
+## T7 `[x]` [INFRA] main 接線與 docs
 
 - 原因：接線與文件工件；行為由 T1–T6 的測試覆蓋，此處只有組裝與措辭；措辭紅線由 eagle 讀回
 - 檔案：`cmd/mrinspect/main.go`（:166、:193-211：`enrich.New`、`SetEnrichment`、remote 啟動 log 句逐字）、`docs/us/configuration.md`、`docs/tw/configuration.md`（:48-55 表格加五列，remote 列含 retention 句）
