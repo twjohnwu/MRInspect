@@ -6,3 +6,9 @@ internal/retrievaleval/metrics.go
 eval/retrieval-golden.yaml
 STDD/retrieval-golden-scale/tasks.md
 internal/retrievaleval/run_test.go
+internal/retrievaleval/plan.go
+cmd/mrinspect/main.go
+internal/ragcmd/fixtures.go
+internal/ragcmd/fixtures_test.go
+internal/retrievaleval/report.go
+internal/retrievaleval/metrics_test.go
