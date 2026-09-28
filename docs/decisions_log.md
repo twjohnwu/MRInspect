@@ -104,3 +104,27 @@ specific decision is later reversed.
 
    改寫層 `on`（0.88／0.22）同時高於 `shuf`（0.21／0.05）與 `off`（0.00／0.00）；原層 `on` recall 持平、MRR 0.94 ≥ 0.81；干擾層 `on` 1.00 ≤ 1.00。落在 REQ-04 第一列：**保留 rerank，預設是否開啟另議**。逐列異常照錄（判準只看 mean，不改結論）：03 standards 改寫層 `on` recall 0.00（該改寫段未進前 8）；04 standards 原層 `on` MRR 0.50 低於 `off` 1.00（相關段被擠到第 2 位）；干擾層 `on` 與 `off` 皆為 1，rerank 沒有把語意近鄰的干擾段擠出前 k。
 5. **學到什麼**：(a) 比較候選池大小不同的兩個系統，必須有一個在較大池上的無資訊基線（shuffle），否則差異可能全來自池大小；(b) 答案卷要含「進得了候選池但字面不重疊」的目標，量測才有訊號——shuffle 0.21 對 off 0.00 證明改寫段在池內、只是 BM25 排不上；(c) 衍生指標若是既有欄的線性函數就不要印（precision@k）；(d) 每分鐘額度型限流下，批次索引重試耗盡額度後緊接查詢會降級，批次與查詢之間要留窗口。
+
+## 9. 檢索量測第三輪：golden 擴到 24 diff／48 query 兩系統；報告加聚合表；結果 citable
+
+1. **最初想法**：外部 reviewer（Sol v3）建議 golden 擴到 30–50 query 並加 hard negatives，理由是「golden 標題與 query 過近」。
+2. **為什麼那個論點不完全對**：query 不是從標題寫的，是 diff 詞彙經 `lane.Terms` 產生；#6 無訊號的原因是 corpus 段落用 diff 字彙寫成，#8 已修。但 n=8 的統計力太弱、干擾層沒有分類，這兩點成立。
+3. **現在做法**：`eval/retrieval-fixtures/<system>/` 子目錄即 system（margherita-pizza 14＝`eval/fixtures/` 4 個位元組相同複本＋10 新；fried-chicken 10）；golden 48 條目，干擾目標加 `category`（scope／version／responsibility／lexical／neighbor 各 ≥6，實際 12／10／9／8／9）；報告加 `system` 欄、`retrieve_ms` header 行、`## Mean by k`（只列 recall 六格）、`## Distractors by category`；eval 端 embedding 429 改走 `embed.WithRateLimitRetry`，與 index 共用同一 decorator。可引用門檻（spec REQ-06）：全表無 degraded 格，且報告對應 commit 的 S-03／S-04 守門綠。
+4. **結果**（2026-09-28，commit `926f2e4`，48 列皆無降級 → **citable**）：
+
+   | 層 | off | shuf | on |
+   |---|---:|---:|---:|
+   | orig_recall | 1.00 | 0.31 | 1.00 |
+   | orig_mrr | 0.89 | 0.14 | 0.95 |
+   | para_recall | 0.00 | 0.23 | 0.50 |
+   | para_mrr | 0.00 | 0.07 | 0.12 |
+   | distractors | 1.00 | 0.18 | 0.96 |
+
+   Mean by k（orig_recall off／shuf／on；para_recall off／shuf／on）：k=1 0.76／0.08／0.87；0.00／0.02／0.00。k=3 0.95／0.16／0.99；0.00／0.07／0.15。k=8 同 mean 列。
+   Distractors by category（n；off／shuf／on）：scope 12；1.00／0.16／1.00。version 10；1.00／0.21／1.00。responsibility 9；1.00／0.20／1.00。lexical 8；1.00／0.12／1.00。neighbor 9；1.00／0.22／0.78。
+   `retrieve_ms: off_mean=4 on_mean=331 (n=48)`（單次取樣，指示性）。
+5. **逐類觀察**（不做 rerank 去留判準，#8 已決）：
+   - 改寫層：on 0.50 對 shuffle 0.23，rerank 有訊號，但遠低於 #8 的 0.88——n 從 8 到 48 後，#8 是高估。k=1 的 para_recall_on 為 0.00：改寫段從未被排到第 1 位。
+   - 干擾層：rerank 只在 neighbor 類把干擾段擠出前 k（0.78）；scope／version／responsibility／lexical 四類 on 皆 1.00，rerank 對這四類干擾無效。
+   - 原層 k=1：on 0.87 對 off 0.76，rerank 讓正解更常排第 1；k=3 起兩者接近飽和。
+6. **學到什麼**：(a) `requiredLanes` 讓每個 fixture 至少兩個三元組，spec 寫「一個三元組」的 scenario 在 execute 時全部要改——寫 scenario 前先對 harness 不變量；(b) BM25 的 IDF 是全表共享，corpus 一長既有目標的名次就漂，名次帶只能靠探針測試迭代，每批新內容都要全量重跑守門；(c) 小樣本的 rerank 效果會高估：這輪把改寫層 recall 從 0.88 修正到 0.50，引用數字要看 n。

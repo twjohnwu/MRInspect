@@ -96,7 +96,7 @@ language: zh-TW
 
 ## Manual verification checklist
 
-- [ ] S-10：本機 `MRI_RAG_EMBEDDINGS=true`＋Gemini key；`./bin/mrinspect index` 後等 ≥60 秒；
+- [x] S-10：本機 `MRI_RAG_EMBEDDINGS=true`＋Gemini key；`./bin/mrinspect index` 後等 ≥60 秒；
   `./bin/mrinspect eval -retrieval && ! grep -q 'degraded' eval/RETRIEVAL.md`；以 spec REQ-06 兩條判定 citable，
   結果與三張表、`retrieve_ms` 行記入 `docs/decisions_log.md` 新條目；報告 commit；citable 時方可更新引用數字
 
@@ -119,10 +119,10 @@ flowchart LR
 
 ## Requirements Checklist（引 spec 尾節，approval 時逐項對）
 
-- [ ] retrieval fixture 子目錄即 system（grammar、Lstat、`projects/` 存在）；預檢先於檢索；fixture id 前綴；`-fixtures` 明確值偵測可測；review eval 不受影響（T3、T5）
-- [ ] 24 diff、48 條目、14/10 分佈、五類各 ≥6、4 複本位元組相同、K 唯一、`_shared` 擴寫、兩系統名次守門（T6）
-- [ ] `Distractor` 型別、`KnownFields`、精確 enum、錯誤前綴（T1）
-- [ ] 主表 system 欄、header `retrieve_ms` 行、Mean by k 六格、Distractors by category、零額外 Retrieve、`math.Round`、轉義、措辭（T4）
-- [ ] `embed.WithRateLimitRetry` 3 次、可注入等待、index 共用、生產查詢路徑不變（T0、T2）
-- [ ] 可引用門檻兩條只在 spec 與 decisions_log；報告只印數字（T7 讀回、S-10）
-- [ ] Supersedes 兩條明文；凍結介面零變更；`eval/fixtures/` 原檔不動；錯誤訊息不含路徑（T3、T6）
+- [x] retrieval fixture 子目錄即 system（grammar、Lstat、`projects/` 存在）；預檢先於檢索；fixture id 前綴；`-fixtures` 明確值偵測可測；review eval 不受影響（T3、T5）
+- [x] 24 diff、48 條目、14/10 分佈、五類各 ≥6、4 複本位元組相同、K 唯一、`_shared` 擴寫、兩系統名次守門（T6）
+- [x] `Distractor` 型別、`KnownFields`、精確 enum、錯誤前綴（T1）
+- [x] 主表 system 欄、header `retrieve_ms` 行、Mean by k 六格、Distractors by category、零額外 Retrieve、`math.Round`、轉義、措辭（T4）
+- [x] `embed.WithRateLimitRetry` 3 次、可注入等待、index 共用、生產查詢路徑不變（T0、T2）
+- [x] 可引用門檻兩條只在 spec 與 decisions_log；報告只印數字（T7 讀回、S-10）
+- [x] Supersedes 兩條明文；凍結介面零變更；`eval/fixtures/` 原檔不動；錯誤訊息不含路徑（T3、T6）
