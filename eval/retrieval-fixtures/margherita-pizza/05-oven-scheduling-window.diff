@@ -1,0 +1,91 @@
+# mrinspect-fixture: source=c14f2a9 kind=config
+
+commit c14f2a91b6f0e8e3d2a479e0f4c9d31b8a7e5061
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Tue Sep 08 09:14:02 2026 +0800
+
+    fix(ovenschedule): reject overnight bake window unless split into two explicit intervals
+
+    ValidateBakeWindow silently treated `end < start` as an implicit
+    overnight wrap, which produced a negative duration for any oven whose
+    window happened to cross midnight. Bake duration and preheat lead time
+    depend on that duration, so a wrapped window quietly scheduled ovens
+    for zero or negative minutes. Overnight windows must now be declared
+    as two explicit intervals in `OvernightSplit`; a single interval with
+    `end < start` is a validation error instead of an implicit wrap.
+
+diff --git a/internal/ovenschedule/schedule.go b/internal/ovenschedule/schedule.go
+index 3f8a1c2..9d0e774 100644
+--- a/internal/ovenschedule/schedule.go
++++ b/internal/ovenschedule/schedule.go
+@@ -12,6 +12,7 @@ type BakeWindow struct {
+ 	OvenID         string
+ 	Start          time.Time
+ 	End            time.Time
++	OvernightSplit []Interval
+ }
+
+ type Interval struct {
+@@ -20,14 +21,26 @@ type Interval struct {
+ }
+
+ func ValidateBakeWindow(w BakeWindow) error {
+-	if w.End.Before(w.Start) {
+-		// wraps past midnight; duration is computed against the next day
+-		return nil
++	if w.End.Before(w.Start) {
++		if len(w.OvernightSplit) != 2 {
++			return fmt.Errorf("ovenschedule: window for %q crosses midnight but is not declared as two explicit intervals in OvernightSplit", w.OvenID)
++		}
++		for _, part := range w.OvernightSplit {
++			if part.End.Before(part.Start) {
++				return fmt.Errorf("ovenschedule: OvernightSplit interval for %q must not itself wrap", w.OvenID)
++			}
++		}
++		return nil
+ 	}
+ 	if w.Start.Equal(w.End) {
+ 		return fmt.Errorf("ovenschedule: window for %q has zero duration", w.OvenID)
+ 	}
+ 	return nil
+ }
+diff --git a/internal/ovenschedule/schedule_test.go b/internal/ovenschedule/schedule_test.go
+index 6b2d901..a447bde 100644
+--- a/internal/ovenschedule/schedule_test.go
++++ b/internal/ovenschedule/schedule_test.go
+@@ -40,3 +40,33 @@ func TestValidateBakeWindow_ZeroDuration(t *testing.T) {
+ 		t.Fatalf("want zero-duration error, got %v", err)
+ 	}
+ }
++
++// TestValidateBakeWindow_RejectsImplicitWrap guards against the negative-
++// duration bug: an overnight window with a bare end < start and no
++// OvernightSplit must be rejected instead of silently treated as a wrap.
++func TestValidateBakeWindow_RejectsImplicitWrap(t *testing.T) {
++	w := BakeWindow{
++		OvenID: "oven-3",
++		Start:  mustTime(t, "22:00"),
++		End:    mustTime(t, "06:00"),
++	}
++	if err := ValidateBakeWindow(w); err == nil {
++		t.Fatal("want error for implicit overnight wrap, got nil")
++	}
++}
++
++// TestValidateBakeWindow_AcceptsExplicitSplit verifies the documented
++// escape hatch: a window declared as two explicit non-wrapping intervals
++// in OvernightSplit passes validation.
++func TestValidateBakeWindow_AcceptsExplicitSplit(t *testing.T) {
++	w := BakeWindow{
++		OvenID: "oven-3",
++		Start:  mustTime(t, "22:00"),
++		End:    mustTime(t, "06:00"),
++		OvernightSplit: []Interval{
++			{Start: mustTime(t, "22:00"), End: mustTime(t, "23:59")},
++			{Start: mustTime(t, "00:00"), End: mustTime(t, "06:00")},
++		},
++	}
++	if err := ValidateBakeWindow(w); err != nil {
++		t.Fatalf("want explicit split to pass validation, got %v", err)
++	}
++}

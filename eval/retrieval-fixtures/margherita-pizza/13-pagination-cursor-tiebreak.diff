@@ -1,0 +1,59 @@
+# mrinspect-fixture: source=d84c1f7 kind=logic
+
+commit d84c1f70b6a2e9d5c8034f7b1a6e2d905c8e37f1
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Wed Sep 16 12:09:44 2026 +0800
+
+    fix(orderapi): add order-id tie-breaker to order-history pagination cursor
+
+    encodeOrderCursor() sorted only by placedAt and encoded that timestamp
+    into the opaque cursor. During a busy lunch rush several orders share
+    the same placedAt millisecond, so the next page's WHERE clause
+    admitted an arbitrary subset of the tied rows: a customer paging
+    through order history sometimes saw the same order twice and
+    sometimes never saw it at all. The cursor now also encodes the order
+    identifier and the query compares the pair, giving every pageable
+    listing the deterministic secondary order the API conventions require.
+
+diff --git a/internal/orderapi/pagination.go b/internal/orderapi/pagination.go
+index 5f28a17..d093ceb 100644
+--- a/internal/orderapi/pagination.go
++++ b/internal/orderapi/pagination.go
+@@ -6,20 +6,27 @@ import (
+ )
+
+ type orderCursor struct {
+-	PlacedAt time.Time `json:"placedAt"`
++	PlacedAt time.Time `json:"placedAt"`
++	OrderID  string    `json:"orderId"`
+ }
+
+ func encodeOrderCursor(order Order) string {
+-	cursor := orderCursor{PlacedAt: order.PlacedAt}
++	cursor := orderCursor{PlacedAt: order.PlacedAt, OrderID: order.ID}
+ 	return base64.StdEncoding.EncodeToString(mustMarshal(cursor))
+ }
+
+ func nextPageQuery(cursor orderCursor) string {
+-	return "WHERE placed_at > $1 ORDER BY placed_at ASC"
++	return "WHERE (placed_at, order_id) > ($1, $2) ORDER BY placed_at ASC, order_id ASC"
+ }
+diff --git a/internal/orderapi/pagination_test.go b/internal/orderapi/pagination_test.go
+index 8a3d012..1e4f7b6 100644
+--- a/internal/orderapi/pagination_test.go
++++ b/internal/orderapi/pagination_test.go
+@@ -10,3 +10,22 @@ func TestEncodeOrderCursor_RoundTrips(t *testing.T) {
+ 		t.Fatal("want cursor to decode back to the same placedAt")
+ 	}
+ }
++
++// TestNextPageQuery_BreaksTiesByOrderID guards against the bug: orders
++// sharing the same placedAt millisecond must still resolve to a stable
++// deterministic secondary order by order identifier.
++func TestNextPageQuery_BreaksTiesByOrderID(t *testing.T) {
++	cursor := orderCursor{PlacedAt: sameInstant, OrderID: "order-42"}
++	query := nextPageQuery(cursor)
++	if !strings.Contains(query, "order_id") {
++		t.Fatalf("nextPageQuery = %q, want an order_id tie-breaker", query)
++	}
++}

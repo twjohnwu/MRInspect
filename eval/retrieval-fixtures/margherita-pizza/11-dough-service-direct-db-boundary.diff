@@ -1,0 +1,75 @@
+# mrinspect-fixture: source=a19d7e3 kind=refactor
+
+commit a19d7e30f8c4b6a1d907e5c2b8f31a6d4e0c9752
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Mon Sep 14 15:47:29 2026 +0800
+
+    fix(dough-service): call mozzarella-service API instead of reading its table directly
+
+    checkSauceAndCheeseReady() in dough-service opened a direct SQL
+    connection to mozzarella-service's cold-chain table and read
+    temperature_celsius rows itself, bypassing mozzarella-service's own
+    alerting and cache-invalidation logic. A schema change in
+    mozzarella-service silently broke dough-service's readiness check
+    with no compile-time signal. Sauce readiness already goes through
+    tomato-sauce-api's HTTP status endpoint; cheese readiness now goes
+    through mozzarella-service's HTTP client the same way, and the direct
+    database dependency is removed from dough-service.
+
+diff --git a/internal/doughservice/readiness.go b/internal/doughservice/readiness.go
+index 4e1a9c3..8b027fd 100644
+--- a/internal/doughservice/readiness.go
++++ b/internal/doughservice/readiness.go
+@@ -1,26 +1,24 @@
+ package doughservice
+
+ import (
+-	"database/sql"
+ 	"fmt"
++
++	"mrinspect/internal/mozzarellaclient"
+ )
+
+-func checkSauceAndCheeseReady(db *sql.DB, batchID string) (bool, error) {
++func checkSauceAndCheeseReady(mozz *mozzarellaclient.Client, sauceReady bool, batchID string) (bool, error) {
+ 	sauceOK, err := tomatoSauceReady(batchID)
+ 	if err != nil {
+ 		return false, fmt.Errorf("dough-service: sauce readiness: %w", err)
+ 	}
+
+-	row := db.QueryRow(
+-		"SELECT temperature_celsius FROM mozzarella_inventory WHERE batch_id = $1",
+-		batchID,
+-	)
+-	var temp float64
+-	if err := row.Scan(&temp); err != nil {
+-		return false, fmt.Errorf("dough-service: mozzarella inventory query: %w", err)
++	cheeseOK, err := mozz.IsBatchReady(batchID)
++	if err != nil {
++		return false, fmt.Errorf("dough-service: mozzarella-service readiness: %w", err)
+ 	}
+-	return sauceOK && temp <= coldChainCeiling, nil
++	return sauceOK && cheeseOK, nil
+ }
+diff --git a/internal/doughservice/readiness_test.go b/internal/doughservice/readiness_test.go
+index 6a2f81b..0d7c4e9 100644
+--- a/internal/doughservice/readiness_test.go
++++ b/internal/doughservice/readiness_test.go
+@@ -12,3 +12,20 @@ func TestCheckSauceAndCheeseReady_SauceNotReady(t *testing.T) {
+ 		t.Fatal("want not ready when sauce is not ready")
+ 	}
+ }
++
++// TestCheckSauceAndCheeseReady_UsesMozzarellaServiceClient guards against
++// the boundary violation: dough-service must ask mozzarella-service
++// through its client, never read the cold-chain table directly.
++func TestCheckSauceAndCheeseReady_UsesMozzarellaServiceClient(t *testing.T) {
++	fakeMozz := mozzarellaclient.NewFake(map[string]bool{"batch-9": true})
++	ok, err := checkSauceAndCheeseReady(fakeMozz, true, "batch-9")
++	if err != nil {
++		t.Fatalf("checkSauceAndCheeseReady: %v", err)
++	}
++	if !ok {
++		t.Fatal("want ready when mozzarellaclient reports the batch ready")
++	}
++}

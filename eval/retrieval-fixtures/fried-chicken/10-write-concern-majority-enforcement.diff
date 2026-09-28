@@ -1,0 +1,48 @@
+# mrinspect-fixture: source=b6d0e91 kind=config
+
+commit b6d0e91c4a7f2b8d5e0c3a6f9b1d4e802c5f7a63
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Fri Oct 2 15:52:07 2026 +0800
+
+    fix(batchstore): require majority write concern on the pipeline_batches collection
+
+    NewBatchCollection opened the pipeline_batches collection using the
+    client's default write concern, which on this cluster is w:1, so a
+    write could be acknowledged and then lost on a primary failover
+    before it replicated. NewBatchCollection now opens the collection
+    with an explicit writeconcern.Majority() option, so an acknowledged
+    write survives a failover.
+
+diff --git a/internal/batchstore/collection.go b/internal/batchstore/collection.go
+index 5c9e0a1..2b7d4f3 100644
+--- a/internal/batchstore/collection.go
++++ b/internal/batchstore/collection.go
+@@ -8,14 +8,19 @@ import (
+ 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
+ )
+
+ func NewBatchCollection(db *mongo.Database) *mongo.Collection {
+-	return db.Collection("pipeline_batches")
++	wc := writeconcern.Majority()
++	opts := options.Collection().SetWriteConcern(wc)
++	return db.Collection("pipeline_batches", opts)
+ }
+diff --git a/internal/batchstore/collection_test.go b/internal/batchstore/collection_test.go
+index 8e1c3a5..4a6f0b9 100644
+--- a/internal/batchstore/collection_test.go
++++ b/internal/batchstore/collection_test.go
+@@ -10,3 +10,15 @@ func TestNewBatchCollection_Name(t *testing.T) {
+ 		t.Fatalf("collection name = %q, want %q", coll.Name(), "pipeline_batches")
+ 	}
+ }
++
++// TestNewBatchCollection_MajorityWriteConcern guards against the
++// lost-write-on-failover bug: the collection must be opened with
++// writeconcern.Majority() instead of the client's default w:1.
++func TestNewBatchCollection_MajorityWriteConcern(t *testing.T) {
++	coll := NewBatchCollection(testDB)
++	wc := coll.WriteConcern()
++	if wc == nil || !wc.IsAcknowledged() {
++		t.Fatal("want an acknowledged write concern on pipeline_batches")
++	}
++}

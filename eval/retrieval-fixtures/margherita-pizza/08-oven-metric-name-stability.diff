@@ -1,0 +1,58 @@
+# mrinspect-fixture: source=2f6a893 kind=refactor
+
+commit 2f6a8934bc0d17e5a92f3d6b8c1e074a5d93b7c1
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Fri Sep 11 15:03:56 2026 +0800
+
+    fix(observability): pin oven-utilization metric name behind a stable constant (dashboard breakage)
+
+    The oven-utilization gauge name was built by concatenating the current
+    kitchen-region label into the metric name string, so renaming a
+    region during a routine kitchen relabel silently renamed the metric
+    and broke every saved dashboard panel referencing the old name. The
+    name is now a fixed constant, OvenUtilizationMetricName, and region is
+    attached as a dimension label instead of being embedded in the name.
+
+diff --git a/internal/observability/metrics.go b/internal/observability/metrics.go
+index 6d842f1..b1a0e73 100644
+--- a/internal/observability/metrics.go
++++ b/internal/observability/metrics.go
+@@ -14,10 +14,14 @@ import (
+ 	"fmt"
+ )
+
++// OvenUtilizationMetricName is the fixed, published gauge name for oven
++// utilization. It must never change after publication; region varies as a
++// dimension label instead.
++const OvenUtilizationMetricName = "margherita_pizza_oven_utilization"
++
+ func RecordOvenUtilization(region string, value float64) {
+-	name := fmt.Sprintf("margherita_pizza_oven_utilization_%s", region)
+-	gauge(name, value)
++	gauge(OvenUtilizationMetricName, value, dimension("region", region))
+ }
+diff --git a/internal/observability/metrics_test.go b/internal/observability/metrics_test.go
+index a13c908..7de5619 100644
+--- a/internal/observability/metrics_test.go
++++ b/internal/observability/metrics_test.go
+@@ -8,3 +8,20 @@ func TestRecordOvenUtilization_EmitsGauge(t *testing.T) {
+ 		t.Fatalf("want a recorded gauge, got none")
+ 	}
+ }
++
++// TestRecordOvenUtilization_NameStableAcrossRegions guards against the
++// dashboard-breaking bug: the metric name must stay constant no matter
++// which region label is passed; region belongs on the dimension, not the
++// name.
++func TestRecordOvenUtilization_NameStableAcrossRegions(t *testing.T) {
++	sink := newTestSink()
++	RecordOvenUtilization("taipei-central", 0.8)
++	RecordOvenUtilization("kaohsiung-east", 0.6)
++
++	names := sink.RecordedNames()
++	for _, n := range names {
++		if n != OvenUtilizationMetricName {
++			t.Fatalf("metric name changed with region: got %q, want %q", n, OvenUtilizationMetricName)
++		}
++	}
++}

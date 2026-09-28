@@ -1,0 +1,92 @@
+# mrinspect-fixture: source=b807d52 kind=logic
+
+commit b807d52f4e1a396c8d0e5b7f2a913c6d84e0f327
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Sat Sep 12 10:26:33 2026 +0800
+
+    fix(runtime): split remaining deadline across kitchen, payment, and delivery-quote calls (spurious hop timeouts)
+
+    Order admission passed the entire remaining request deadline to the
+    first downstream call, kitchen availability. When that call returned
+    late in its own window, payment authorization and the delivery-quote
+    call that follow received almost no time and failed with spurious
+    timeouts even though the overall request deadline had not passed.
+    splitDownstreamDeadlines now reserves an encoding buffer and divides
+    what remains into three bounded shares before dispatch.
+
+diff --git a/internal/runtime/deadline.go b/internal/runtime/deadline.go
+index 9a237c6..e548d10 100644
+--- a/internal/runtime/deadline.go
++++ b/internal/runtime/deadline.go
+@@ -12,20 +12,34 @@ import (
+ )
+
+-func dispatchDownstream(ctx context.Context, order Order) error {
+-	if err := callKitchenAvailability(ctx, order); err != nil {
++const encodingBuffer = 50 * time.Millisecond
++
++// splitDownstreamDeadlines divides the remaining request deadline into
++// three bounded shares (kitchen, payment, delivery-quote) after reserving
++// encodingBuffer for response encoding and cleanup, so the first call
++// returning late in its own window cannot starve the calls after it.
++func splitDownstreamDeadlines(ctx context.Context) (kitchenCtx, paymentCtx, deliveryCtx context.Context, cancel func()) {
++	deadline, ok := ctx.Deadline()
++	if !ok {
++		return ctx, ctx, ctx, func() {}
++	}
++	remaining := time.Until(deadline) - encodingBuffer
++	share := remaining / 3
++	kitchenCtx, c1 := context.WithTimeout(ctx, share)
++	paymentCtx, c2 := context.WithTimeout(ctx, share)
++	deliveryCtx, c3 := context.WithTimeout(ctx, share)
++	return kitchenCtx, paymentCtx, deliveryCtx, func() { c1(); c2(); c3() }
++}
++
++func dispatchDownstream(ctx context.Context, order Order) error {
++	kitchenCtx, paymentCtx, deliveryCtx, cancel := splitDownstreamDeadlines(ctx)
++	defer cancel()
++
++	if err := callKitchenAvailability(kitchenCtx, order); err != nil {
+ 		return fmt.Errorf("runtime: kitchen availability: %w", err)
+ 	}
+-	if err := callPaymentAuthorization(ctx, order); err != nil {
++	if err := callPaymentAuthorization(paymentCtx, order); err != nil {
+ 		return fmt.Errorf("runtime: payment authorization: %w", err)
+ 	}
+-	if err := callDeliveryQuote(ctx, order); err != nil {
++	if err := callDeliveryQuote(deliveryCtx, order); err != nil {
+ 		return fmt.Errorf("runtime: delivery quote: %w", err)
+ 	}
+ 	return nil
+ }
+diff --git a/internal/runtime/deadline_test.go b/internal/runtime/deadline_test.go
+index 3d5e921..7a0c8b4 100644
+--- a/internal/runtime/deadline_test.go
++++ b/internal/runtime/deadline_test.go
+@@ -14,3 +14,26 @@ func TestDispatchDownstream_UsesRequestDeadline(t *testing.T) {
+ 		t.Fatalf("dispatchDownstream: %v", err)
+ 	}
+ }
++
++// TestSplitDownstreamDeadlines_BoundedShares verifies the fix: each
++// downstream call receives a bounded share of the remaining deadline, not
++// the full remaining deadline carried over from the previous call.
++func TestSplitDownstreamDeadlines_BoundedShares(t *testing.T) {
++	parent, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
++	defer cancel()
++
++	kitchenCtx, paymentCtx, deliveryCtx, cleanup := splitDownstreamDeadlines(parent)
++	defer cleanup()
++
++	for name, ctx := range map[string]context.Context{
++		"kitchen": kitchenCtx, "payment": paymentCtx, "delivery": deliveryCtx,
++	} {
++		deadline, ok := ctx.Deadline()
++		if !ok {
++			t.Fatalf("%s: want a bounded deadline, got none", name)
++		}
++		if remaining := time.Until(deadline); remaining >= 300*time.Millisecond {
++			t.Fatalf("%s: want a bounded share, got the full remaining deadline (%v)", name, remaining)
++		}
++	}
++}

@@ -109,3 +109,11 @@ Deployments, configuration changes, and kitchen closures produce timeline annota
 ## Diagnostic bundles
 
 A diagnostic bundle contains recent safe logs, normalized configuration, and bounded metric snapshots. The bundle excludes secrets and uses relative component names rather than machine paths.
+
+## Oven metric name stability
+
+`OvenUtilizationMetricName` is a fixed constant and never changes when a kitchen region is relabeled; `RecordOvenUtilization` attaches the region as a dimension instead of embedding it in the metric name. A dashboard panel built against the published name keeps working across any future region rename.
+
+## Retry attempt span linking
+
+`retryKitchenDispatch` reuses the order's existing trace root from context and starts a distinct attempt span under it on every retry, instead of starting an unrelated new trace root per attempt. Support can follow one order's original attempt and every retry as spans under the same root.

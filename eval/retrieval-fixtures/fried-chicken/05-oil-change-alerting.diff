@@ -1,0 +1,66 @@
+# mrinspect-fixture: source=c60d3f8 kind=logic
+
+commit c60d3f81a4e6b0729d3c5a8e1f0b6d4a7c2e9f53
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Sun Sep 27 09:05:16 2026 +0800
+
+    fix(oilhealth): commit Kafka offset only after the oil-age write lands in MongoDB
+
+    handleOilAgeEvent called Commit() on the consumer group right after
+    decoding each chicken.coated message and before OilAgeState was
+    written to pipeline_batches, so a crash between the commit and the
+    write dropped that oil-age sample without the consumer ever seeing it
+    again, silently delaying the oil-change alert. Commit now runs only
+    after the MongoDB write succeeds, and a failed write leaves the
+    offset uncommitted so the message is redelivered.
+
+diff --git a/internal/oilhealth/consumer.go b/internal/oilhealth/consumer.go
+index 5a7c2e0..1f9d4b6 100644
+--- a/internal/oilhealth/consumer.go
++++ b/internal/oilhealth/consumer.go
+@@ -14,13 +14,16 @@ func (c *Consumer) handleOilAgeEvent(ctx context.Context, msg kafka.Message) error {
+ 	state, err := decodeOilAgeState(msg.Value)
+ 	if err != nil {
+ 		return fmt.Errorf("oilhealth: decode oil age state: %w", err)
+ 	}
+-	if err := c.group.CommitMessages(ctx, msg); err != nil {
+-		return fmt.Errorf("oilhealth: commit offset: %w", err)
+-	}
+ 	if err := c.store.WriteOilAgeState(ctx, state); err != nil {
+ 		return fmt.Errorf("oilhealth: write oil age state: %w", err)
+ 	}
++	if err := c.group.CommitMessages(ctx, msg); err != nil {
++		return fmt.Errorf("oilhealth: commit offset: %w", err)
++	}
+ 	return nil
+ }
+diff --git a/internal/oilhealth/consumer_test.go b/internal/oilhealth/consumer_test.go
+index 8b0e4a7..2d6f1c9 100644
+--- a/internal/oilhealth/consumer_test.go
++++ b/internal/oilhealth/consumer_test.go
+@@ -18,3 +18,25 @@ func TestHandleOilAgeEvent_DecodeError(t *testing.T) {
+ 		t.Fatal("want decode error, got nil")
+ 	}
+ }
++
++// TestHandleOilAgeEvent_CommitsAfterWrite guards against the message-loss
++// bug: the Kafka offset must not be committed until the MongoDB write for
++// the same message has succeeded.
++func TestHandleOilAgeEvent_CommitsAfterWrite(t *testing.T) {
++	var writeCalled, commitCalled bool
++	c := newTestConsumer(t,
++		withWriteHook(func() { writeCalled = true }),
++		withCommitHook(func() {
++			commitCalled = true
++			if !writeCalled {
++				t.Fatal("Commit called before WriteOilAgeState")
++			}
++		}),
++	)
++	if err := c.handleOilAgeEvent(context.Background(), fakeMessage()); err != nil {
++		t.Fatalf("handleOilAgeEvent: %v", err)
++	}
++	if !commitCalled {
++		t.Fatal("want Commit to be called after a successful write")
++	}
++}

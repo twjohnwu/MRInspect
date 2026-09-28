@@ -1,0 +1,54 @@
+# mrinspect-fixture: source=e28b4c7 kind=logic
+
+commit e28b4c75d1f3a90c6e2b5d8f014a7c3e6f0912b5
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Wed Sep 30 08:47:52 2026 +0800
+
+    fix(brinelistener): stop the consume loop cleanly on context.Canceled instead of panicking
+
+    ConsumeLoop treated every error returned by the Kafka client the
+    same way, including context.Canceled during a normal shutdown, and
+    called log.Panic on it, so a routine deploy restart of brine-service
+    crashed the process with a panic stack trace instead of exiting
+    quietly. ConsumeLoop now checks errors.Is(err, context.Canceled)
+    first and returns nil, reserving log.Panic for genuine client errors.
+
+diff --git a/internal/brinelistener/listener.go b/internal/brinelistener/listener.go
+index 4b8d0f2..a1e6c93 100644
+--- a/internal/brinelistener/listener.go
++++ b/internal/brinelistener/listener.go
+@@ -8,14 +8,20 @@ import (
+ 	"log"
+ )
+
+ func ConsumeLoop(ctx context.Context, client KafkaClient) error {
+ 	for {
+ 		msg, err := client.Fetch(ctx)
+ 		if err != nil {
+-			log.Panicf("brinelistener: fetch failed: %v", err)
++			if errors.Is(err, context.Canceled) {
++				return nil
++			}
++			log.Panicf("brinelistener: fetch failed: %v", err)
+ 		}
+ 		process(msg)
+ 	}
+ }
+diff --git a/internal/brinelistener/listener_test.go b/internal/brinelistener/listener_test.go
+index 6c9e1a4..3d7b8f0 100644
+--- a/internal/brinelistener/listener_test.go
++++ b/internal/brinelistener/listener_test.go
+@@ -12,3 +12,18 @@ func TestConsumeLoop_FetchesUntilError(t *testing.T) {
+ 		t.Fatalf("want processed message, got none")
+ 	}
+ }
++
++// TestConsumeLoop_ReturnsNilOnContextCanceled guards against the
++// shutdown-panic bug: a context.Canceled fetch error must return nil
++// instead of reaching log.Panic.
++func TestConsumeLoop_ReturnsNilOnContextCanceled(t *testing.T) {
++	client := &fakeKafkaClient{fetchErr: context.Canceled}
++	if err := ConsumeLoop(context.Background(), client); err != nil {
++		t.Fatalf("want nil on context.Canceled shutdown, got %v", err)
++	}
++}

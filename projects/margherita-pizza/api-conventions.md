@@ -109,3 +109,11 @@ Deprecated operations return their retirement date and replacement operation nam
 ## Contract examples
 
 Examples use fictional customers, kitchens, and order identifiers. Every example is checked for field names and types during documentation tests.
+
+## Basket currency guard
+
+Every basket entry point, including a promotional or credit item added outside the normal item path, must pass through `validateCurrencyConsistency` before checkout. A promo item in a different currency code from the rest of the basket is rejected the same way an ordinary mixed-currency item is rejected, and rejection leaves the existing basket unchanged.
+
+## Order-history cursor tie-breaking
+
+`encodeOrderCursor` encodes both `placedAt` and the order identifier, and `nextPageQuery` compares the pair so rows sharing the same `placedAt` millisecond still resolve through the order identifier. This gives order-history pagination the deterministic secondary order the sort-ordering convention requires instead of admitting an arbitrary subset of tied rows.

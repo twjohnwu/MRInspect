@@ -1,0 +1,73 @@
+# mrinspect-fixture: source=91bd3c7 kind=logic
+
+commit 91bd3c72e8f4a0916c5d8b2f0a3e6d1c7b459032
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Wed Sep 09 11:32:47 2026 +0800
+
+    fix(orderapi): reject mixed-currency baskets before authorization (promo bypass)
+
+    validateBasket() only checked currency consistency for items added
+    through addItem(), but a promotional item attached via addPromoItem()
+    skipped the shared validation path entirely. A basket could reach
+    payment authorization with a TWD entree and a USD promo credit,
+    producing float rounding drift once totals were summed. Both entry
+    points now funnel through validateCurrencyConsistency before checkout.
+
+diff --git a/internal/orderapi/basket.go b/internal/orderapi/basket.go
+index 5a2e819..d074bf2 100644
+--- a/internal/orderapi/basket.go
++++ b/internal/orderapi/basket.go
+@@ -30,7 +30,7 @@ func (b *Basket) addItem(item Item) error {
+ 	if err := validateCurrencyConsistency(b.Items, item); err != nil {
+ 		return err
+ 	}
+ 	b.Items = append(b.Items, item)
+ 	return nil
+ }
+
+-func (b *Basket) addPromoItem(item Item) {
+-	// promo credits are trusted and skip item validation
+-	b.Items = append(b.Items, item)
+-}
++func (b *Basket) addPromoItem(item Item) error {
++	if err := validateCurrencyConsistency(b.Items, item); err != nil {
++		return fmt.Errorf("orderapi: promo item currency %q does not match basket: %w", item.CurrencyCode, err)
++	}
++	b.Items = append(b.Items, item)
++	return nil
++}
+
+ func validateCurrencyConsistency(existing []Item, next Item) error {
+ 	for _, item := range existing {
+ 		if item.CurrencyCode != next.CurrencyCode {
+ 			return fmt.Errorf("orderapi: mixed currency in basket: %s vs %s", item.CurrencyCode, next.CurrencyCode)
+ 		}
+ 	}
+ 	return nil
+ }
+diff --git a/internal/orderapi/basket_test.go b/internal/orderapi/basket_test.go
+index 227c9f4..bb61a05 100644
+--- a/internal/orderapi/basket_test.go
++++ b/internal/orderapi/basket_test.go
+@@ -22,3 +22,20 @@ func TestBasket_AddItem_RejectsMixedCurrency(t *testing.T) {
+ 		t.Fatal("want mixed-currency error, got nil")
+ 	}
+ }
++
++// TestBasket_AddPromoItem_RejectsMixedCurrency guards against the promo
++// bypass: a promo credit in a different currency code from the existing
++// basket items must be rejected the same way addItem rejects it.
++func TestBasket_AddPromoItem_RejectsMixedCurrency(t *testing.T) {
++	b := &Basket{}
++	if err := b.addItem(Item{CurrencyCode: "TWD", MinorUnits: 32000}); err != nil {
++		t.Fatalf("addItem: %v", err)
++	}
++
++	err := b.addPromoItem(Item{CurrencyCode: "USD", MinorUnits: 500})
++	if err == nil {
++		t.Fatal("want mixed-currency error from addPromoItem, got nil")
++	}
++	if len(b.Items) != 1 {
++		t.Fatalf("basket must not retain the rejected promo item, got %d items", len(b.Items))
++	}
++}

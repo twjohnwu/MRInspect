@@ -109,3 +109,11 @@ The first termination signal begins graceful shutdown and records its cause. A s
 ## Recovery startup
 
 After an unclean stop, workers reconcile orders left in transitional states. Recovery uses durable timestamps and operation identifiers instead of assuming the last attempt failed.
+
+## Kitchen notice board expiry
+
+The kitchen notice board sweeps any notice older than its configured TTL on every read instead of retaining it forever, and `Post` rejects a notice declared with a zero or negative TTL. This keeps closed-kitchen and past-deal notices from displaying after they should have expired.
+
+## Downstream timeout budget split
+
+`splitDownstreamDeadlines` reserves a fixed encoding buffer and then divides whatever remains of the request deadline into three bounded shares for the kitchen, payment, and delivery-quote calls, so a first call that returns late in its own window cannot leave the calls after it with almost no remaining time.

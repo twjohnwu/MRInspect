@@ -1,0 +1,52 @@
+# mrinspect-fixture: source=f37c5d8 kind=config
+
+commit f37c5d891e2a6b7c0d4f8a3e9b1c5d270a6e4f38
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Thu Oct 1 13:05:39 2026 +0800
+
+    fix(batchstore): set updatedAt on every pipeline_batches upsert
+
+    UpsertBatch wrote the batch document to the pipeline_batches
+    collection without touching an updatedAt field, so an upserted
+    record kept whichever timestamp (or none) it happened to already
+    carry and downstream staleness alerts could not tell a fresh write
+    from a five-day-old one. UpsertBatch now sets updatedAt to the
+    current time on the $set clause of every upsert.
+
+diff --git a/internal/batchstore/store.go b/internal/batchstore/store.go
+index 0a2c4e6..8b1d3f7 100644
+--- a/internal/batchstore/store.go
++++ b/internal/batchstore/store.go
+@@ -10,16 +10,22 @@ import (
+ 	"time"
+ )
+
+ func UpsertBatch(ctx context.Context, coll *mongo.Collection, id string, fields bson.M) error {
++	fields["updatedAt"] = time.Now().UTC()
+ 	filter := bson.M{"_id": id}
+ 	update := bson.M{"$set": fields}
+ 	opts := options.Update().SetUpsert(true)
+ 	_, err := coll.UpdateOne(ctx, filter, update, opts)
+ 	return err
+ }
+diff --git a/internal/batchstore/store_test.go b/internal/batchstore/store_test.go
+index 3f8b0a2..9d1e6c4 100644
+--- a/internal/batchstore/store_test.go
++++ b/internal/batchstore/store_test.go
+@@ -16,3 +16,17 @@ func TestUpsertBatch_SetsFields(t *testing.T) {
+ 		t.Fatalf("upsert failed: %v", err)
+ 	}
+ }
++
++// TestUpsertBatch_SetsUpdatedAt guards against the stale-timestamp bug:
++// every upsert must write an updatedAt field, even when the caller's
++// fields map does not already include one.
++func TestUpsertBatch_SetsUpdatedAt(t *testing.T) {
++	fields := bson.M{"oilAgeHours": 4.2}
++	if err := UpsertBatch(context.Background(), testColl, "batch-9", fields); err != nil {
++		t.Fatalf("UpsertBatch: %v", err)
++	}
++	if _, ok := fields["updatedAt"]; !ok {
++		t.Fatal("want updatedAt set on upsert fields, got none")
++	}
++}

@@ -1,0 +1,75 @@
+# mrinspect-fixture: source=3f8b1d6 kind=logic
+
+commit 3f8b1d6a9c2e4f70b1d5a8c3e6f0912d4b7a6e83
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Wed Sep 23 14:02:47 2026 +0800
+
+    fix(batchqueue): reject new batches once the frying-controller backlog is full
+
+    Enqueue accepted every incoming batch from crispy-coating-api
+    regardless of how many batches frying-controller had already
+    acknowledged as pending, so a slow fryer let the in-memory queue grow
+    without bound during a rush and the process eventually ran out of
+    memory. Enqueue now checks PendingCount against a fixed capacity and
+    returns ErrQueueFull instead of admitting the batch, so backpressure
+    reaches the producer instead of hiding as unbounded growth.
+
+diff --git a/internal/batchqueue/queue.go b/internal/batchqueue/queue.go
+index 6a1c9d0..2e8f4b7 100644
+--- a/internal/batchqueue/queue.go
++++ b/internal/batchqueue/queue.go
+@@ -8,6 +8,8 @@ import (
+ 	"sync"
+ )
+ 
++var ErrQueueFull = errors.New("batchqueue: pending batch capacity exceeded")
++
++const maxPendingBatches = 200
++
+ type Queue struct {
+ 	mu      sync.Mutex
+ 	pending []Batch
+ }
+ 
+ func (q *Queue) Enqueue(b Batch) error {
+ 	q.mu.Lock()
+ 	defer q.mu.Unlock()
+-	q.pending = append(q.pending, b)
+-	return nil
++	if len(q.pending) >= maxPendingBatches {
++		return ErrQueueFull
++	}
++	q.pending = append(q.pending, b)
++	return nil
+ }
+ 
+ func (q *Queue) PendingCount() int {
+ 	q.mu.Lock()
+ 	defer q.mu.Unlock()
+ 	return len(q.pending)
+ }
+diff --git a/internal/batchqueue/queue_test.go b/internal/batchqueue/queue_test.go
+index 9d2f5a1..3c7e8b6 100644
+--- a/internal/batchqueue/queue_test.go
++++ b/internal/batchqueue/queue_test.go
+@@ -20,3 +20,23 @@ func TestQueue_PendingCount(t *testing.T) {
+ 	}
+ }
++
++// TestQueue_RejectsBeyondCapacity guards against the unbounded-growth bug:
++// Enqueue must return ErrQueueFull once maxPendingBatches is reached instead
++// of appending indefinitely.
++func TestQueue_RejectsBeyondCapacity(t *testing.T) {
++	q := &Queue{}
++	for i := 0; i < maxPendingBatches; i++ {
++		if err := q.Enqueue(Batch{ID: fmt.Sprintf("b-%d", i)}); err != nil {
++			t.Fatalf("Enqueue %d: unexpected error %v", i, err)
++		}
++	}
++	if err := q.Enqueue(Batch{ID: "overflow"}); !errors.Is(err, ErrQueueFull) {
++		t.Fatalf("Enqueue at capacity: got %v, want ErrQueueFull", err)
++	}
++	if q.PendingCount() != maxPendingBatches {
++		t.Fatalf("PendingCount = %d, want %d", q.PendingCount(), maxPendingBatches)
++	}
++}

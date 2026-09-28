@@ -71,7 +71,7 @@ language: zh-TW
 - GREEN：helper；main 接線；`go build ./cmd/mrinspect` 過；`go vet ./...`
 - Verification command: `go test ./internal/ragcmd/ -run TestEvalFixturesDir -count=1 -v && go build ./cmd/mrinspect`
 
-## T6 `[ ]` `S-03,S-04` [MODIFY] 24 diff、corpus 三系統擴寫、48 條 golden、守門
+## T6 `[x]` `S-03,S-04` [MODIFY] 24 diff、corpus 三系統擴寫、48 條 golden、守門
 
 - 檔案：`eval/retrieval-fixtures/{margherita-pizza,fried-chicken}/*.diff`（NEW 24）、`projects/_shared/*.md`、
   `projects/margherita-pizza/*.md`、`projects/fried-chicken/*.md`、`eval/retrieval-golden.yaml`、
@@ -86,7 +86,7 @@ language: zh-TW
   `git diff --quiet HEAD -- eval/fixtures/`
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestCorpus_' -count=1 -v`
 
-## T7 `[ ]` [INFRA] docs 一句更新
+## T7 `[x]` [INFRA] docs 一句更新
 
 - 原因：文件工件，無可單測行為；措辭紅線由 eagle 讀回
 - 檔案：`eval/README.md` Offline retrieval check 段、`docs/us/configuration.md`、`docs/tw/configuration.md`——各改一句：

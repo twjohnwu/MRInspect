@@ -1,0 +1,65 @@
+# mrinspect-fixture: source=f30b8d6 kind=config
+
+commit f30b8d61c7e9a4b2d905f6e3c8a17b0d4956e2af
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Tue Sep 15 08:33:51 2026 +0800
+
+    fix(kitchenconfig): reject orders for regions a kitchen never declared
+
+    validateKitchenConfig() checked that every declared region existed in
+    the region table, but never checked the reverse: an order-routing
+    rule could target a region a kitchen's own configuration block never
+    listed. A kitchen east of the river accepted delivery requests tagged
+    for a neighboring region it had no preparation calendar or currency
+    entry for, and downstream code picked default values instead of
+    failing startup. Startup validation now rejects any routing rule
+    whose region is absent from the owning kitchen's declared region list.
+
+diff --git a/internal/kitchenconfig/validate.go b/internal/kitchenconfig/validate.go
+index 2c9e7a1..7d4b039 100644
+--- a/internal/kitchenconfig/validate.go
++++ b/internal/kitchenconfig/validate.go
+@@ -8,6 +8,7 @@ import (
+ func validateKitchenConfig(cfg KitchenConfig) error {
+ 	declared := make(map[string]struct{}, len(cfg.Regions))
+ 	for _, region := range cfg.Regions {
+ 		if _, err := lookupRegion(region.Name); err != nil {
+ 			return fmt.Errorf("kitchenconfig: unknown region %q: %w", region.Name, err)
+ 		}
++		declared[region.Name] = struct{}{}
+ 	}
++
++	for _, rule := range cfg.RoutingRules {
++		if _, ok := declared[rule.RegionName]; !ok {
++			return fmt.Errorf(
++				"kitchenconfig: routing rule targets region %q not declared by kitchen %q",
++				rule.RegionName, cfg.KitchenID,
++			)
++		}
++	}
+ 	return nil
+ }
+diff --git a/internal/kitchenconfig/validate_test.go b/internal/kitchenconfig/validate_test.go
+index 9e1a4f6..3b7d825 100644
+--- a/internal/kitchenconfig/validate_test.go
++++ b/internal/kitchenconfig/validate_test.go
+@@ -15,3 +15,20 @@ func TestValidateKitchenConfig_KnownRegion(t *testing.T) {
+ 		t.Fatalf("validateKitchenConfig: %v", err)
+ 	}
+ }
++
++// TestValidateKitchenConfig_RejectsUndeclaredRoutingRegion guards against
++// the bug: a routing rule for a region the kitchen never declared must
++// fail startup validation instead of falling through to default values.
++func TestValidateKitchenConfig_RejectsUndeclaredRoutingRegion(t *testing.T) {
++	cfg := KitchenConfig{
++		KitchenID: "kitchen-east",
++		Regions:   []Region{{Name: "riverside"}},
++		RoutingRules: []RoutingRule{
++			{RegionName: "hillside"},
++		},
++	}
++	if err := validateKitchenConfig(cfg); err == nil {
++		t.Fatal("want undeclared-region error, got nil")
++	}
++}

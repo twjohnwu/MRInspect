@@ -1,0 +1,67 @@
+# mrinspect-fixture: source=b5e0f2a kind=config
+
+commit b5e0f2a7d3c1892e6f4b0a5d8c2e714f6b9a0d31
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Fri Sep 25 10:47:33 2026 +0800
+
+    fix(marinadeconfig): enforce brine cold-chain limit before publishing
+
+    MarinadeConfig.Validate checked SaltPercent and SoakMinutes but never
+    looked at BrineTempC, so a brine tank reporting a temperature above
+    the 4C cold-chain limit still passed validation and brine-service
+    went on to publish chicken.brined for that batch. Validate now
+    rejects any BrineTempC above 4.0 before the event is allowed to be
+    published, matching the documented cold-chain requirement.
+
+diff --git a/internal/marinadeconfig/config.go b/internal/marinadeconfig/config.go
+index 8c3e1a9..4d7f2b0 100644
+--- a/internal/marinadeconfig/config.go
++++ b/internal/marinadeconfig/config.go
+@@ -6,6 +6,8 @@ import "fmt"
+ 
++const maxBrineTempC = 4.0
++
+ type MarinadeConfig struct {
+ 	SaltPercent float64
+ 	SoakMinutes int
+ 	BrineTempC  float64
+ }
+ 
+ func (c MarinadeConfig) Validate() error {
+ 	if c.SaltPercent <= 0 || c.SaltPercent > 15 {
+ 		return fmt.Errorf("marinadeconfig: salt percent %.1f out of range", c.SaltPercent)
+ 	}
+ 	if c.SoakMinutes <= 0 {
+ 		return fmt.Errorf("marinadeconfig: soak minutes must be positive")
+ 	}
++	if c.BrineTempC > maxBrineTempC {
++		return fmt.Errorf("marinadeconfig: brine temp %.1fC exceeds cold-chain limit %.1fC", c.BrineTempC, maxBrineTempC)
++	}
+ 	return nil
+ }
+diff --git a/internal/marinadeconfig/config_test.go b/internal/marinadeconfig/config_test.go
+index 2a9d0e4..6b3c8f1 100644
+--- a/internal/marinadeconfig/config_test.go
++++ b/internal/marinadeconfig/config_test.go
+@@ -15,3 +15,20 @@ func TestValidate_SoakMinutesPositive(t *testing.T) {
+ 		t.Fatal("want error for non-positive soak minutes, got nil")
+ 	}
+ }
++
++// TestValidate_RejectsWarmBrine guards against the cold-chain gap: a
++// BrineTempC above the 4C limit must fail validation before chicken.brined
++// is ever published.
++func TestValidate_RejectsWarmBrine(t *testing.T) {
++	c := MarinadeConfig{SaltPercent: 8, SoakMinutes: 45, BrineTempC: 6.5}
++	if err := c.Validate(); err == nil {
++		t.Fatal("want error for brine temp above cold-chain limit, got nil")
++	}
++}
++
++// TestValidate_AcceptsColdBrine verifies brine at or below the limit passes.
++func TestValidate_AcceptsColdBrine(t *testing.T) {
++	c := MarinadeConfig{SaltPercent: 8, SoakMinutes: 45, BrineTempC: 3.5}
++	if err := c.Validate(); err != nil {
++		t.Fatalf("want cold brine to pass validation, got %v", err)
++	}
++}

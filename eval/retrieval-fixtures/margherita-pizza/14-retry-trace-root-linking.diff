@@ -1,0 +1,57 @@
+# mrinspect-fixture: source=b62e9a4 kind=logic
+
+commit b62e9a41d7c3f80962e5b4a1d907c8e3f6a5b210
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Thu Sep 17 16:22:18 2026 +0800
+
+    fix(observability): link retried kitchen-dispatch spans to the original trace root
+
+    retryKitchenDispatch() started a brand-new trace root for every retry
+    attempt instead of attaching an attempt span under the order's
+    original trace root. Support could no longer follow one order across
+    a retried dispatch: the first attempt and its retry showed up as two
+    unrelated traces with no shared identifier. The retry path now reads
+    the order's existing trace root from context and starts a distinct
+    attempt span under it, so retries link to the original root while
+    still being individually identifiable.
+
+diff --git a/internal/observability/trace.go b/internal/observability/trace.go
+index 1a5c832..7e460d9 100644
+--- a/internal/observability/trace.go
++++ b/internal/observability/trace.go
+@@ -6,14 +6,18 @@ import (
+ )
+
+ func retryKitchenDispatch(ctx context.Context, order Order, attempt int) error {
+-	ctx, root := startTraceRoot(ctx, order.ID)
+-	defer root.End()
++	root, ok := traceRootFromContext(ctx)
++	if !ok {
++		ctx, root = startTraceRoot(ctx, order.ID)
++	}
++	ctx, attemptSpan := root.StartAttemptSpan(ctx, attempt)
++	defer attemptSpan.End()
+
+ 	return dispatchToKitchen(ctx, order)
+ }
+diff --git a/internal/observability/trace_test.go b/internal/observability/trace_test.go
+index 9d3b710..4c8f625 100644
+--- a/internal/observability/trace_test.go
++++ b/internal/observability/trace_test.go
+@@ -11,3 +11,21 @@ func TestRetryKitchenDispatch_FirstAttemptStartsRoot(t *testing.T) {
+ 		t.Fatal("want a trace root on the first attempt")
+ 	}
+ }
++
++// TestRetryKitchenDispatch_RetryLinksToOriginalRoot guards against the
++// bug: a retried dispatch must attach a distinct attempt span under the
++// order's existing trace root, not start an unrelated new root.
++func TestRetryKitchenDispatch_RetryLinksToOriginalRoot(t *testing.T) {
++	ctx, root := startTraceRoot(context.Background(), "order-77")
++	if err := retryKitchenDispatch(ctx, Order{ID: "order-77"}, 2); err != nil {
++		t.Fatalf("retryKitchenDispatch: %v", err)
++	}
++	if got := root.AttemptSpanCount(); got != 1 {
++		t.Fatalf("root.AttemptSpanCount() = %d, want 1 linked attempt span", got)
++	}
++}

@@ -1,0 +1,56 @@
+# mrinspect-fixture: source=a4e7c19 kind=config
+
+commit a4e7c193b8d0f2a6c5e19d7f3b4a8c6e0d1f3a56
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Mon Sep 28 09:12:04 2026 +0800
+
+    fix(coatingschedule): reject a double-dip declaration missing its second thickness sample
+
+    ValidateCoatingSchedule accepted any DipCount greater than one even
+    when ThicknessSamplesMm held only a single reading, so crispy-coating-api
+    recorded a batch as double-dipped without ever measuring the second
+    coat. The missing sample then let a thin second pass through to
+    frying-controller undetected. ValidateCoatingSchedule now requires
+    len(ThicknessSamplesMm) to equal DipCount before the schedule is
+    accepted.
+
+diff --git a/internal/coatingschedule/schedule.go b/internal/coatingschedule/schedule.go
+index 2b6d8f1..7c0e4a3 100644
+--- a/internal/coatingschedule/schedule.go
++++ b/internal/coatingschedule/schedule.go
+@@ -6,16 +6,21 @@ import (
+ 	"fmt"
+ )
+
+ type Schedule struct {
+ 	DipCount            int
+ 	ThicknessSamplesMm  []float64
+ }
+
+ func ValidateCoatingSchedule(s Schedule) error {
+ 	if s.DipCount < 1 {
+ 		return fmt.Errorf("coatingschedule: dip count must be positive")
+ 	}
++	if len(s.ThicknessSamplesMm) != s.DipCount {
++		return fmt.Errorf("coatingschedule: expected %d thickness samples for %d dips, got %d", s.DipCount, s.DipCount, len(s.ThicknessSamplesMm))
++	}
+ 	return nil
+ }
+diff --git a/internal/coatingschedule/schedule_test.go b/internal/coatingschedule/schedule_test.go
+index 5a1c9d0..8e2f4b7 100644
+--- a/internal/coatingschedule/schedule_test.go
++++ b/internal/coatingschedule/schedule_test.go
+@@ -18,3 +18,15 @@ func TestValidateCoatingSchedule_RejectsZeroDips(t *testing.T) {
+ 		t.Fatal("want error for zero dip count, got nil")
+ 	}
+ }
++
++// TestValidateCoatingSchedule_RejectsMissingSecondSample guards against the
++// undercounted-thickness bug: a DipCount of two with only one thickness
++// sample must return an error instead of being accepted.
++func TestValidateCoatingSchedule_RejectsMissingSecondSample(t *testing.T) {
++	s := Schedule{DipCount: 2, ThicknessSamplesMm: []float64{1.4}}
++	if err := ValidateCoatingSchedule(s); err == nil {
++		t.Fatal("want error for missing second thickness sample, got nil")
++	}
++}

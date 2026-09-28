@@ -1,0 +1,70 @@
+# mrinspect-fixture: source=6c8e2f1 kind=logic
+
+commit 6c8e2f19a3d704b1e8c5f9a2b6d013e7c48f5a92
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Sun Sep 13 09:14:02 2026 +0800
+
+    fix(testsupport): reject contradictory order fixture options (empty+items)
+
+    NewOrderFixture() silently accepted both WithNoItems() and WithItem()
+    on the same builder call, producing a fixture that claimed an empty
+    basket while still carrying a populated item slice. Tests built on top
+    of that fixture asserted on whichever field they happened to read and
+    disagreed with each other about the basket state. The builder now
+    tracks declared options and returns an error the first time two
+    options contradict each other instead of building the impossible
+    fixture silently.
+
+diff --git a/internal/testsupport/orderfixture.go b/internal/testsupport/orderfixture.go
+index 3b7a1c4..9d2e6f8 100644
+--- a/internal/testsupport/orderfixture.go
++++ b/internal/testsupport/orderfixture.go
+@@ -10,20 +10,34 @@ type OrderFixtureOption func(*orderFixtureState) error
+
+ type orderFixtureState struct {
+ 	items      []Item
+-	forceEmpty bool
++	forceEmpty bool
++	sawItem    bool
++	sawEmpty   bool
+ }
+
+ func WithNoItems() OrderFixtureOption {
+ 	return func(s *orderFixtureState) error {
++		if s.sawItem {
++			return fmt.Errorf("testsupport: WithNoItems contradicts an earlier WithItem option")
++		}
++		s.sawEmpty = true
+ 		s.forceEmpty = true
+ 		return nil
+ 	}
+ }
+
+ func WithItem(item Item) OrderFixtureOption {
+ 	return func(s *orderFixtureState) error {
++		if s.sawEmpty {
++			return fmt.Errorf("testsupport: WithItem contradicts an earlier WithNoItems option")
++		}
++		s.sawItem = true
+ 		s.items = append(s.items, item)
+ 		return nil
+ 	}
+ }
+diff --git a/internal/testsupport/orderfixture_test.go b/internal/testsupport/orderfixture_test.go
+index 7f4a812..c5d9b30 100644
+--- a/internal/testsupport/orderfixture_test.go
++++ b/internal/testsupport/orderfixture_test.go
+@@ -18,3 +18,15 @@ func TestNewOrderFixture_MinimalValid(t *testing.T) {
+ 		t.Fatal("want non-empty items on default fixture")
+ 	}
+ }
++
++// TestNewOrderFixture_RejectsContradictoryOptions guards against the bug:
++// combining WithNoItems and WithItem must fail loudly instead of building
++// a fixture whose empty flag and item slice disagree.
++func TestNewOrderFixture_RejectsContradictoryOptions(t *testing.T) {
++	_, err := NewOrderFixture(WithNoItems(), WithItem(Item{CurrencyCode: "TWD", MinorUnits: 32000}))
++	if err == nil {
++		t.Fatal("want contradictory-option error, got nil")
++	}
++}

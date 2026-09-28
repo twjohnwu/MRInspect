@@ -1,0 +1,80 @@
+# mrinspect-fixture: source=7a2c9e1 kind=config
+
+commit 7a2c9e1f4b6d0a83c5e19f7d2b4a6c8e0d1f3a52
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Mon Sep 21 08:30:11 2026 +0800
+
+    fix(fryerschedule): reject out-of-range fry temperature instead of clamping it
+
+    ValidateFrySchedule silently clamped any TargetTempC outside the
+    [160,180] safety band into that band before scheduling the stage,
+    so an operator typo such as 1600 became a clamped 180 with no error
+    surfaced anywhere. The clamped value then drove the stage duration
+    lookup, cooking the batch at a duration meant for a different
+    temperature. Out-of-range temperatures must now return a validation
+    error; a documented low-temp cooldown stage is the only exception,
+    and it must set AckOverride explicitly.
+
+diff --git a/internal/fryerschedule/schedule.go b/internal/fryerschedule/schedule.go
+index 1c4a8f2..9e0b6d1 100644
+--- a/internal/fryerschedule/schedule.go
++++ b/internal/fryerschedule/schedule.go
+@@ -10,20 +10,26 @@ type Stage struct {
+ 	TargetTempC float64
+ 	DurationSec int
++	AckOverride bool
+ }
+ 
+ const (
+ 	minSafeTempC = 160.0
+ 	maxSafeTempC = 180.0
+ )
+ 
+ func ValidateFrySchedule(stages []Stage) error {
+ 	for i, stage := range stages {
+-		if stage.TargetTempC < minSafeTempC {
+-			stages[i].TargetTempC = minSafeTempC
++		if stage.TargetTempC < minSafeTempC || stage.TargetTempC > maxSafeTempC {
++			if !stage.AckOverride {
++				return fmt.Errorf("fryerschedule: stage %d target temp %.1fC outside safety band [%.1f,%.1f]", i, stage.TargetTempC, minSafeTempC, maxSafeTempC)
++			}
+ 		}
+-		if stage.TargetTempC > maxSafeTempC {
+-			stages[i].TargetTempC = maxSafeTempC
+-		}
+ 		if stage.DurationSec <= 0 {
+ 			return fmt.Errorf("fryerschedule: stage %d has non-positive duration", i)
+ 		}
+ 	}
+ 	return nil
+ }
+diff --git a/internal/fryerschedule/schedule_test.go b/internal/fryerschedule/schedule_test.go
+index 4f0a2c3..7d1e9b4 100644
+--- a/internal/fryerschedule/schedule_test.go
++++ b/internal/fryerschedule/schedule_test.go
+@@ -30,3 +30,24 @@ func TestValidateFrySchedule_PositiveDuration(t *testing.T) {
+ 		t.Fatal("want error for non-positive duration, got nil")
+ 	}
+ }
++
++// TestValidateFrySchedule_RejectsOutOfRangeTemp guards against the clamping
++// bug: a stage temperature outside the safety band without AckOverride must
++// return an error instead of being silently clamped into range.
++func TestValidateFrySchedule_RejectsOutOfRangeTemp(t *testing.T) {
++	stages := []Stage{{TargetTempC: 1600, DurationSec: 240}}
++	if err := ValidateFrySchedule(stages); err == nil {
++		t.Fatal("want error for out-of-range temp, got nil")
++	}
++	if stages[0].TargetTempC != 1600 {
++		t.Fatalf("want temp left unchanged at 1600, got %.1f", stages[0].TargetTempC)
++	}
++}
++
++// TestValidateFrySchedule_AcceptsAckedOverride verifies the documented
++// escape hatch: an out-of-range temp with AckOverride set passes validation.
++func TestValidateFrySchedule_AcceptsAckedOverride(t *testing.T) {
++	stages := []Stage{{TargetTempC: 140, DurationSec: 60, AckOverride: true}}
++	if err := ValidateFrySchedule(stages); err != nil {
++		t.Fatalf("want acked override to pass validation, got %v", err)
++	}
++}

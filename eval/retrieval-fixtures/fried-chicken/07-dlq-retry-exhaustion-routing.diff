@@ -1,0 +1,63 @@
+# mrinspect-fixture: source=d19f6b3 kind=logic
+
+commit d19f6b3a5c8e2f70b1d4a6c9e3f0812d5b7a6e84
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Tue Sep 29 11:38:21 2026 +0800
+
+    fix(consumerretry): route a message to the DLQ topic after its third failed retry
+
+    handleBatchComplete retried a failed frying-controller message
+    forever on the original chicken-pipeline topic, so one permanently
+    malformed batch.complete event could block the whole consumer group
+    and stall every batch behind it. handleBatchComplete now tracks the
+    per-message retry count and publishes to the {topic}.dlq topic once
+    RetryCount reaches maxConsumerRetries, instead of retrying without
+    limit.
+
+diff --git a/internal/consumerretry/retry.go b/internal/consumerretry/retry.go
+index 9c3e1a2..4f8b0d6 100644
+--- a/internal/consumerretry/retry.go
++++ b/internal/consumerretry/retry.go
+@@ -9,18 +9,25 @@ import (
+ 	"fmt"
+ )
+
++const maxConsumerRetries = 3
++
+ func handleBatchComplete(ctx context.Context, msg Message, publish PublishFunc) error {
+ 	if err := process(msg); err != nil {
+-		return fmt.Errorf("consumerretry: process failed: %w", err)
++		msg.RetryCount++
++		if msg.RetryCount >= maxConsumerRetries {
++			return publish(ctx, msg.Topic+".dlq", msg)
++		}
++		return fmt.Errorf("consumerretry: process failed: %w", err)
+ 	}
+ 	return nil
+ }
+diff --git a/internal/consumerretry/retry_test.go b/internal/consumerretry/retry_test.go
+index 7d0a2c3..1e6f9b4 100644
+--- a/internal/consumerretry/retry_test.go
++++ b/internal/consumerretry/retry_test.go
+@@ -14,3 +14,26 @@ func TestHandleBatchComplete_RetriesOnFailure(t *testing.T) {
+ 		t.Fatal("want error on first failure, got nil")
+ 	}
+ }
++
++// TestHandleBatchComplete_RoutesToDLQAfterMaxRetries guards against the
++// infinite-retry bug: a message must be published to its DLQ topic once
++// RetryCount reaches maxConsumerRetries instead of retrying forever.
++func TestHandleBatchComplete_RoutesToDLQAfterMaxRetries(t *testing.T) {
++	var publishedTopic string
++	publish := func(ctx context.Context, topic string, m Message) error {
++		publishedTopic = topic
++		return nil
++	}
++	msg := Message{Topic: "chicken-pipeline", RetryCount: maxConsumerRetries - 1}
++	if err := handleBatchComplete(context.Background(), msg, publish); err != nil {
++		t.Fatalf("want DLQ publish to succeed, got %v", err)
++	}
++	if publishedTopic != "chicken-pipeline.dlq" {
++		t.Fatalf("published topic = %q, want %q", publishedTopic, "chicken-pipeline.dlq")
++	}
++}

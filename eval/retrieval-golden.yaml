@@ -1,5 +1,5 @@
 entries:
-  - fixture: 01-echo-cut-earliest-marker.diff
+  - fixture: margherita-pizza/01-echo-cut-earliest-marker.diff
     lane: spec-conformance
     relevant:
       - set: margherita-pizza-docs
@@ -17,7 +17,7 @@ entries:
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Review marker placard retirement
         category: scope
-  - fixture: 01-echo-cut-earliest-marker.diff
+  - fixture: margherita-pizza/01-echo-cut-earliest-marker.diff
     lane: standards
     relevant:
       - set: shared-standards
@@ -33,7 +33,7 @@ entries:
         heading: Shared Archive Notices > Review marker label sunset
         category: version
 
-  - fixture: 02-logger-metrics-race.diff
+  - fixture: margherita-pizza/02-logger-metrics-race.diff
     lane: spec-conformance
     relevant:
       - set: margherita-pizza-docs
@@ -54,7 +54,7 @@ entries:
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Logger metrics race billing archive
         category: scope
-  - fixture: 02-logger-metrics-race.diff
+  - fixture: margherita-pizza/02-logger-metrics-race.diff
     lane: standards
     relevant:
       - set: shared-standards
@@ -70,7 +70,7 @@ entries:
         heading: Shared Archive Notices > Logger metrics race migration ledger
         category: version
 
-  - fixture: 03-lane-overlays-config.diff
+  - fixture: margherita-pizza/03-lane-overlays-config.diff
     lane: spec-conformance
     relevant:
       - set: margherita-pizza-docs
@@ -88,7 +88,7 @@ entries:
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > Lane overlay config menu retirement
         category: scope
-  - fixture: 03-lane-overlays-config.diff
+  - fixture: margherita-pizza/03-lane-overlays-config.diff
     lane: standards
     relevant:
       - set: shared-standards
@@ -104,7 +104,7 @@ entries:
         heading: Shared Archive Notices > Lane overlay config invoice migration
         category: version
 
-  - fixture: 04-lane-topk-default.diff
+  - fixture: margherita-pizza/04-lane-topk-default.diff
     lane: spec-conformance
     relevant:
       - set: margherita-pizza-docs
@@ -122,7 +122,7 @@ entries:
         path: kitchen-notices.md
         heading: Margherita Pizza Kitchen Notices > TopK default retriever coupon phaseout
         category: scope
-  - fixture: 04-lane-topk-default.diff
+  - fixture: margherita-pizza/04-lane-topk-default.diff
     lane: standards
     relevant:
       - set: shared-standards
@@ -137,3 +137,623 @@ entries:
         path: archive-notices.md
         heading: Shared Archive Notices > TopK default lane billing conversion
         category: version
+
+  - fixture: margherita-pizza/05-oven-scheduling-window.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: configuration.md
+        heading: Margherita Pizza Configuration > Oven bake window declarations
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > A griddle log kept as separate entries across sunrise
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Delivery window wrap-around oven schedule mixers
+        category: neighbor
+  - fixture: margherita-pizza/05-oven-scheduling-window.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Oven window review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Separate shift entries avoid a backwards clock reading
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Oven bake window schedule owner ledger
+        category: responsibility
+
+  - fixture: margherita-pizza/06-basket-currency-guard.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: api-conventions.md
+        heading: Margherita Pizza API Conventions > Basket currency guard
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > One till drawer per coin type
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Basket currency guard loyalty program menu
+        category: scope
+  - fixture: margherita-pizza/06-basket-currency-guard.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Basket currency review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > One drawer, one coin type, no mixing
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Basket currency guard legacy price list
+        category: version
+
+  - fixture: margherita-pizza/07-kitchen-notice-board-ttl.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: runtime.md
+        heading: Margherita Pizza Runtime Operations > Kitchen notice board expiry
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Chalkboard specials wiped at closing
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Kitchen notice board expiry supplier contract renewal
+        category: scope
+  - fixture: margherita-pizza/07-kitchen-notice-board-ttl.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Notice board retention review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Chalkboard erased once closing arrives
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Kitchen notice board expiry seasoning inventory count
+        category: lexical
+
+  - fixture: margherita-pizza/08-oven-metric-name-stability.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: observability.md
+        heading: Margherita Pizza Observability > Oven metric name stability
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > The same printed heading all season
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Oven metric name stability dashboard subscription renewal
+        category: scope
+  - fixture: margherita-pizza/08-oven-metric-name-stability.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Metric name stability review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > One heading kept the same all season
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Oven metric name stability ownership handoff ledger
+        category: responsibility
+
+  - fixture: margherita-pizza/09-downstream-timeout-budget-split.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: runtime.md
+        heading: Margherita Pizza Runtime Operations > Downstream timeout budget split
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > One shared timer used by several stations in turn
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Downstream timeout budget delivery route retries
+        category: neighbor
+  - fixture: margherita-pizza/09-downstream-timeout-budget-split.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Timeout budget review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > One shared timer given out to several stations in turn
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Downstream timeout budget legacy SLA ledger
+        category: version
+
+  - fixture: margherita-pizza/10-fixture-builder-contradictory-options.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: testing.md
+        heading: Margherita Pizza Testing Guide > Fixture builder contradictory options
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > A recipe card that cannot say both empty and full
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Contradictory fixture option rejection sample platter rotation
+        category: lexical
+  - fixture: margherita-pizza/10-fixture-builder-contradictory-options.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Fixture option review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A card cannot claim both nothing and something
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Fixture option review empty jar labeling
+        category: lexical
+
+  - fixture: margherita-pizza/11-dough-service-direct-db-boundary.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: architecture.md
+        heading: Margherita Pizza System Architecture > Mozzarella-service readiness client boundary
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Asking the neighboring station instead of peeking behind it
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Delivery-service shared spreadsheet handoff
+        category: neighbor
+  - fixture: margherita-pizza/11-dough-service-direct-db-boundary.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Service boundary review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Asking the neighboring stall instead of walking behind its counter
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Route-sheet handoff between delivery drivers
+        category: neighbor
+
+  - fixture: margherita-pizza/12-kitchen-region-declaration-guard.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: configuration.md
+        heading: Margherita Pizza Configuration > Routing rule region declaration guard
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > A counter only takes orders for its own posted neighborhoods
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Routing rule region declaration guard facilities checklist
+        category: responsibility
+  - fixture: margherita-pizza/12-kitchen-region-declaration-guard.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Routing region ownership review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A neighborhood must be posted before a counter can serve it
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Routing rule region declaration guard property records
+        category: responsibility
+
+  - fixture: margherita-pizza/13-pagination-cursor-tiebreak.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: api-conventions.md
+        heading: Margherita Pizza API Conventions > Order-history cursor tie-breaking
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Two things arriving at the very same moment still line up correctly
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Order-history cursor tie-breaking raffle ticket count
+        category: lexical
+  - fixture: margherita-pizza/13-pagination-cursor-tiebreak.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Pagination tie-break review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Same-minute arrivals still keep a fixed place in line
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Kitchen queue display ticket reshuffle
+        category: neighbor
+
+  - fixture: margherita-pizza/14-retry-trace-root-linking.diff
+    lane: spec-conformance
+    relevant:
+      - set: margherita-pizza-docs
+        path: observability.md
+        heading: Margherita Pizza Observability > Retry attempt span linking
+    paraphrase:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > A second try gets its own tag under the same order ticket
+    distractors:
+      - set: margherita-pizza-docs
+        path: kitchen-notices.md
+        heading: Margherita Pizza Kitchen Notices > Retry attempt span linking marketing dashboard ledger
+        category: responsibility
+  - fixture: margherita-pizza/14-retry-trace-root-linking.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Retry trace linkage review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A retried try keeps its place in the same line
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Retry attempt span linking archive migration catalog
+        category: scope
+
+  - fixture: fried-chicken/01-fryer-temperature-schedule.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Fry stage temperature safety band
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A too-hot dial reading gets bounced back instead of rounded down
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Fry temperature schedule annual inspector certification renewal
+        category: scope
+  - fixture: fried-chicken/01-fryer-temperature-schedule.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Fry temperature safety review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A too-hot dial reading gets bounced back instead of rounded down
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Fry temperature schedule laminated wall chart archive
+        category: lexical
+
+  - fixture: fried-chicken/02-batch-queue-backpressure.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Batch queue admission and backpressure
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > The frying line waves off extra trays when its rack fills up
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Coating station dip-counter handoff notebook
+        category: neighbor
+  - fixture: fried-chicken/02-batch-queue-backpressure.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Batch queue backpressure review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > The frying line waves off extra trays when its rack fills up
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Batch queue backpressure equipment-vendor warranty ledger
+        category: responsibility
+
+  - fixture: fried-chicken/03-marinade-config-validation.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Marinade cold-chain validation
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A too-warm soaking tub never leaves the walk-in chiller
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Marinade config validation retired salt-log binder
+        category: version
+  - fixture: fried-chicken/03-marinade-config-validation.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Marinade cold-chain review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A too-warm soaking tub never leaves the walk-in chiller
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Marinade config validation supplier delivery contract renewal
+        category: scope
+
+  - fixture: fried-chicken/04-order-pickup-pagination.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Pickup listing pagination tie-break
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Same-minute counter tickets still keep a fixed spot in line
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Pickup counter raffle ticket cursor tie-break drawing
+        category: lexical
+  - fixture: fried-chicken/04-order-pickup-pagination.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Pickup listing tie-break review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Same-minute counter tickets still keep a fixed spot in line
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Delivery dispatch ticket sequencing ledger
+        category: neighbor
+
+  - fixture: fried-chicken/05-oil-change-alerting.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Oil-age offset commit ordering
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > The grease-change logbook only gets stamped after the entry is actually written
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Oil-age offset commit ordering facilities maintenance checklist
+        category: responsibility
+  - fixture: fried-chicken/05-oil-change-alerting.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Oil-change alert reliability review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > The grease-change logbook only gets stamped after the entry is actually written
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Oil-age offset commit ordering legacy paper ledger
+        category: version
+
+  - fixture: fried-chicken/06-coating-double-dip-thickness-guard.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Double-dip coating thickness guard
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A repeat coating pass is never marked finished without its own measurement
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Double-dip coating thickness guard laminated recipe card
+        category: lexical
+  - fixture: fried-chicken/06-coating-double-dip-thickness-guard.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Coating thickness sample count review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A repeat coating pass is never marked finished without its own measurement
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Double-dip coating thickness guard seasonal menu rotation ledger
+        category: scope
+
+  - fixture: fried-chicken/07-dlq-retry-exhaustion-routing.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > DLQ retry exhaustion routing
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A batch that keeps stalling gets set off to the side instead of blocking the line
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > DLQ retry exhaustion routing retired paging binder
+        category: version
+  - fixture: fried-chicken/07-dlq-retry-exhaustion-routing.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > DLQ retry exhaustion review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A batch that keeps stalling gets set off to the side instead of blocking the line
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Coating rework bin overflow handoff notebook
+        category: neighbor
+
+  - fixture: fried-chicken/08-consumer-shutdown-context-cancel.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Consumer shutdown context handling
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A shift ending quietly closes its own register instead of raising an alarm
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Consumer shutdown context handling equipment-vendor warranty ledger
+        category: responsibility
+  - fixture: fried-chicken/08-consumer-shutdown-context-cancel.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Consumer shutdown signal review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A shift ending quietly closes its own register instead of raising an alarm
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Consumer shutdown context handling laminated wall chart archive
+        category: lexical
+
+  - fixture: fried-chicken/09-pipeline-batch-upsert-timestamp.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Pipeline batch upsert timestamp
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > A page only shows the date it was actually last touched
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Pipeline batch upsert timestamp retired salt-log binder
+        category: version
+  - fixture: fried-chicken/09-pipeline-batch-upsert-timestamp.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Upsert timestamp freshness review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > A page only shows the date it was actually last touched
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Pipeline batch upsert timestamp menu retirement catalog
+        category: scope
+
+  - fixture: fried-chicken/10-write-concern-majority-enforcement.diff
+    lane: spec-conformance
+    relevant:
+      - set: fried-chicken-docs
+        path: operations.md
+        heading: Fried Chicken Operations > Pipeline batch write concern
+    paraphrase:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Delivery counter tickets get pulled from two stubs instead of one
+    distractors:
+      - set: fried-chicken-docs
+        path: shift-notes.md
+        heading: Fried Chicken Shift Notes > Pipeline batch write concern coating station dip-counter handoff
+        category: neighbor
+  - fixture: fried-chicken/10-write-concern-majority-enforcement.diff
+    lane: standards
+    relevant:
+      - set: shared-standards
+        path: review-checklist.md
+        heading: Shared Review Checklist > Write concern acknowledgment review
+    paraphrase:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Delivery counter tickets get pulled from two stubs instead of one
+    distractors:
+      - set: shared-standards
+        path: archive-notices.md
+        heading: Shared Archive Notices > Pipeline batch write concern facilities maintenance checklist
+        category: responsibility

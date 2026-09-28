@@ -20,3 +20,7 @@
 - All gRPC endpoints must include deadline propagation (`ctx` with timeout).
 - Redis keys follow the pattern `{service}:{entity}:{id}` — e.g., `dough:batch:abc123`.
 - Database migrations live in `migrations/` and use sequential integer naming (`001_init.sql`).
+
+## Mozzarella-service readiness client boundary
+
+`checkSauceAndCheeseReady` in dough-service calls mozzarella-service's HTTP readiness endpoint through `mozzarellaclient.Client` instead of opening a direct SQL connection to mozzarella-service's cold-chain table. Sauce readiness already crosses the same boundary through `tomato-sauce-api`'s status endpoint, and dough-service holds no database credential for mozzarella-service's schema.

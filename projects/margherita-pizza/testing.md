@@ -109,3 +109,7 @@ Cleanup functions are registered immediately after a resource is acquired. Clean
 ## Flaky test handling
 
 A flaky test is quarantined only with an owner and a recorded reproduction hypothesis. Retries may collect evidence temporarily but never redefine intermittent failure as success.
+
+## Fixture builder contradictory options
+
+A fixture builder that receives both an explicit empty-basket option and an item option must reject the combination instead of building a fixture whose reported basket state and stored item slice disagree. The first option that contradicts an earlier one returns a builder error naming both options.

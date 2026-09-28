@@ -1,0 +1,72 @@
+# mrinspect-fixture: source=e91c4a7 kind=logic
+
+commit e91c4a7b2d6f0839c5a1e4b7d0f2c86a3e9b5d70
+Author: fryer-bot <fryer-bot@fried-chicken.internal>
+Date:   Sat Sep 26 16:19:58 2026 +0800
+
+    fix(pickupapi): break pickup listing ties by order ID, not ETA alone
+
+    ListPickupOrders paginated strictly by PickupETA, so any two orders
+    sharing the same ETA value could be returned in either order across
+    consecutive pages depending on query planner behavior, and the
+    cursor sometimes skipped or repeated one of the tied orders when a
+    page boundary fell between them. The cursor now encodes PickupETA
+    plus OrderID and the query compares the pair, so orders with an
+    identical ETA still resolve through a stable secondary key.
+
+diff --git a/internal/pickupapi/pagination.go b/internal/pickupapi/pagination.go
+index 0d4f9c2..7b1e6a3 100644
+--- a/internal/pickupapi/pagination.go
++++ b/internal/pickupapi/pagination.go
+@@ -6,20 +6,24 @@ import "fmt"
+ 
+ type Cursor struct {
+ 	PickupETA int64
++	OrderID   string
+ }
+ 
+ func (c Cursor) Encode() string {
+-	return fmt.Sprintf("%d", c.PickupETA)
++	return fmt.Sprintf("%d:%s", c.PickupETA, c.OrderID)
+ }
+ 
+ func ListPickupOrders(orders []Order, after Cursor, limit int) []Order {
+ 	var page []Order
+ 	for _, o := range orders {
+-		if o.PickupETA <= after.PickupETA {
++		if o.PickupETA < after.PickupETA {
+ 			continue
+ 		}
++		if o.PickupETA == after.PickupETA && o.OrderID <= after.OrderID {
++			continue
++		}
+ 		page = append(page, o)
+ 		if len(page) == limit {
+ 			break
+ 		}
+ 	}
+ 	return page
+ }
+diff --git a/internal/pickupapi/pagination_test.go b/internal/pickupapi/pagination_test.go
+index 4e8b0d1..9a3f6c2 100644
+--- a/internal/pickupapi/pagination_test.go
++++ b/internal/pickupapi/pagination_test.go
+@@ -25,3 +25,26 @@ func TestListPickupOrders_AdvancesPastETA(t *testing.T) {
+ 		t.Fatalf("page = %+v, want single order past ETA", page)
+ 	}
+ }
++
++// TestListPickupOrders_TieBreaksByOrderID guards against the pagination bug:
++// two orders sharing the same PickupETA must still resolve deterministically
++// through OrderID instead of both being skipped or both repeated.
++func TestListPickupOrders_TieBreaksByOrderID(t *testing.T) {
++	orders := []Order{
++		{PickupETA: 100, OrderID: "a"},
++		{PickupETA: 100, OrderID: "b"},
++		{PickupETA: 100, OrderID: "c"},
++	}
++	page := ListPickupOrders(orders, Cursor{PickupETA: 100, OrderID: "a"}, 10)
++	if len(page) != 2 || page[0].OrderID != "b" || page[1].OrderID != "c" {
++		t.Fatalf("page = %+v, want [b c] after cursor a", page)
++	}
++}

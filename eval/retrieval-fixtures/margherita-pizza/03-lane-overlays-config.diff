@@ -1,0 +1,87 @@
+# mrinspect-fixture: source=7855389 kind=config
+
+commit 7855389dc6f80a297f1f71459ce637132b5427a8
+Author: tw.johnwu <tw.johnwu@gmail.com>
+Date:   Sat Aug 29 16:11:46 2026 +0800
+
+    fix(config): per-system lane overlays; retract cross-system docs tag (B/T21, finding F3)
+
+diff --git a/STDD/multi-lane-review/design-be.md b/STDD/multi-lane-review/design-be.md
+index 6398bee..10ab1f3 100644
+--- a/STDD/multi-lane-review/design-be.md
++++ b/STDD/multi-lane-review/design-be.md
+@@ -187,3 +187,12 @@ sequenceDiagram
+    HTML 註解，GitLab 渲染不可見；身分判定 = 標記 AND 作者，缺一不可。
+ 3. **ModelLimits 生產來源**：`prompt.DefaultModelLimits` 具名預設表；
+    per-lane model 必須在表內，否則 fan-out 前整體失敗（S-33）。
++
++## T21 執行期補充 — 跨系統資源範圍（plan drift 記錄，回退 T15 第 1 點）
++
++T15 給 per-system set 加 `docs` tag 並讓 canonical `spec-conformance` 以
++`tags: [docs]` 選取——cirdan 審查證實這會讓 A 系統的 MR 檢索到 B 系統的
++spec（發現 F3，已驗證）。裁決：撤回 per-system set 的 `docs` tag；每個系統
++以自己的 `projects/<system>/lanes.yaml` overlay 把 `spec-conformance` 釘到
++自己的 set。canonical 的 `tags: [docs]` 保留給未來真正跨系統共用的文件
++（現無 set 帶此 tag＝檢索零結果）。新增系統＝加一個 overlay 檔，零程式改動。
+diff --git a/STDD/multi-lane-review/tasks.md b/STDD/multi-lane-review/tasks.md
+index e7fad17..38fa55e 100644
+--- a/STDD/multi-lane-review/tasks.md
++++ b/STDD/multi-lane-review/tasks.md
+@@ -210,7 +210,7 @@ Verification command: `go test ./internal/reviewer/ -run TestPostReview_ListingE
+ Test file: internal/lane/compose_test.go（追加）
+ Verification command: `go test ./internal/lane/ -run TestCompose_UnknownSelectorIsNamedDegradation -count=1`
+ 
+-## T21 [ ] [INFRA] 修復發現 F3 — per-system lane overlay，撤 docs tag
++## T21 [x] [INFRA] 修復發現 F3 — per-system lane overlay，撤 docs tag
+ 
+ 理由：純設定檔改動（resources.yaml、lanes.yaml、兩個新 overlay 檔），無程式碼。
+ Verification command: `go test ./internal/rag/resources/ ./internal/lane/ -count=1 && test -f projects/margherita-pizza/lanes.yaml && test -f projects/fried-chicken/lanes.yaml`
+diff --git a/projects/fried-chicken/lanes.yaml b/projects/fried-chicken/lanes.yaml
+new file mode 100644
+index 0000000..d00bbff
+--- /dev/null
++++ b/projects/fried-chicken/lanes.yaml
+@@ -0,0 +1,8 @@
++lanes:
++  - id: spec-conformance
++    enabled: true
++    template: ./projects/_lanes/spec-conformance.tmpl.md
++    intent: "spec and technical documentation conformance"
++    resources:
++      sets: [fried-chicken-docs]
++      tags: []
+diff --git a/projects/margherita-pizza/lanes.yaml b/projects/margherita-pizza/lanes.yaml
+new file mode 100644
+index 0000000..732596d
+--- /dev/null
++++ b/projects/margherita-pizza/lanes.yaml
+@@ -0,0 +1,8 @@
++lanes:
++  - id: spec-conformance
++    enabled: true
++    template: ./projects/_lanes/spec-conformance.tmpl.md
++    intent: "spec and technical documentation conformance"
++    resources:
++      sets: [margherita-pizza-docs]
++      tags: []
+diff --git a/projects/resources.yaml b/projects/resources.yaml
+index 929542d..1a90bce 100644
+--- a/projects/resources.yaml
++++ b/projects/resources.yaml
+@@ -7,14 +7,14 @@ sets:
+     include:
+       - "*.md"
+   - name: margherita-pizza-docs
+-    tags: [margherita-pizza, docs]
++    tags: [margherita-pizza]
+     mode: retrieval
+     paths:
+       - ./projects/margherita-pizza
+     include:
+       - "*.md"
+   - name: fried-chicken-docs
+-    tags: [fried-chicken, docs]
++    tags: [fried-chicken]
+     mode: retrieval
+     paths:
+       - ./projects/fried-chicken

@@ -1,0 +1,84 @@
+# mrinspect-fixture: source=4dfe018 kind=logic
+
+commit 4dfe018a5c7b3e9f102d6a48b0e3c917f5a2d764
+Author: kitchen-bot <kitchen-bot@margherita-pizza.internal>
+Date:   Thu Sep 10 08:47:19 2026 +0800
+
+    fix(noticeboard): expire kitchen notices after configured TTL instead of growing unbounded
+
+    The kitchen notice board accumulated every posted notice for the
+    lifetime of the process; closed-kitchen and past-deal notices stayed
+    visible and the in-memory slice grew without bound. Reads now sweep
+    entries older than the configured TTL before returning the board, and
+    Post rejects a notice whose TTL is zero or negative instead of storing
+    it forever.
+
+diff --git a/internal/noticeboard/board.go b/internal/noticeboard/board.go
+index 8c15e2b..a936017 100644
+--- a/internal/noticeboard/board.go
++++ b/internal/noticeboard/board.go
+@@ -18,15 +18,32 @@ type Notice struct {
+ 	Body      string
+ 	PostedAt  time.Time
++	TTL       time.Duration
+ }
+
+ type Board struct {
+ 	clock   func() time.Time
+ 	notices []Notice
+ }
+
+-func (b *Board) Post(n Notice) {
++func (b *Board) Post(n Notice) error {
++	if n.TTL <= 0 {
++		return fmt.Errorf("noticeboard: notice %q has non-positive TTL", n.Body)
++	}
+ 	b.notices = append(b.notices, n)
++	return nil
+ }
+
+ func (b *Board) Read() []Notice {
++	now := b.clock()
++	fresh := b.notices[:0]
++	for _, n := range b.notices {
++		if now.Sub(n.PostedAt) < n.TTL {
++			fresh = append(fresh, n)
++		}
++	}
++	b.notices = fresh
+ 	return b.notices
+ }
+diff --git a/internal/noticeboard/board_test.go b/internal/noticeboard/board_test.go
+index e390a71..5f7c284 100644
+--- a/internal/noticeboard/board_test.go
++++ b/internal/noticeboard/board_test.go
+@@ -10,3 +10,32 @@ func TestBoard_ReadReturnsPostedNotice(t *testing.T) {
+ 		t.Fatalf("want 1 notice, got %d", len(got))
+ 	}
+ }
++
++// TestBoard_ReadSweepsExpiredNotice verifies the unbounded-growth fix: a
++// notice older than its TTL is swept from the board on Read instead of
++// being retained forever.
++func TestBoard_ReadSweepsExpiredNotice(t *testing.T) {
++	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
++	b := &Board{clock: func() time.Time { return now }}
++	stale := Notice{Body: "closed for renovation", PostedAt: now.Add(-2 * time.Hour), TTL: time.Hour}
++	if err := b.Post(stale); err != nil {
++		t.Fatalf("Post: %v", err)
++	}
++
++	if got := b.Read(); len(got) != 0 {
++		t.Fatalf("want stale notice swept, got %d notices", len(got))
++	}
++}
++
++// TestBoard_Post_RejectsNonPositiveTTL guards against a notice posted
++// without a TTL, which previously stayed on the board forever.
++func TestBoard_Post_RejectsNonPositiveTTL(t *testing.T) {
++	b := &Board{clock: time.Now}
++	err := b.Post(Notice{Body: "no ttl", TTL: 0})
++	if err == nil {
++		t.Fatal("want error for non-positive TTL, got nil")
++	}
++}

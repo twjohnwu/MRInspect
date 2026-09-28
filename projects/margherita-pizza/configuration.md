@@ -109,3 +109,11 @@ Startup diagnostics show normalized non-secret values and their source layer. Li
 ## Change approval
 
 Configuration changes include a rollback note and an owner who can observe the rollout. High-impact capacity or payment changes also identify the metric that triggers reversal.
+
+## Oven bake window declarations
+
+A bake window that crosses midnight must declare two explicit non-wrapping intervals in `OvernightSplit`; a single interval whose end time is before its start time is rejected instead of treated as an implicit wrap. `ValidateBakeWindow` computes duration only from a window whose end is not before its start, or from a validated overnight split, so a wrapped window can never silently produce a zero or negative bake duration.
+
+## Routing rule region declaration guard
+
+`validateKitchenConfig` rejects any routing rule whose `RegionName` is absent from the owning kitchen's own declared `Regions` list, in addition to rejecting a declared region unknown to the region table. A kitchen may only accept orders tagged for a region it explicitly declared.

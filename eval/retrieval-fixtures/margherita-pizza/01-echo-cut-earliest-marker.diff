@@ -1,0 +1,147 @@
+# mrinspect-fixture: source=2aad056 kind=logic
+
+commit 2aad0565d5509c44051c88fca4e81f3d6cd0edb0
+Author: tw.johnwu <tw.johnwu@gmail.com>
+Date:   Sat Aug 29 23:05:20 2026 +0800
+
+    fix(reviewer): cut response at earliest marker across all markers, not list priority (U1)
+    
+    List-priority selection let a marker string quoted inside the reviewed
+    diff near the response tail hijack the cut and discard the whole real
+    review. Earliest-position selection keeps the review; an echoed marker
+    before real content now merely keeps visible noise that validation
+    still gates. Fixed in both the Go reviewer and the TS runner, with
+    regression tests on both sides (fail-then-pass).
+
+diff --git a/internal/reviewer/reviewer.go b/internal/reviewer/reviewer.go
+index 788b105..265bf46 100644
+--- a/internal/reviewer/reviewer.go
++++ b/internal/reviewer/reviewer.go
+@@ -622,11 +622,24 @@ func (r *MRInspectReviewer) loadServiceProject() (project.LoadedProject, error)
+ 
+ func (r *MRInspectReviewer) cleanResponse(response string) string {
+ 	markers := []string{"## Code Review", "# Code Review", "## Review", "### MR Info"}
++	// Cut at the EARLIEST marker occurrence across the whole list, not the
++	// first marker in list-priority order: if the reviewed diff itself
++	// quotes a higher-priority marker string near the tail, list-order
++	// selection would cut there and discard the entire real review, which
++	// is unrecoverable. An echoed marker BEFORE the real content still
++	// leaves echo garbage in the result, but that is accepted here because
++	// ValidateReviewContent still gates on required sections downstream;
++	// a stricter future guard could require the cut tail to actually
++	// contain those required sections.
++	cutAt := -1
+ 	for _, marker := range markers {
+-		if idx := strings.Index(response, marker); idx >= 0 {
+-			return response[idx:]
++		if idx := strings.Index(response, marker); idx >= 0 && (cutAt == -1 || idx < cutAt) {
++			cutAt = idx
+ 		}
+ 	}
++	if cutAt >= 0 {
++		return response[cutAt:]
++	}
+ 	return response
+ }
+ 
+diff --git a/internal/reviewer/reviewer_test.go b/internal/reviewer/reviewer_test.go
+index 54a86be..4c9623a 100644
+--- a/internal/reviewer/reviewer_test.go
++++ b/internal/reviewer/reviewer_test.go
+@@ -897,3 +897,32 @@ func installWarningLogRecorder(t *testing.T, r *MRInspectReviewer) func() string
+ 		return string(data)
+ 	}
+ }
++
++// TestCleanResponse_EarliestMarkerWins guards against the marker-hijack bug:
++// cleanResponse must cut at the EARLIEST marker occurrence in the response,
++// not at the first marker in list-priority order.
++func TestCleanResponse_EarliestMarkerWins(t *testing.T) {
++	r := &MRInspectReviewer{}
++
++	t.Run("tail-quoted high-priority marker hijack", func(t *testing.T) {
++		response := "Some preamble text before the real heading.\n\n" +
++			"## Review\nThis is the real review body with actual findings.\n" +
++			"More real review content here.\n\n" +
++			"```diff\n+ ## Code Review\n+ some quoted diff line from the MR\n```\n"
++		got := r.cleanResponse(response)
++		if !strings.Contains(got, "This is the real review body with actual findings.") {
++			t.Fatalf("cleanResponse dropped the real review body; got: %q", got)
++		}
++		if strings.HasPrefix(got, "```diff") {
++			t.Fatalf("cleanResponse cut at the tail-quoted marker instead of the earliest real one; got: %q", got)
++		}
++	})
++
++	t.Run("earliest position beats list priority", func(t *testing.T) {
++		response := "noise\n### MR Info\nreal content\nmore noise\n## Code Review\nlater section"
++		got := r.cleanResponse(response)
++		if !strings.HasPrefix(got, "### MR Info") {
++			t.Fatalf("cleanResponse must cut at the earliest marker position (### MR Info), got: %q", got)
++		}
++	})
++}
+diff --git a/src/review/MRReviewer.ts b/src/review/MRReviewer.ts
+index 760af60..e77f066 100644
+--- a/src/review/MRReviewer.ts
++++ b/src/review/MRReviewer.ts
+@@ -137,10 +137,20 @@ export class MRReviewer {
+ 
+   private cleanResponse(response: string): string {
+     const markers = ['## Code Review', '# Code Review', '## Review', '### MR Info'];
++    // Cut at the EARLIEST marker occurrence across the whole list, not the
++    // first marker in list-priority order: if the reviewed diff itself
++    // quotes a higher-priority marker string near the tail, list-order
++    // selection would cut there and discard the entire real review, which
++    // is unrecoverable. An echoed marker BEFORE the real content still
++    // leaves echo garbage in the result, but that is accepted here because
++    // the validator still gates on required sections downstream; a
++    // stricter future guard could require the cut tail to actually
++    // contain those required sections.
++    let cutAt = -1;
+     for (const marker of markers) {
+       const idx = response.indexOf(marker);
+-      if (idx >= 0) return response.slice(idx);
++      if (idx >= 0 && (cutAt === -1 || idx < cutAt)) cutAt = idx;
+     }
+-    return response;
++    return cutAt >= 0 ? response.slice(cutAt) : response;
+   }
+ }
+diff --git a/tests/reviewer-quoted-marker.test.ts b/tests/reviewer-quoted-marker.test.ts
+new file mode 100644
+index 0000000..730d5a5
+--- /dev/null
++++ b/tests/reviewer-quoted-marker.test.ts
+@@ -0,0 +1,31 @@
++import { MRReviewer } from '../src/review/MRReviewer';
++
++// cleanResponse takes no constructor dependencies, so exercise it through
++// the smallest seam: an uninitialized instance built off the class
++// prototype, calling the private method via bracket access.
++function makeReviewer(): MRReviewer {
++  return Object.create(MRReviewer.prototype) as MRReviewer;
++}
++
++function cleanResponse(reviewer: MRReviewer, response: string): string {
++  return (reviewer as any).cleanResponse(response);
++}
++
++describe('MRReviewer.cleanResponse — earliest marker wins', () => {
++  test('tail-quoted high-priority marker hijack does not discard the real review', () => {
++    const response =
++      'Some preamble text before the real heading.\n\n' +
++      '## Review\nThis is the real review body with actual findings.\n' +
++      'More real review content here.\n\n' +
++      '```diff\n+ ## Code Review\n+ some quoted diff line from the MR\n```\n';
++    const got = cleanResponse(makeReviewer(), response);
++    expect(got).toContain('This is the real review body with actual findings.');
++    expect(got.startsWith('```diff')).toBe(false);
++  });
++
++  test('earliest position beats list priority', () => {
++    const response = 'noise\n### MR Info\nreal content\nmore noise\n## Code Review\nlater section';
++    const got = cleanResponse(makeReviewer(), response);
++    expect(got.startsWith('### MR Info')).toBe(true);
++  });
++});
