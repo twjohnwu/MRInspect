@@ -21,6 +21,14 @@ type Provider interface {
 }
 
 func NewProvider(cfg config.Config, log *logger.Logger) (Provider, error) {
+	return newProvider(cfg, log)
+}
+
+// newProvider is NewProvider's implementation, with an unexported seam for
+// tests to inject OpenAI options (an httptest base URL and HTTP client)
+// through the config-driven construction path. NewProvider calls this with
+// no extra options.
+func newProvider(cfg config.Config, log *logger.Logger, openaiOpts ...OpenAIOption) (Provider, error) {
 	pcfg := cfg.Providers[cfg.AIProvider]
 	var provider Provider
 	switch cfg.AIProvider {
@@ -33,7 +41,10 @@ func NewProvider(cfg config.Config, log *logger.Logger) (Provider, error) {
 		}
 		provider = p
 	case config.ProviderOpenAI:
-		provider = NewOpenAIProvider(cfg.AIProviderKey, pcfg, log)
+		opts := append([]OpenAIOption{
+			WithOpenAIRemoteState(cfg.Enrichment.Enabled && cfg.Enrichment.RemoteState == "enabled"),
+		}, openaiOpts...)
+		provider = NewOpenAIProvider(cfg.AIProviderKey, pcfg, log, opts...)
 	default:
 		return nil, fmt.Errorf("NewProvider: unknown provider %q", cfg.AIProvider)
 	}

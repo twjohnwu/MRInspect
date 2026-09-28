@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -610,6 +611,294 @@ func TestGenerateTurn_LocalReplayContinuation(t *testing.T) {
 		}
 		if len(turn2Result.ToolCalls) != 0 {
 			t.Errorf("turn 2 tool calls: want none, got %+v", turn2Result.ToolCalls)
+		}
+	})
+}
+
+// TestGenerateTurn_OpenAIRemoteContinuation verifies REQ-02 / S-04.
+func TestGenerateTurn_OpenAIRemoteContinuation(t *testing.T) {
+	providerConfig := config.ProviderConfig{Model: "test-model", MaxTokens: 32}
+	responses := []string{
+		`{"id":"resp_1","output":[{"type":"function_call","call_id":"call_1","name":"repo_search","arguments":"{\"query\":\"NewClient\"}"}],"usage":{"input_tokens":10,"output_tokens":5}}`,
+		`{"id":"resp_2","output":[{"type":"message","content":[{"type":"output_text","text":"final review text"}]}],"usage":{"input_tokens":3,"output_tokens":2}}`,
+	}
+	server, requestBodies := newTurnTestServer(t, responses)
+	defer server.Close()
+
+	ctx := context.Background()
+	provider := NewOpenAIProvider("test-key", providerConfig, newTurnTestLogger(t),
+		WithOpenAIRemoteState(true), WithOpenAIBaseURL(server.URL), WithOpenAIHTTPClient(server.Client()))
+	turn1Result, err := provider.GenerateTurn(ctx, TurnRequest{Prompt: "review", Tools: turnToolSpecs})
+	if err != nil {
+		t.Fatalf("GenerateTurn turn 1: %v (RED expected until GreenTask implements it)", err)
+	}
+
+	turn1Body := decodeTurnRequestBody(t, *requestBodies, 0)
+	if turn1Body["store"] != true {
+		t.Errorf("turn 1 store: want true, got %#v", turn1Body["store"])
+	}
+
+	turn2Result, err := provider.GenerateTurn(ctx, TurnRequest{
+		Prompt:       "review",
+		Tools:        turnToolSpecs,
+		Continuation: turn1Result.Continuation,
+		ToolResults: []ToolResult{
+			{ID: "call_1", Name: "repo_search", Content: "hit"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateTurn turn 2: %v (RED expected until GreenTask implements it)", err)
+	}
+
+	turn2Body := decodeTurnRequestBody(t, *requestBodies, 1)
+	if turn2Body["previous_response_id"] != "resp_1" {
+		t.Errorf("turn 2 previous_response_id: want resp_1, got %#v", turn2Body["previous_response_id"])
+	}
+	if turn2Body["store"] != true {
+		t.Errorf("turn 2 store: want true, got %#v", turn2Body["store"])
+	}
+	input := requireSlice(t, turn2Body["input"], "input")
+	if len(input) != 1 {
+		t.Fatalf("turn 2 input length: want 1, got %d", len(input))
+	}
+	item := requireMap(t, input[0], "input[0]")
+	if item["type"] != "function_call_output" {
+		t.Errorf("input[0].type: want function_call_output, got %#v", item["type"])
+	}
+	if item["call_id"] != "call_1" {
+		t.Errorf("input[0].call_id: want call_1, got %#v", item["call_id"])
+	}
+	output, ok := item["output"].(string)
+	if !ok {
+		t.Fatalf("input[0].output: want string, got %T", item["output"])
+	}
+	if !strings.HasPrefix(output, UntrustedFrame) {
+		t.Errorf("input[0].output: want UntrustedFrame prefix, got %q", output)
+	}
+	if !strings.Contains(output, "hit") {
+		t.Errorf("input[0].output: want to contain %q, got %q", "hit", output)
+	}
+	tools := requireSlice(t, turn2Body["tools"], "tools")
+	if len(tools) == 0 {
+		t.Error("turn 2 tools: want non-empty, got none")
+	}
+	if strings.Contains(string((*requestBodies)[1]), "review") {
+		t.Errorf("turn 2 body contains prompt text %q: %s", "review", (*requestBodies)[1])
+	}
+	if turn2Result.Text != "final review text" {
+		t.Errorf("turn 2 text: want final review text, got %q", turn2Result.Text)
+	}
+}
+
+// enrichmentTranscriptEntry decodes the REQ-05 per-turn transcript fields
+// under test; it intentionally omits any content field, since the
+// transcript must not record tool result content or raw args.
+type enrichmentTranscriptEntry struct {
+	Turn         int    `json:"turn"`
+	Continuation string `json:"continuation"`
+	Prompt       string `json:"prompt"`
+	ToolCalls    []struct {
+		Name      string `json:"name"`
+		ArgsBytes int    `json:"args_bytes"`
+		Valid     bool   `json:"valid"`
+	} `json:"tool_calls"`
+	ToolResults []struct {
+		Name      string `json:"name"`
+		Error     string `json:"error"`
+		Truncated bool   `json:"truncated"`
+	} `json:"tool_results"`
+}
+
+func readEnrichmentTranscriptEntries(t *testing.T, logDir string) []enrichmentTranscriptEntry {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(logDir, "ai-log-*.jsonl"))
+	if err != nil {
+		t.Fatalf("glob transcripts: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("transcript files = %d, want 1", len(files))
+	}
+	file, err := os.Open(files[0])
+	if err != nil {
+		t.Fatalf("open transcript: %v", err)
+	}
+	defer file.Close()
+
+	var entries []enrichmentTranscriptEntry
+	decoder := json.NewDecoder(file)
+	for decoder.More() {
+		var entry enrichmentTranscriptEntry
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatalf("decode transcript: %v", err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// TestGenerateTurn_TranscriptPerTurnNoContent verifies REQ-05 / S-12.
+func TestGenerateTurn_TranscriptPerTurnNoContent(t *testing.T) {
+	resetTranscriptForTest(t)
+	logDir := t.TempDir()
+	providerConfig := config.ProviderConfig{Model: "test-model", MaxTokens: 32}
+	responses := []string{
+		`{"id":"resp_1","output":[{"type":"function_call","call_id":"call_1","name":"repo_search","arguments":"{\"path\":\"/etc/hosts\"}"}],"usage":{"input_tokens":10,"output_tokens":5}}`,
+		`{"id":"resp_2","output":[{"type":"message","content":[{"type":"output_text","text":"final review text"}]}],"usage":{"input_tokens":3,"output_tokens":2}}`,
+	}
+	server, _ := newTurnTestServer(t, responses)
+	defer server.Close()
+
+	log := newTurnTestLogger(t)
+	provider := NewOpenAIProvider("test-key", providerConfig, log,
+		WithOpenAIBaseURL(server.URL), WithOpenAIHTTPClient(server.Client()))
+	decorated := WithRetry(provider, config.APIConfig{AILogDir: logDir, RetryAttempts: 1})
+	tp, ok := decorated.(TurnProvider)
+	if !ok {
+		t.Fatalf("WithRetry result %T does not implement TurnProvider (RED expected until GreenTask implements it)", decorated)
+	}
+
+	ctx := context.Background()
+	turn1Result, err := tp.GenerateTurn(ctx, TurnRequest{Prompt: "review", Tools: turnToolSpecs})
+	if err != nil {
+		t.Fatalf("GenerateTurn turn 1: %v (RED expected until GreenTask implements it)", err)
+	}
+	turn2Result, err := tp.GenerateTurn(ctx, TurnRequest{
+		Prompt:       "review",
+		Tools:        turnToolSpecs,
+		Continuation: turn1Result.Continuation,
+		ToolResults: []ToolResult{
+			{ID: "call_1", Name: "repo_search", Content: "SENTINEL-CONTENT-7"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateTurn turn 2: %v", err)
+	}
+	if turn2Result.Text != "final review text" {
+		t.Errorf("turn 2 text: want final review text, got %q", turn2Result.Text)
+	}
+
+	entries := readEnrichmentTranscriptEntries(t, logDir)
+	if len(entries) != 2 {
+		t.Fatalf("transcript entries: want 2, got %d", len(entries))
+	}
+	if entries[0].Turn != 1 || entries[1].Turn != 2 {
+		t.Errorf("turn numbers: want 1,2, got %d,%d", entries[0].Turn, entries[1].Turn)
+	}
+	if entries[0].Continuation != "none" || entries[1].Continuation != "local" {
+		t.Errorf("continuation: want none,local, got %q,%q", entries[0].Continuation, entries[1].Continuation)
+	}
+	if len(entries[0].ToolCalls) != 1 || entries[0].ToolCalls[0].Name != "repo_search" || entries[0].ToolCalls[0].ArgsBytes <= 0 {
+		t.Errorf("entry 0 tool_calls: got %+v", entries[0].ToolCalls)
+	}
+	if len(entries[1].ToolResults) != 1 || entries[1].ToolResults[0].Name != "repo_search" {
+		t.Errorf("entry 1 tool_results: got %+v", entries[1].ToolResults)
+	}
+	if entries[1].Prompt != "" {
+		t.Errorf("entry 1 prompt: want empty, got %q", entries[1].Prompt)
+	}
+
+	files, err := filepath.Glob(filepath.Join(logDir, "ai-log-*.jsonl"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("glob transcript files: %v, %d files", err, len(files))
+	}
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read transcript file: %v", err)
+	}
+	for _, forbidden := range []string{"SENTINEL-CONTENT-7", "/etc/hosts", logDir} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("transcript file contains forbidden string %q", forbidden)
+		}
+	}
+
+	snapshot := log.MetricsSnapshot()
+	if len(snapshot.APICalls) != 2 {
+		t.Fatalf("APICalls: want 2, got %d", len(snapshot.APICalls))
+	}
+	if !strings.HasSuffix(snapshot.APICalls[0].Endpoint, "/turn1") {
+		t.Errorf("APICalls[0].Endpoint: want suffix /turn1, got %q", snapshot.APICalls[0].Endpoint)
+	}
+	if !strings.HasSuffix(snapshot.APICalls[1].Endpoint, "/turn2") {
+		t.Errorf("APICalls[1].Endpoint: want suffix /turn2, got %q", snapshot.APICalls[1].Endpoint)
+	}
+}
+
+// newProviderTestConfig builds a minimal config.Config for the newProvider
+// seam test: OpenAI provider, given enrichment enable/remote-state values.
+func newProviderTestConfig(enabled bool, remoteState string) config.Config {
+	return config.Config{
+		AIProvider: config.ProviderOpenAI,
+		Providers: map[config.AIProvider]config.ProviderConfig{
+			config.ProviderOpenAI: {Model: "test-model", MaxTokens: 32},
+		},
+		API: config.APIConfig{RetryAttempts: 1},
+		Enrichment: config.EnrichmentConfig{
+			Enabled:     enabled,
+			RemoteState: remoteState,
+		},
+	}
+}
+
+// TestNewProvider_StoreFollowsRemoteState verifies REQ-06 / S-13.
+func TestNewProvider_StoreFollowsRemoteState(t *testing.T) {
+	t.Run("enrichment disabled, remote state enabled", func(t *testing.T) {
+		responses := []string{`{"output":[{"content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}`}
+		server, requestBodies := newTurnTestServer(t, responses)
+		defer server.Close()
+
+		provider, err := newProvider(newProviderTestConfig(false, "enabled"), newTurnTestLogger(t),
+			WithOpenAIBaseURL(server.URL), WithOpenAIHTTPClient(server.Client()))
+		if err != nil {
+			t.Fatalf("newProvider: %v", err)
+		}
+		if _, err := provider.Generate(context.Background(), "review", GenerateOptions{}); err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		body := decodeTurnRequestBody(t, *requestBodies, 0)
+		if body["store"] != false {
+			t.Errorf("store: want false, got %#v", body["store"])
+		}
+	})
+
+	t.Run("enrichment enabled, remote state disabled", func(t *testing.T) {
+		responses := []string{`{"output":[{"content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}`}
+		server, requestBodies := newTurnTestServer(t, responses)
+		defer server.Close()
+
+		provider, err := newProvider(newProviderTestConfig(true, "disabled"), newTurnTestLogger(t),
+			WithOpenAIBaseURL(server.URL), WithOpenAIHTTPClient(server.Client()))
+		if err != nil {
+			t.Fatalf("newProvider: %v", err)
+		}
+		if _, err := provider.Generate(context.Background(), "review", GenerateOptions{}); err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		body := decodeTurnRequestBody(t, *requestBodies, 0)
+		if body["store"] != false {
+			t.Errorf("store: want false, got %#v", body["store"])
+		}
+	})
+
+	t.Run("enrichment enabled, remote state enabled", func(t *testing.T) {
+		responses := []string{`{"id":"resp_1","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}`}
+		server, requestBodies := newTurnTestServer(t, responses)
+		defer server.Close()
+
+		provider, err := newProvider(newProviderTestConfig(true, "enabled"), newTurnTestLogger(t),
+			WithOpenAIBaseURL(server.URL), WithOpenAIHTTPClient(server.Client()))
+		if err != nil {
+			t.Fatalf("newProvider: %v", err)
+		}
+		tp, ok := provider.(TurnProvider)
+		if !ok {
+			t.Fatalf("provider %T does not implement TurnProvider", provider)
+		}
+		if _, err := tp.GenerateTurn(context.Background(), TurnRequest{Prompt: "review", Tools: turnToolSpecs}); err != nil {
+			t.Fatalf("GenerateTurn: %v (RED expected until GreenTask implements it)", err)
+		}
+		body := decodeTurnRequestBody(t, *requestBodies, 0)
+		if body["store"] != true {
+			t.Errorf("store: want true, got %#v", body["store"])
 		}
 	})
 }

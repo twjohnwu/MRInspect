@@ -36,7 +36,7 @@ language: zh-TW
 - GREEN：三家 `GenerateTurn` 與 history 型別；`Generate` 路徑零變更（既有 `TestS07_TokenUsageRecorded`、`TestGeminiUsage_*`、`TestOpenAI_RequestSetsStoreFalse` 仍綠）
 - Verification command: `go test ./internal/ai/ -run 'TestGenerateTurn_ToolDefinitionsAndCalls|TestGenerateTurn_LocalReplayContinuation' -count=1 -v && go test ./internal/ai/ -count=1`
 
-## T4 `[ ]` `S-04,S-12,S-13` [MODIFY] OpenAI remote 模式、retry／transcript 接線、`NewProvider` 與 fake
+## T4 `[x]` `S-04,S-12,S-13` [MODIFY] OpenAI remote 模式、retry／transcript 接線、`NewProvider` 與 fake
 
 - 檔案：`internal/ai/openai.go`（`WithOpenAIRemoteState`、remote 分支）、`internal/ai/retry.go`（:27-75 抽 `do`、`GenerateTurn`、transcript 欄位）、`internal/ai/transcript.go`（:12-20 加欄位）、`internal/ai/provider.go`（`NewProvider` :23-41）、`internal/testfake/provider.go`（`GenerateTurn`、`ResponsesByPromptContains`、`GenerateTurnCalls`）、`internal/ai/turn_test.go`（追加三測試）
 - 依賴：T1（`cfg.Enrichment`）、T3

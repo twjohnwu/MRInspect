@@ -36,15 +36,19 @@ type ProviderBarrier struct {
 // Configure exported fields before use; use EnqueueResponses when adding
 // responses while calls may be in flight.
 type FakeProvider struct {
-	ProviderName    string
-	Responses       []ProviderResponse
-	DefaultResponse ProviderResponse
-	Barrier         *ProviderBarrier
+	ProviderName        string
+	Responses           []ProviderResponse
+	DefaultResponse     ProviderResponse
+	TurnResponses       []TurnResponse
+	DefaultTurnResponse TurnResponse
+	Barrier             *ProviderBarrier
 
-	mu            sync.Mutex
-	responseIndex int
-	generateCalls []ProviderCall
-	nameCalls     int
+	mu                sync.Mutex
+	responseIndex     int
+	generateCalls     []ProviderCall
+	nameCalls         int
+	turnResponseIndex int
+	turnCalls         []TurnCall
 }
 
 // Generate records its arguments and returns the next programmed response.
@@ -120,6 +124,49 @@ func (f *FakeProvider) NameCallCount() int {
 	return f.nameCalls
 }
 
+// TurnResponse is one programmed result from FakeProvider.GenerateTurn.
+type TurnResponse struct {
+	Text      string
+	ToolCalls []ai.ToolCall
+	Err       error
+}
+
+// TurnCall records the arguments of one FakeProvider.GenerateTurn call.
+type TurnCall struct {
+	Context context.Context
+	Request ai.TurnRequest
+}
+
+// GenerateTurn records its arguments and returns the next programmed
+// TurnResponse (or DefaultTurnResponse). Full programmable behavior
+// (ResponsesByPromptContains) lands with the task that needs it.
+func (f *FakeProvider) GenerateTurn(ctx context.Context, req ai.TurnRequest) (ai.TurnResult, error) {
+	f.mu.Lock()
+	f.turnCalls = append(f.turnCalls, TurnCall{Context: ctx, Request: req})
+	response := f.DefaultTurnResponse
+	if f.turnResponseIndex < len(f.TurnResponses) {
+		response = f.TurnResponses[f.turnResponseIndex]
+		f.turnResponseIndex++
+	}
+	f.mu.Unlock()
+
+	if response.Err != nil {
+		return ai.TurnResult{}, response.Err
+	}
+	return ai.TurnResult{
+		Text:         response.Text,
+		ToolCalls:    response.ToolCalls,
+		Continuation: ai.NewLocalContinuation(nil),
+	}, nil
+}
+
+// GenerateTurnCalls returns a snapshot of recorded GenerateTurn calls.
+func (f *FakeProvider) GenerateTurnCalls() []TurnCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]TurnCall(nil), f.turnCalls...)
+}
+
 func waitContext(ctx context.Context, delay time.Duration) error {
 	if delay <= 0 {
 		return nil
@@ -135,3 +182,4 @@ func waitContext(ctx context.Context, delay time.Duration) error {
 }
 
 var _ ai.Provider = (*FakeProvider)(nil)
+var _ ai.TurnProvider = (*FakeProvider)(nil)

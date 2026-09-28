@@ -96,6 +96,25 @@ func openaiToolResultOutput(result ToolResult) (string, error) {
 	return UntrustedFrame + "\n" + result.Content, nil
 }
 
+// openaiFunctionCallOutputs renders a batch of ToolResults as
+// "function_call_output" input items, shared by both continuation modes'
+// turn-2 request bodies.
+func openaiFunctionCallOutputs(results []ToolResult) ([]any, error) {
+	items := make([]any, 0, len(results))
+	for _, result := range results {
+		output, err := openaiToolResultOutput(result)
+		if err != nil {
+			return nil, fmt.Errorf("openai GenerateTurn: encode tool result: %w", err)
+		}
+		items = append(items, map[string]any{
+			"type":    "function_call_output",
+			"call_id": result.ID,
+			"output":  output,
+		})
+	}
+	return items, nil
+}
+
 func (p *OpenAIProvider) GenerateTurn(ctx context.Context, req TurnRequest) (TurnResult, error) {
 	model := req.Options.Model
 	if model == "" {
@@ -106,44 +125,61 @@ func (p *OpenAIProvider) GenerateTurn(ctx context.Context, req TurnRequest) (Tur
 		maxTokens = p.cfg.MaxTokens
 	}
 
-	input := make([]any, 0, 2+len(req.ToolResults))
+	remoteContinuation := req.Continuation != nil && req.Continuation.mode == "remote"
+
+	var reqBody map[string]any
 	endpoint := "turn1"
-	if req.Continuation != nil {
+	input := make([]any, 0, 2+len(req.ToolResults))
+
+	if remoteContinuation {
 		endpoint = "turn2"
-		history, ok := req.Continuation.history.(openaiHistory)
-		if !ok {
-			return TurnResult{}, fmt.Errorf("openai GenerateTurn: invalid continuation")
+		outputs, err := openaiFunctionCallOutputs(req.ToolResults)
+		if err != nil {
+			return TurnResult{}, err
 		}
-		input = append(input, json.RawMessage(history.inputItem))
-		for _, item := range history.outputItems {
-			input = append(input, json.RawMessage(item))
-		}
-		for _, result := range req.ToolResults {
-			output, err := openaiToolResultOutput(result)
-			if err != nil {
-				return TurnResult{}, fmt.Errorf("openai GenerateTurn: encode tool result: %w", err)
-			}
-			input = append(input, map[string]any{
-				"type":    "function_call_output",
-				"call_id": result.ID,
-				"output":  output,
-			})
+		input = append(input, outputs...)
+		reqBody = map[string]any{
+			"model":                model,
+			"previous_response_id": req.Continuation.remoteID,
+			"input":                input,
+			"tools":                openaiToolDefs(req.Tools),
+			"max_output_tokens":    maxTokens,
+			"store":                true,
 		}
 	} else {
-		inputItem := map[string]any{
-			"role":    "user",
-			"content": req.Prompt + "\n\n" + HintSentence,
+		if req.Continuation != nil {
+			endpoint = "turn2"
+			history, ok := req.Continuation.history.(openaiHistory)
+			if !ok {
+				return TurnResult{}, fmt.Errorf("openai GenerateTurn: invalid continuation")
+			}
+			input = append(input, json.RawMessage(history.inputItem))
+			for _, item := range history.outputItems {
+				input = append(input, json.RawMessage(item))
+			}
+			outputs, err := openaiFunctionCallOutputs(req.ToolResults)
+			if err != nil {
+				return TurnResult{}, err
+			}
+			input = append(input, outputs...)
+		} else {
+			inputItem := map[string]any{
+				"role":    "user",
+				"content": req.Prompt + "\n\n" + HintSentence,
+			}
+			input = append(input, inputItem)
 		}
-		input = append(input, inputItem)
-	}
 
-	reqBody := map[string]any{
-		"model":             model,
-		"input":             input,
-		"tools":             openaiToolDefs(req.Tools),
-		"max_output_tokens": maxTokens,
-		"store":             false,
-		"include":           []string{"reasoning.encrypted_content"},
+		reqBody = map[string]any{
+			"model":             model,
+			"input":             input,
+			"tools":             openaiToolDefs(req.Tools),
+			"max_output_tokens": maxTokens,
+			"store":             p.remoteState,
+		}
+		if !p.remoteState {
+			reqBody["include"] = []string{"reasoning.encrypted_content"}
+		}
 	}
 
 	envelope, statusCode, durationMs, err := p.doTurnRequest(ctx, reqBody)
@@ -171,23 +207,38 @@ func (p *OpenAIProvider) GenerateTurn(ctx context.Context, req TurnRequest) (Tur
 	}
 	p.log.LogAIAPICall("openai", "responses/"+endpoint, durationMs, true, nil, usage)
 
+	if remoteContinuation {
+		return TurnResult{
+			Text:      text,
+			ToolCalls: toolCalls,
+			Usage:     usage,
+		}, nil
+	}
+
 	inputItem, err := json.Marshal(input[0])
 	if err != nil {
 		return TurnResult{}, fmt.Errorf("openai GenerateTurn: encode continuation input item: %w", err)
 	}
 
-	return TurnResult{
-		Text:      text,
-		ToolCalls: toolCalls,
-		Continuation: &Continuation{
+	var continuation *Continuation
+	if p.remoteState {
+		continuation = &Continuation{mode: "remote", remoteID: envelope.ID}
+	} else {
+		continuation = &Continuation{
 			mode: "local",
 			history: openaiHistory{
 				inputItem:   inputItem,
 				outputItems: envelope.Output,
 				responseID:  envelope.ID,
 			},
-		},
-		Usage: usage,
+		}
+	}
+
+	return TurnResult{
+		Text:         text,
+		ToolCalls:    toolCalls,
+		Continuation: continuation,
+		Usage:        usage,
 	}, nil
 }
 

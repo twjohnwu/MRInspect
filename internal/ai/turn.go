@@ -76,4 +76,12 @@ type Continuation struct {
 // Mode reports the continuation's mode ("local" or "remote").
 func (c *Continuation) Mode() string { return c.mode }
 
+// NewLocalContinuation builds a local-mode Continuation carrying an
+// opaque history value. It exists for test doubles (e.g. testfake.FakeProvider)
+// that need to hand back a Continuation without access to Continuation's
+// unexported fields.
+func NewLocalContinuation(history any) *Continuation {
+	return &Continuation{mode: "local", history: history}
+}
+
 var errTurnNotImplemented = errors.New("not implemented")
