@@ -1,4 +1,4 @@
 192997f204285e126ddc97395ea16890a4123a3acaf8549a8b84fa6daa3e3559  ../../internal/config/enrichment_test.go
 cf9ecf6e30ad2ab754e17d4b944557feb7bc31f601804df9601ea88498b2adaf  ../../internal/enrich/tools_test.go
 d2eaa461cd2ca90f4b43c30ff453dbfe77a5fe5c88e4e15f63065640a475a1a9  ../../internal/rag/intake/denylist_test.go
-f07cda578c7485c8965b0a4edea62de84fdbb39d1cd5cbbb8781babc493dbbd7  ../../internal/ai/turn_test.go
+fe05645a28abe2f935b901e5875b5450b6dd218675a3906f9930892199073d0d  ../../internal/ai/turn_test.go
