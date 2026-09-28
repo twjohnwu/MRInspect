@@ -92,14 +92,13 @@ func main() {
 				slog.Error("retrieval evaluation configuration error", "error", err)
 				os.Exit(1)
 			}
-			system, err := ragcmd.SystemDirectory(cfg)
+			_, err = ragcmd.SystemDirectory(cfg)
 			if err != nil {
 				slog.Error("retrieval evaluation project load failed", "error", err)
 				os.Exit(1)
 			}
 			if err := retrievaleval.Run(ctx, retrievaleval.Options{
 				RepoRoot:    ".",
-				System:      system,
 				FixturesDir: *fixturesDir,
 				GoldenPath:  "eval/retrieval-golden.yaml",
 				StorePath:   *storePath,

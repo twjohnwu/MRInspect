@@ -52,10 +52,10 @@ func newRunHarness(t *testing.T, fixtures []harnessFixture, withVectors bool) *r
 
 	root := t.TempDir()
 	projectsDir := filepath.Join(root, "projects")
-	fixturesDir := filepath.Join(root, "eval", "fixtures")
+	fixturesDir := filepath.Join(root, "eval", "retrieval-fixtures", "margherita-pizza")
 	pizzaDir := filepath.Join(root, "corpus", "pizza")
 	sharedDir := filepath.Join(root, "corpus", "shared")
-	for _, dir := range []string{projectsDir, fixturesDir, pizzaDir, sharedDir} {
+	for _, dir := range []string{projectsDir, filepath.Join(projectsDir, "margherita-pizza"), fixturesDir, pizzaDir, sharedDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("MkdirAll %s: %v", dir, err)
 		}
@@ -140,7 +140,7 @@ Delivery checklist records searchable vocabulary.
 	for _, fixture := range fixtures {
 		golden.Entries = append(golden.Entries,
 			Entry{
-				Fixture: fixture.name,
+				Fixture: "margherita-pizza/" + fixture.name,
 				Lane:    "spec-conformance",
 				Relevant: []Target{
 					{Set: "margherita-pizza-docs", Path: "guide.md", Heading: "Pizza Manual > Tomato Basil Procedure"},
@@ -154,7 +154,7 @@ Delivery checklist records searchable vocabulary.
 				},
 			},
 			Entry{
-				Fixture: fixture.name,
+				Fixture: "margherita-pizza/" + fixture.name,
 				Lane:    "standards",
 				Relevant: []Target{
 					{Set: "shared-standards", Path: "guide.md", Heading: "Shared Manual > Review Safety"},
@@ -222,8 +222,7 @@ func (h *runHarness) index(t *testing.T, path string, withVectors bool, sets ...
 func (h *runHarness) options(queryEmbedder embed.Embedder) Options {
 	return Options{
 		RepoRoot:    h.repoRoot,
-		System:      "margherita-pizza",
-		FixturesDir: h.fixturesDir,
+		FixturesDir: filepath.Dir(h.fixturesDir),
 		GoldenPath:  h.goldenPath,
 		StorePath:   h.storePath,
 		ReportPath:  h.reportPath,
@@ -234,6 +233,93 @@ func (h *runHarness) options(queryEmbedder embed.Embedder) Options {
 		},
 		Embedder: queryEmbedder,
 	}
+}
+
+// TestRun_LoadsFixturesPerSystemDir verifies REQ-01 / S-01: retrieval
+// fixtures are discovered per system and rejected before retrieval when the
+// system-directory preflight is invalid.
+func TestRun_LoadsFixturesPerSystemDir(t *testing.T) {
+	t.Run("missing projects directory or symlink subdir", func(t *testing.T) {
+		root := t.TempDir()
+		fixturesDir := filepath.Join(root, "retrieval-fixtures")
+		for _, dir := range []string{
+			filepath.Join(fixturesDir, "alpha"),
+			filepath.Join(fixturesDir, "beta"),
+			filepath.Join(root, "projects", "alpha"),
+		} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("MkdirAll %s: %v", dir, err)
+			}
+		}
+		writeHarnessFile(t, filepath.Join(fixturesDir, "alpha", "01-a.diff"), "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -0,0 +1 @@\n+alpha\n")
+		writeHarnessFile(t, filepath.Join(fixturesDir, "beta", "01-b.diff"), "diff --git a/b.go b/b.go\n--- a/b.go\n+++ b/b.go\n@@ -0,0 +1 @@\n+beta\n")
+		if err := os.Symlink(filepath.Join(fixturesDir, "alpha"), filepath.Join(fixturesDir, "gamma")); err != nil {
+			t.Fatalf("Symlink gamma: %v", err)
+		}
+		writeHarnessFile(t, filepath.Join(fixturesDir, "notes.txt"), "not a system directory\n")
+
+		reportPath := filepath.Join(root, "retrieval-report.md")
+		queryEmbedder := embed.NewFixture(4)
+		err := Run(context.Background(), Options{
+			RepoRoot:    root,
+			FixturesDir: fixturesDir,
+			GoldenPath:  filepath.Join(root, "missing-golden.yaml"),
+			StorePath:   filepath.Join(root, "missing-store.sqlite"),
+			ReportPath:  reportPath,
+			Embedder:    queryEmbedder,
+		})
+		if err == nil {
+			t.Fatal("Run error = nil, want fixture-loading preflight error")
+		}
+		if !strings.Contains(err.Error(), "load retrieval fixtures:") {
+			t.Errorf("Run error = %q, want it to contain %q", err, "load retrieval fixtures:")
+		}
+		if !strings.Contains(err.Error(), `"beta" has no projects directory`) &&
+			!strings.Contains(err.Error(), `"gamma" is not a plain directory`) {
+			t.Errorf("Run error = %q, want it to contain %q or %q", err,
+				`"beta" has no projects directory`, `"gamma" is not a plain directory`)
+		}
+		if strings.Contains(err.Error(), root) {
+			t.Errorf("Run error = %q, must not contain temp root %q", err, root)
+		}
+		if got := queryEmbedder.Calls(); got != 0 {
+			t.Errorf("Embedder.Calls() = %d, want 0", got)
+		}
+		if _, statErr := os.Stat(reportPath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("report exists after fixture-loading preflight rejection; stat error = %v", statErr)
+		}
+	})
+
+	t.Run("no qualifying system directories", func(t *testing.T) {
+		root := t.TempDir()
+		fixturesDir := filepath.Join(root, "retrieval-fixtures")
+		if err := os.MkdirAll(fixturesDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", fixturesDir, err)
+		}
+
+		reportPath := filepath.Join(root, "retrieval-report.md")
+		queryEmbedder := embed.NewFixture(4)
+		err := Run(context.Background(), Options{
+			RepoRoot:    root,
+			FixturesDir: fixturesDir,
+			GoldenPath:  filepath.Join(root, "missing-golden.yaml"),
+			StorePath:   filepath.Join(root, "missing-store.sqlite"),
+			ReportPath:  reportPath,
+			Embedder:    queryEmbedder,
+		})
+		if err == nil {
+			t.Fatal("Run error = nil, want no-system-directories error")
+		}
+		if !strings.Contains(err.Error(), "no system directories found") {
+			t.Errorf("Run error = %q, want it to contain %q", err, "no system directories found")
+		}
+		if got := queryEmbedder.Calls(); got != 0 {
+			t.Errorf("Embedder.Calls() = %d, want 0", got)
+		}
+		if _, statErr := os.Stat(reportPath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("report exists after no-system-directories rejection; stat error = %v", statErr)
+		}
+	})
 }
 
 func (h *runHarness) validateSetup(t *testing.T) {
@@ -247,7 +333,7 @@ func (h *runHarness) validateSetup(t *testing.T) {
 	}
 	names := make([]string, len(fixtures))
 	for i := range fixtures {
-		names[i] = fixtures[i].Name
+		names[i] = "margherita-pizza/" + fixtures[i].Name
 	}
 	golden, err := LoadGolden(h.goldenPath, names)
 	if err != nil {
@@ -260,7 +346,12 @@ func (h *runHarness) validateSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPlan harness data: %v", err)
 	}
-	if err := golden.ValidateAgainstPlan(plan.Triples); err != nil {
+	prefixedTriples := make([]Triple, len(plan.Triples))
+	copy(prefixedTriples, plan.Triples)
+	for i, triple := range prefixedTriples {
+		prefixedTriples[i].Fixture = "margherita-pizza/" + triple.Fixture
+	}
+	if err := golden.ValidateAgainstPlan(prefixedTriples); err != nil {
 		t.Fatalf("ValidateAgainstPlan harness data: %v", err)
 	}
 	if want := len(fixtures) * 2; len(plan.Triples) != want {

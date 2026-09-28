@@ -38,7 +38,7 @@ language: zh-TW
   零改動仍綠
 - Verification command: `go test ./internal/rag/embed/ ./internal/rag/sqlite/ -run 'Retry|RateLimit' -count=1 -v && go test ./internal/retrievaleval/ -run TestRun_RetriesRateLimitedEmbedding -count=1 -v`
 
-## T3 `[ ]` `S-01` [MODIFY] 子目錄即 system、fixture id、預檢兩段式
+## T3 `[x]` `S-01` [MODIFY] 子目錄即 system、fixture id、預檢兩段式
 
 - 檔案：`internal/retrievaleval/run.go`（`Options` :24-34、`Run` :37、:38-49、:83、:105-111）、`plan.go`（:75 組 fixture id）、
   `run_test.go`（`newRunHarness` :48 改建 `retrieval-fixtures/<system>/`；既有 `TestRun_*` 全數改接）

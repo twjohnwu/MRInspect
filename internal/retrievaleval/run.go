@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -23,7 +24,6 @@ import (
 // Options configures one retrieval-quality evaluation run.
 type Options struct {
 	RepoRoot    string
-	System      string
 	FixturesDir string
 	GoldenPath  string
 	StorePath   string
@@ -33,34 +33,103 @@ type Options struct {
 	Progress    io.Writer
 }
 
+type systemFixtures struct {
+	name     string
+	fixtures []evalrun.Fixture
+}
+
+var validSystemName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// isPlainSystemDir reports whether path is a non-symlink directory (via
+// Lstat, so a symlinked directory is rejected) whose base name is a valid
+// system name.
+func isPlainSystemDir(path, name string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsDir() && validSystemName.MatchString(name)
+}
+
+// isDirectory reports whether path exists and is a directory, following
+// symlinks.
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func loadSystems(fixturesDir, repoRoot string, log *logger.Logger) ([]systemFixtures, error) {
+	entries, err := os.ReadDir(fixturesDir)
+	if err != nil {
+		return nil, errors.New("load retrieval fixtures: could not read fixtures directory")
+	}
+
+	systems := make([]systemFixtures, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isPlainSystemDir(filepath.Join(fixturesDir, name), name) {
+			return nil, fmt.Errorf(
+				"load retrieval fixtures: entry %q is not a plain directory with a valid system name",
+				name,
+			)
+		}
+		if !isDirectory(filepath.Join(repoRoot, "projects", name)) {
+			return nil, fmt.Errorf("load retrieval fixtures: system %q has no projects directory", name)
+		}
+
+		fixtures, err := evalrun.LoadFixtures(filepath.Join(fixturesDir, name), log)
+		if err != nil {
+			if !strings.ContainsAny(err.Error(), `/\`) {
+				return nil, fmt.Errorf("load retrieval fixtures: system %q: %w", name, err)
+			}
+			return nil, errors.New("load retrieval fixtures failed")
+		}
+		systems = append(systems, systemFixtures{name: name, fixtures: fixtures})
+	}
+
+	if len(systems) == 0 {
+		return nil, errors.New("load retrieval fixtures: no system directories found")
+	}
+	return systems, nil
+}
+
 // Run executes the retrieval-quality evaluation harness.
 func Run(ctx context.Context, opts Options) error {
-	fixtures, err := evalrun.LoadFixtures(
+	if opts.FixturesDir == "" {
+		opts.FixturesDir = "eval/retrieval-fixtures"
+	}
+	systems, err := loadSystems(
 		opts.FixturesDir,
+		opts.RepoRoot,
 		logger.NewWithWriter(slog.LevelError, "", io.Discard),
 	)
 	if err != nil {
-		return errors.New("load retrieval fixtures failed")
+		return err
 	}
 
-	fixtureNames := make([]string, len(fixtures))
-	for i := range fixtures {
-		fixtureNames[i] = fixtures[i].Name
+	var plan []Triple
+	var warnings []string
+	var fixtureNames []string
+	for _, system := range systems {
+		builtPlan, err := BuildPlan(opts.RepoRoot, system.name, system.fixtures)
+		if err != nil {
+			return errors.New("build retrieval plan failed")
+		}
+		warnings = append(warnings, builtPlan.Warnings...)
+		for _, triple := range builtPlan.Triples {
+			triple.Fixture = system.name + "/" + triple.Fixture
+			plan = append(plan, triple)
+		}
+		for _, fixture := range system.fixtures {
+			fixtureNames = append(fixtureNames, system.name+"/"+fixture.Name)
+		}
+	}
+	if opts.Progress != nil {
+		for _, warning := range warnings {
+			_, _ = fmt.Fprintln(opts.Progress, warning)
+		}
 	}
 	golden, err := LoadGolden(opts.GoldenPath, fixtureNames)
 	if err != nil {
 		return errors.New("load retrieval golden failed")
 	}
-	builtPlan, err := BuildPlan(opts.RepoRoot, opts.System, fixtures)
-	if err != nil {
-		return errors.New("build retrieval plan failed")
-	}
-	if opts.Progress != nil {
-		for _, warning := range builtPlan.Warnings {
-			_, _ = fmt.Fprintln(opts.Progress, warning)
-		}
-	}
-	plan := builtPlan.Triples
 	type fixtureLane struct {
 		fixture string
 		lane    string
@@ -72,15 +141,14 @@ func Run(ctx context.Context, opts Options) error {
 	for _, entry := range golden.Entries {
 		if _, ok := planned[fixtureLane{fixture: entry.Fixture, lane: entry.Lane}]; !ok {
 			return fmt.Errorf(
-				"plan: golden lane %q resolved to no resource set for fixture %q (check lanes overlay for system %q)",
+				"plan: golden lane %q resolved to no resource set for fixture %q (check lanes overlay)",
 				entry.Lane,
 				entry.Fixture,
-				opts.System,
 			)
 		}
 	}
 
-	registry, err := resources.Load(opts.RepoRoot, opts.System)
+	registry, err := resources.Load(opts.RepoRoot, systems[0].name)
 	if err != nil {
 		return errors.New("load retrieval resources failed")
 	}
@@ -95,7 +163,7 @@ func Run(ctx context.Context, opts Options) error {
 	if fingerprint != meta.ResourcesSHA256 {
 		return errors.New("store is stale; rerun mrinspect index")
 	}
-	if err := golden.ValidateAgainstPlan(builtPlan.Triples); err != nil {
+	if err := golden.ValidateAgainstPlan(plan); err != nil {
 		return errors.New("validate retrieval golden failed")
 	}
 	if err := golden.ValidateAgainstStore(ctx, opts.StorePath); err != nil {
