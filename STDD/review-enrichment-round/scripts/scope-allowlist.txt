@@ -25,3 +25,14 @@ internal/ai/retry.go
 internal/ai/transcript.go
 internal/ai/provider.go
 internal/testfake/provider.go
+internal/enrich/round.go
+internal/reviewer/reviewer.go
+internal/reviewer/footer.go
+internal/reviewer/enrichment_test.go
+internal/reviewer/multilane.go
+internal/lane/fanout.go
+internal/lane/parse.go
+internal/lane/enrichment_test.go
+cmd/mrinspect/main.go
+docs/us/configuration.md
+docs/tw/configuration.md
