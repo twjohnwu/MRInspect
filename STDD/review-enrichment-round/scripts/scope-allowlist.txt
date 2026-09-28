@@ -40,3 +40,5 @@ internal/enrich/paths_test.go
 internal/enrich/readrange_test.go
 internal/reviewer/enrichment_footer_test.go
 internal/rag/intake/denylist_more_test.go
+internal/evalrun/evalrun.go
+internal/evalrun/enrichment_test.go
