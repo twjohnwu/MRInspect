@@ -69,7 +69,7 @@ language: zh-TW
 
 ## Manual verification checklist
 
-- [ ] S-14：本機 `MRI_REVIEW_ENRICHMENT=true`＋`MRI_AI_LOG_DIR`，`AI_PROVIDER` 各 openai／anthropic／gemini 與 key，輸入固定 `eval/fixtures` 一個 diff；各跑一次，OpenAI 另以 `MRI_AI_REMOTE_STATE=enabled` 再跑；四次無錯、transcript 一或兩筆、remote 那次 turn 2 `continuation=="remote"`、`jq '.tool_calls,.tool_results'` 不含 `/` 開頭路徑／`http`／`sk-`／`AIza`；結果記入 `docs/decisions_log.md` 新條目（Gemini thoughtSignature／OpenAI reasoning 重送實證）
+- [ ] S-14：本機 `MRI_REVIEW_ENRICHMENT=true`＋`MRI_AI_LOG_DIR`，`AI_PROVIDER` 各 openai／anthropic／gemini 與 key，輸入固定 `eval/fixtures` 一個 diff；各跑一次，OpenAI 另以 `MRI_AI_REMOTE_STATE=enabled` 再跑；四次無錯、transcript 一或兩筆、remote 那次 turn 2 `continuation=="remote"`、`jq '.tool_calls,.tool_results'` 不含 `/` 開頭路徑／`http`／`sk-`／`AIza`；結果記入 `docs/decisions_log.md` 新條目（Gemini thoughtSignature／OpenAI reasoning 重送實證）——**D5 部分延後（2026-09-28 使用者核定）**：本機只有 Gemini key；Gemini 一次 2026-09-28 跑到 turn 2 送出（turn 1 回 1 個 `repo_search` call、turn 2 `continuation=local` 帶 1 個 tool_result、hygiene CLEAN）但 turn 2 全數 429/503（免費層日額度），待 2026-09-29 15:00 後重跑；OpenAI／Anthropic／OpenAI remote 三次待工作機執行
 
 ## Task 依賴
 
@@ -96,5 +96,5 @@ flowchart LR
 - [ ] 回合迴圈、call-limit、每 call 一結果、空 turn 2 走重試、每 attempt 獨立鏈、檢索不變、degraded 併入 footer（T5、T6）
 - [ ] transcript 新欄位無內容／原始 args；每 turn `LogAIAPICall`（T4）
 - [ ] `store` 由 config 接線（T4）
-- [ ] 真實 provider 手動驗證四次（S-14）
+- [ ] 真實 provider 手動驗證四次（S-14）（Gemini 本機、其餘三次待工作機，見 S-14 註記）
 - [ ] D5 deferred 明列；Rejected options 逐字（spec 已含）
