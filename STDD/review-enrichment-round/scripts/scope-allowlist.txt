@@ -17,3 +17,11 @@ internal/rag/intake/denylist_test.go
 eval/RETRIEVAL.md
 docs/decisions_log.md
 STDD/retrieval-golden-scale/tasks.md
+internal/ai/openai.go
+internal/ai/anthropic.go
+internal/ai/gemini.go
+internal/ai/turn_test.go
+internal/ai/retry.go
+internal/ai/transcript.go
+internal/ai/provider.go
+internal/testfake/provider.go
