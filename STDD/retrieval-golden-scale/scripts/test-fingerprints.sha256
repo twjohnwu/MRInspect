@@ -1,5 +1,5 @@
 4811d71b07e634e0bbcca387557def0ba82a32b0d8b23ff9cd9c3db43aa54275  ../../internal/retrievaleval/golden_test.go
-42dc0daa66941c06678dc50c09cfe971fcedcc5e26d3bb417b53805c999597c8  ../../internal/retrievaleval/run_test.go
+9d6e23be1945c3da466dea0d6ff49c154ab73939876dcd9f7c0ebdebab114304  ../../internal/retrievaleval/run_test.go
 c936a472c19a4f1af808c005fb10d63bd3c0d1d08961052e17e724010a16aee3  ../../internal/retrievaleval/corpus_test.go
 662349e34b308ab59390177257a78afa48622355241b4c0bec537da899ef496f  ../../internal/rag/embed/retry_test.go
 bd154072186473657a2201ba40ab95a5730ae30efa540c9617622ff13767cbcf  ../../internal/ragcmd/fixtures_test.go
