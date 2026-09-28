@@ -33,18 +33,22 @@ func resolve(root, rel string) (string, string) {
 		return "", "path-rejected"
 	}
 
-	for _, segment := range strings.Split(filepath.ToSlash(rel), "/") {
-		if segment == ".git" || segment == ".docker" {
-			return "", "path-rejected"
-		}
-	}
-
-	base := filepath.Base(candidate)
-	lowerBase := strings.ToLower(base)
-	if intake.IsDenylisted(base) || strings.Contains(lowerBase, "credential") || strings.Contains(lowerBase, "secret") {
+	if rejectedPath(rel, candidate) || rejectedPath(resolvedRelative, resolved) {
 		return "", "path-rejected"
 	}
 	return resolved, ""
+}
+
+func rejectedPath(relative, path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(relative), "/") {
+		if segment == ".git" || segment == ".docker" {
+			return true
+		}
+	}
+
+	base := filepath.Base(path)
+	lowerBase := strings.ToLower(base)
+	return intake.IsDenylisted(base) || strings.Contains(lowerBase, "credential") || strings.Contains(lowerBase, "secret")
 }
 
 func outsideRoot(relative string, err error) bool {

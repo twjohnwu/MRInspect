@@ -1,6 +1,7 @@
 package enrich
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,6 +51,10 @@ func (*readRangeTool) Run(ctx context.Context, root string, raw json.RawMessage,
 		return "invalid range", "tool-error"
 	}
 
+	requested := filepath.Join(root, filepath.Clean(args.Path))
+	if info, err := os.Lstat(requested); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "", "path-rejected"
+	}
 	resolved, code := resolve(root, args.Path)
 	if code != "" {
 		return "", code
@@ -65,29 +70,61 @@ func (*readRangeTool) Run(ctx context.Context, root string, raw json.RawMessage,
 	if isBinary(file) {
 		return "", "path-rejected"
 	}
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return "unable to read file", "tool-error"
-	}
-
-	lines := splitFileLines(string(data))
-	if len(lines) == 0 || start > len(lines) {
-		return "", ""
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
 	relative := filepath.ToSlash(filepath.Clean(args.Path))
 	output := newResultBuilder(lim.ResultBytes)
-	for lineNumber := start; lineNumber <= end; lineNumber++ {
-		line := lines[lineNumber-1]
-		if len(line) > maxLineBytes {
+	reader := bufio.NewReader(file)
+	lineNumber := 1
+	var scannedBytes int64
+	var line []byte
+	lineTooLong := false
+	for lineNumber <= end {
+		if ctx.Err() != nil {
+			return "", "timeout"
+		}
+		fragment, readErr := reader.ReadSlice('\n')
+		if readErr != nil && readErr != io.EOF && readErr != bufio.ErrBufferFull {
+			return "unable to read file", "tool-error"
+		}
+		if len(fragment) == 0 && readErr == io.EOF {
+			break
+		}
+		scannedBytes += int64(len(fragment))
+		if scannedBytes > maxScanBytes {
+			if ctx.Err() != nil {
+				return "", "timeout"
+			}
+			break
+		}
+
+		if !lineTooLong {
+			part := fragment
+			if len(part) > 0 && part[len(part)-1] == '\n' {
+				part = part[:len(part)-1]
+			}
+			if len(line)+len(part) > maxLineBytes {
+				line = nil
+				lineTooLong = true
+			} else {
+				line = append(line, part...)
+			}
+		}
+		if readErr == bufio.ErrBufferFull {
 			continue
 		}
-		if containsNUL(line) {
-			return "", "tool-error"
+
+		if lineNumber >= start && !lineTooLong {
+			value := string(line)
+			if containsNUL(value) {
+				return "", "tool-error"
+			}
+			if output.addLine(fmt.Sprintf("%s:%d: %s", relative, lineNumber, value)) {
+				break
+			}
 		}
-		if output.addLine(fmt.Sprintf("%s:%d: %s", relative, lineNumber, line)) {
+		lineNumber++
+		line = nil
+		lineTooLong = false
+		if readErr == io.EOF {
 			break
 		}
 	}

@@ -210,7 +210,7 @@ func main() {
 		ModelLimits:      modelLimits,
 	})
 
-	if cfg.Enrichment.Enabled {
+	if cfg.Enrichment.Enabled && !cfg.CrossRepo.Enabled {
 		enrichRoot, err := filepath.Abs(repoRoot)
 		if err != nil {
 			log.Error("failed to resolve enrichment repo root", "error", err)
@@ -234,6 +234,8 @@ func main() {
 		if cfg.Enrichment.RemoteState == "enabled" {
 			log.Info("enrichment: remote state enabled; OpenAI retains stored responses per its data policy (documented 30 days)")
 		}
+	} else if cfg.Enrichment.Enabled {
+		log.Warn("enrichment: disabled in cross-repo trigger mode (working directory is not the reviewed checkout)")
 	}
 
 	r.Run(ctx)

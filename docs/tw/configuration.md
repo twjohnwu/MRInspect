@@ -58,7 +58,7 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `MRI_RAG_ON_NORMATIVE_EVICTION` | `warn` | full 模式的 normative 段落被裁掉時，Go runner 的處理方式：`warn` \| `fail` |
 | `MRI_PROMPT_BUDGET_FACTOR` | `0.8` | 與選定模型的 prompt 上限相乘的正浮點數。預設值 0.8 也吸收了估算器實測約 11% 的系統性低估。 |
 | `MRI_DIFF_PROMPT_SHARE` | `0.85` | 有效模型 prompt 預算中 diff 可佔用的比例；超額的 diff 會整檔剔除（先剔不可人審 pattern，再依大小由大到小剔除；hunk 永不截斷），剔除清單會同時揭露於 prompt 與 review footer。無效值會退回預設值。實測事故資料顯示 diff 佔 prompt 超過約 93% 時，模型會省略必要區段；降到約 85% 即恢復格式遵循——上限依模型預算比例縮放，而非固定 KB 值。 |
-| `MRI_REVIEW_ENRICHMENT` | `false` | 設為恰好 `true` 會在 review 過程中啟用一輪本機 `repo_search`／`read_file_ranges` 工具呼叫；工具結果會回傳給 provider。 |
+| `MRI_REVIEW_ENRICHMENT` | `false` | 設為恰好 `true` 會在 review 過程中啟用一輪本機 `repo_search`／`read_file_ranges` 工具呼叫；工具結果會回傳給 provider。在 cross-repo trigger 模式下會被忽略（並記一筆 Warn 日誌），因為此時工作目錄並非被審查的 checkout。 |
 | `MRI_AI_REMOTE_STATE` | `disabled` | `disabled` \| `enabled`。`enabled` 讓 OpenAI 透過 `previous_response_id` 續問，該方式會把回應存在伺服器端——OpenAI 對已儲存的回應依其資料政策保留（文件載明 30 天）。其他 provider 一律走本機重送。 |
 | `MRI_ENRICHMENT_MAX_CALLS` | `3` | 每個 attempt 的工具呼叫上限；1–10。整個 review 另有固定總預算 24 次，跨所有 attempt 共用。 |
 | `MRI_ENRICHMENT_RESULT_BYTES` | `8192` | 單一工具結果內容上限（bytes）；256–65536。 |

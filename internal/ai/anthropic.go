@@ -89,7 +89,7 @@ func (p *AnthropicProvider) GenerateTurn(ctx context.Context, req TurnRequest) (
 		if !ok {
 			return TurnResult{}, fmt.Errorf("anthropic GenerateTurn: invalid continuation")
 		}
-		blocks := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(UntrustedFrame)}
+		var blocks []anthropic.ContentBlockParamUnion
 		for _, result := range req.ToolResults {
 			content := result.Content
 			isError := false
@@ -99,6 +99,7 @@ func (p *AnthropicProvider) GenerateTurn(ctx context.Context, req TurnRequest) (
 			}
 			blocks = append(blocks, anthropic.NewToolResultBlock(result.ID, content, isError))
 		}
+		blocks = append(blocks, anthropic.NewTextBlock(UntrustedFrame))
 		toolResultMessage := anthropic.NewUserMessage(blocks...)
 		messagesSentThisTurn = append(append([]anthropic.MessageParam{}, history.messages...), toolResultMessage)
 		messages = messagesSentThisTurn

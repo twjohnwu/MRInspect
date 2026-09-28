@@ -151,7 +151,7 @@ func (p *GeminiProvider) GenerateTurn(ctx context.Context, req TurnRequest) (Tur
 			return TurnResult{}, fmt.Errorf("gemini GenerateTurn: invalid continuation")
 		}
 		priorNames = history.names
-		parts := []*genai.Part{genai.NewPartFromText(UntrustedFrame)}
+		var parts []*genai.Part
 		for _, result := range req.ToolResults {
 			var response map[string]any
 			if result.Error != "" {
@@ -163,6 +163,7 @@ func (p *GeminiProvider) GenerateTurn(ctx context.Context, req TurnRequest) (Tur
 			part.FunctionResponse.ID = result.ID
 			parts = append(parts, part)
 		}
+		parts = append(parts, genai.NewPartFromText(UntrustedFrame))
 		contents = append(append([]*genai.Content{}, history.contents...), genai.NewContentFromParts(parts, genai.RoleUser))
 	} else {
 		contents = []*genai.Content{genai.NewContentFromText(req.Prompt+"\n\n"+HintSentence, genai.RoleUser)}

@@ -88,7 +88,7 @@ func (r *MRInspectReviewer) generateSingleDegradation(ctx context.Context, codeD
 	if r.cfg.SelfReflection {
 		content = r.selfReflect(ctx, content)
 	}
-	return content + "\n\n> MRInspect degradation: " + reason, footerAggregation{degradedToSingle: true}, nil
+	return content + "\n\n> MRInspect degradation: " + reason, footerAggregation{degradedToSingle: true, enrichmentDegraded: r.enrichDegraded}, nil
 }
 
 func hasEnabledLane(lanes []lane.Lane) bool {

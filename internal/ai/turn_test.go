@@ -510,22 +510,22 @@ func TestGenerateTurn_LocalReplayContinuation(t *testing.T) {
 		if len(userContent) != 3 {
 			t.Fatalf("messages[2].content length: want 3, got %d", len(userContent))
 		}
-		frame := requireMap(t, userContent[0], "messages[2].content[0]")
-		if frame["type"] != "text" || frame["text"] != UntrustedFrame {
-			t.Errorf("frame block: want text %q, got %#v", UntrustedFrame, frame)
-		}
-		success := requireMap(t, userContent[1], "messages[2].content[1]")
-		successText := anthropicContentText(t, success["content"], "messages[2].content[1].content")
+		success := requireMap(t, userContent[0], "messages[2].content[0]")
+		successText := anthropicContentText(t, success["content"], "messages[2].content[0].content")
 		if success["type"] != "tool_result" || success["tool_use_id"] != "toolu_1" || successText != "hit" {
 			t.Errorf("success tool result: got %#v", success)
 		}
 		if isError, exists := success["is_error"]; exists && isError != false {
 			t.Errorf("success tool result is_error: want absent or false, got %#v", isError)
 		}
-		failure := requireMap(t, userContent[2], "messages[2].content[2]")
-		failureText := anthropicContentText(t, failure["content"], "messages[2].content[2].content")
+		failure := requireMap(t, userContent[1], "messages[2].content[1]")
+		failureText := anthropicContentText(t, failure["content"], "messages[2].content[1].content")
 		if failure["type"] != "tool_result" || failure["tool_use_id"] != "toolu_2" || failureText != "error: timeout" || failure["is_error"] != true {
 			t.Errorf("failure tool result: got %#v", failure)
+		}
+		frame := requireMap(t, userContent[len(userContent)-1], "messages[2].content[last]")
+		if frame["type"] != "text" || frame["text"] != UntrustedFrame {
+			t.Errorf("frame block: want last element to be text %q, got %#v", UntrustedFrame, frame)
 		}
 		if turn2Result.Text != "final review text" {
 			t.Errorf("turn 2 text: want final review text, got %q", turn2Result.Text)
@@ -586,11 +586,8 @@ func TestGenerateTurn_LocalReplayContinuation(t *testing.T) {
 		if len(parts) != 3 {
 			t.Fatalf("contents[2].parts length: want 3, got %d", len(parts))
 		}
-		frame := requireMap(t, parts[0], "contents[2].parts[0]")
-		assertJSONLiteralEqual(t, frame, fmt.Sprintf(`{"text":"%s"}`, UntrustedFrame))
-
-		successPart := requireMap(t, parts[1], "contents[2].parts[1]")
-		successResponse := requireMap(t, successPart["functionResponse"], "contents[2].parts[1].functionResponse")
+		successPart := requireMap(t, parts[0], "contents[2].parts[0]")
+		successResponse := requireMap(t, successPart["functionResponse"], "contents[2].parts[0].functionResponse")
 		if successResponse["id"] != "repo_search#0" || successResponse["name"] != "repo_search" {
 			t.Errorf("success function response identity: got %#v", successResponse)
 		}
@@ -599,13 +596,16 @@ func TestGenerateTurn_LocalReplayContinuation(t *testing.T) {
 			t.Errorf("success function response: unexpected error key in %#v", successPayload)
 		}
 
-		failurePart := requireMap(t, parts[2], "contents[2].parts[2]")
-		failureResponse := requireMap(t, failurePart["functionResponse"], "contents[2].parts[2].functionResponse")
+		failurePart := requireMap(t, parts[1], "contents[2].parts[1]")
+		failureResponse := requireMap(t, failurePart["functionResponse"], "contents[2].parts[1].functionResponse")
 		if failureResponse["id"] != "repo_search#1" || failureResponse["name"] != "repo_search" {
 			t.Errorf("failure function response identity: got %#v", failureResponse)
 		}
 		failurePayload := requireMap(t, failureResponse["response"], "failure function response payload")
 		assertJSONLiteralEqual(t, failurePayload, `{"error":"timeout"}`)
+
+		frame := requireMap(t, parts[len(parts)-1], "contents[2].parts[last]")
+		assertJSONLiteralEqual(t, frame, fmt.Sprintf(`{"text":"%s"}`, UntrustedFrame))
 		if turn2Result.Text != "final review text" {
 			t.Errorf("turn 2 text: want final review text, got %q", turn2Result.Text)
 		}
