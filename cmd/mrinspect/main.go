@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
@@ -211,23 +210,13 @@ func main() {
 	})
 
 	if cfg.Enrichment.Enabled && !cfg.CrossRepo.Enabled {
-		enrichRoot, err := filepath.Abs(repoRoot)
-		if err != nil {
-			log.Error("failed to resolve enrichment repo root", "error", err)
-			os.Exit(1)
-		}
-		enrichRoot, err = filepath.EvalSymlinks(enrichRoot)
-		if err != nil {
-			log.Error("failed to resolve enrichment repo root", "error", err)
-			os.Exit(1)
-		}
-		exec, err := enrich.New(enrichRoot, enrich.Limits{
+		exec, err := enrich.NewForRoot(repoRoot, enrich.Limits{
 			MaxCalls:    cfg.Enrichment.MaxCalls,
 			ResultBytes: cfg.Enrichment.ResultBytes,
 			ToolTimeout: cfg.Enrichment.ToolTimeout,
 		})
 		if err != nil {
-			log.Error("failed to initialize enrichment executor", "error", err)
+			log.Error("failed to resolve enrichment repo root", "error", err)
 			os.Exit(1)
 		}
 		r.SetEnrichment(exec)

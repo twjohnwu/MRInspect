@@ -2,6 +2,7 @@ package enrich
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"sync/atomic"
 
@@ -40,6 +41,22 @@ func New(root string, lim Limits, opts ...ExecutorOption) (*Executor, error) {
 		opt(e)
 	}
 	return e, nil
+}
+
+// NewForRoot resolves root to an absolute, symlink-evaluated path and
+// constructs an Executor rooted there — the shared root-resolution sequence
+// every caller (review's trigger path and eval) must apply before New, so
+// it lives here once instead of being repeated at each call site.
+func NewForRoot(root string, lim Limits, opts ...ExecutorOption) (*Executor, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return nil, err
+	}
+	return New(resolvedRoot, lim, opts...)
 }
 
 // Execute runs calls in order, respecting maxCalls (per-round) and the

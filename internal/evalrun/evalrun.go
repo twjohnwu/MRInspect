@@ -18,6 +18,7 @@ import (
 
 	"mrinspect/internal/ai"
 	"mrinspect/internal/config"
+	"mrinspect/internal/enrich"
 	mrerrors "mrinspect/internal/errors"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/logger"
@@ -44,7 +45,8 @@ type Fixture struct {
 }
 
 type runOptions struct {
-	progressWriter io.Writer
+	progressWriter  io.Writer
+	providerFactory func(config.Config, *logger.Logger) (ai.Provider, error)
 }
 
 // RunOption customizes eval orchestration behavior.
@@ -59,8 +61,19 @@ func WithProgressWriter(writer io.Writer) RunOption {
 	}
 }
 
+// withProviderFactory overrides how each mode's ai.Provider is built.
+// Unexported: it exists solely so this package's own tests can inject a
+// fake provider through the real runLoaded wiring (including enrichment)
+// without making an outbound AI call. Production code always gets the
+// default, ai.NewProvider, from newRunOptions.
+func withProviderFactory(factory func(config.Config, *logger.Logger) (ai.Provider, error)) RunOption {
+	return func(options *runOptions) {
+		options.providerFactory = factory
+	}
+}
+
 func newRunOptions(options ...RunOption) runOptions {
-	runOptions := runOptions{progressWriter: os.Stderr}
+	runOptions := runOptions{progressWriter: os.Stderr, providerFactory: ai.NewProvider}
 	for _, option := range options {
 		option(&runOptions)
 	}
@@ -461,6 +474,21 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 		return fmt.Errorf("model limits configuration: %w", err)
 	}
 
+	// Built once and reused across every fixture/mode (mirrors the review
+	// path's single Executor, cmd/mrinspect/main.go): eval has no trigger
+	// mode, so the cross-repo guard that path applies does not apply here.
+	var enrichExec *enrich.Executor
+	if cfg.Enrichment.Enabled {
+		enrichExec, err = enrich.NewForRoot(repoRoot, enrich.Limits{
+			MaxCalls:    cfg.Enrichment.MaxCalls,
+			ResultBytes: cfg.Enrichment.ResultBytes,
+			ToolTimeout: cfg.Enrichment.ToolTimeout,
+		})
+		if err != nil {
+			return fmt.Errorf("enrichment executor: %w", err)
+		}
+	}
+
 	modes := []reviewer.EvalMode{
 		reviewer.EvalModeSingle,
 		reviewer.EvalModeMulti,
@@ -494,7 +522,7 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 			promptLogs = append(promptLogs, promptLog)
 			runLogs = append(runLogs, runLog)
 
-			provider, err := ai.NewProvider(modeCfg, runLog)
+			provider, err := options.providerFactory(modeCfg, runLog)
 			if err != nil {
 				return nil, err
 			}
@@ -518,6 +546,9 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 			})
 			closers = append(closers, productionRAG.Retriever)
 			r.SetRAGReviewPath(productionRAG.ReviewPath)
+			if enrichExec != nil {
+				r.SetEnrichment(enrichExec)
+			}
 			r.SetMultiLaneReviewPath(reviewer.MultiLaneReviewPath{
 				RepoRoot:         repoRoot,
 				ResourceRegistry: resourceRegistry,
