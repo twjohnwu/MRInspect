@@ -62,7 +62,7 @@ language: zh-TW
   `TestRun_RendersThreeArmTable`／`TestRun_WritesReportAndSanitizesHeader` 改接 20 欄
 - Verification command: `go test ./internal/retrievaleval/ -run 'TestRun_RendersSystemColumnAndRetrieveMs|TestRun_RendersMeanByK|TestRun_RendersDistractorsByCategory|TestRun_EmbedsOncePerRerankedTriple' -count=1 -v && go test ./internal/retrievaleval/ -count=1`
 
-## T5 `[ ]` `S-02` [NEW] `ragcmd.EvalFixturesDir` 與 main 接線
+## T5 `[x]` `S-02` [NEW] `ragcmd.EvalFixturesDir` 與 main 接線
 
 - 檔案：`internal/ragcmd/fixtures.go`＋`fixtures_test.go`（NEW）；`cmd/mrinspect/main.go`（:82-86 加 `fixtures` 偵測、:100-108
   改 `Options`、:95 移出）

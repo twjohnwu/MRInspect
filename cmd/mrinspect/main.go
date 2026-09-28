@@ -79,9 +79,13 @@ func main() {
 		if *retrieval {
 			report := *reportPath
 			reportPassed := false
+			fixturesPassed := false
 			flags.Visit(func(f *flag.Flag) {
 				if f.Name == "report" {
 					reportPassed = true
+				}
+				if f.Name == "fixtures" {
+					fixturesPassed = true
 				}
 			})
 			if !reportPassed {
@@ -92,14 +96,9 @@ func main() {
 				slog.Error("retrieval evaluation configuration error", "error", err)
 				os.Exit(1)
 			}
-			_, err = ragcmd.SystemDirectory(cfg)
-			if err != nil {
-				slog.Error("retrieval evaluation project load failed", "error", err)
-				os.Exit(1)
-			}
 			if err := retrievaleval.Run(ctx, retrievaleval.Options{
 				RepoRoot:    ".",
-				FixturesDir: *fixturesDir,
+				FixturesDir: ragcmd.EvalFixturesDir(*retrieval, fixturesPassed, *fixturesDir),
 				GoldenPath:  "eval/retrieval-golden.yaml",
 				StorePath:   *storePath,
 				ReportPath:  report,
