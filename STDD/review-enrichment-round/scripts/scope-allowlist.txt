@@ -3,3 +3,17 @@ internal/config/enrichment_test.go
 internal/config/envexample_test.go
 .env.example
 STDD/review-enrichment-round/tasks.md
+internal/ai/turn.go
+internal/enrich/tool.go
+internal/enrich/registry.go
+internal/enrich/search.go
+internal/enrich/readrange.go
+internal/enrich/paths.go
+internal/enrich/executor.go
+internal/enrich/tools_test.go
+internal/rag/intake/denylist.go
+internal/rag/intake/walk.go
+internal/rag/intake/denylist_test.go
+eval/RETRIEVAL.md
+docs/decisions_log.md
+STDD/retrieval-golden-scale/tasks.md

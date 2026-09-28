@@ -13,8 +13,8 @@ ledger='scripts/test-fingerprints.sha256'
 allowlist='scripts/scope-allowlist.txt'
 spec_file='spec.md'
 design_file=''
-test_command='cd ../.. && go test ./internal/config/ -count=1 -v'
-generated_expected='7'
+test_command='cd ../.. && go test ./internal/config/ ./internal/enrich/ ./internal/ai/ ./internal/rag/intake/ -count=1 -v'
+generated_expected='24'
 expected_passed=${1-$generated_expected}
 log_file=${MECH_LOG:-${TMPDIR:-/tmp}/stdd-mechanical-check.log}
 overall_status=0
