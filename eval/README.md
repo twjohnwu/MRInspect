@@ -45,6 +45,9 @@ own.
 
 - `mrinspect eval` — runs the review evaluation over `-fixtures`
   (default `eval/fixtures`) and writes `-report` (default `eval/REPORT.md`).
+- `mrinspect eval -modes single` (any comma-separated subset of `single`,
+  `multi`, `reflect`) — restricts the run to the named modes, in order;
+  default (flag absent) runs all three.
 - `mrinspect eval -retrieval [-store PATH] [-report PATH]` — runs the
   offline retrieval check; requires a store built from the current corpus,
   so run `mrinspect index` first.

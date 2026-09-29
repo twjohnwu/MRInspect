@@ -47,6 +47,7 @@ type Fixture struct {
 type runOptions struct {
 	progressWriter  io.Writer
 	providerFactory func(config.Config, *logger.Logger) (ai.Provider, error)
+	modes           []reviewer.EvalMode
 }
 
 // RunOption customizes eval orchestration behavior.
@@ -72,8 +73,59 @@ func withProviderFactory(factory func(config.Config, *logger.Logger) (ai.Provide
 	}
 }
 
+// WithModes restricts a run to the given review modes, in the given order.
+// An empty call (WithModes() or WithModes(nil...)) is a no-op — the default
+// three modes still run. Use ParseModes to build the list from a
+// comma-separated flag value.
+func WithModes(modes ...reviewer.EvalMode) RunOption {
+	return func(options *runOptions) {
+		if len(modes) > 0 {
+			options.modes = modes
+		}
+	}
+}
+
+// ParseModes parses a comma-separated review mode list ("single,multi,reflect",
+// case-insensitive, order preserved, spaces trimmed) as accepted by the
+// `-modes` eval flag. An empty string returns (nil, nil), meaning "use the
+// default three modes". Unknown names and duplicates are rejected.
+func ParseModes(s string) ([]reviewer.EvalMode, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return nil, nil
+	}
+	allowed := map[string]reviewer.EvalMode{
+		"single":  reviewer.EvalModeSingle,
+		"multi":   reviewer.EvalModeMulti,
+		"reflect": reviewer.EvalModeReflect,
+	}
+	seen := make(map[reviewer.EvalMode]bool, len(allowed))
+	modes := make([]reviewer.EvalMode, 0, len(allowed))
+	for _, token := range strings.Split(trimmed, ",") {
+		name := strings.ToLower(strings.TrimSpace(token))
+		mode, ok := allowed[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown review mode %q; allowed: single, multi, reflect", name)
+		}
+		if seen[mode] {
+			return nil, fmt.Errorf("duplicate review mode %q", name)
+		}
+		seen[mode] = true
+		modes = append(modes, mode)
+	}
+	return modes, nil
+}
+
 func newRunOptions(options ...RunOption) runOptions {
-	runOptions := runOptions{progressWriter: os.Stderr, providerFactory: ai.NewProvider}
+	runOptions := runOptions{
+		progressWriter:  os.Stderr,
+		providerFactory: ai.NewProvider,
+		modes: []reviewer.EvalMode{
+			reviewer.EvalModeSingle,
+			reviewer.EvalModeMulti,
+			reviewer.EvalModeReflect,
+		},
+	}
 	for _, option := range options {
 		option(&runOptions)
 	}
@@ -489,11 +541,7 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 		}
 	}
 
-	modes := []reviewer.EvalMode{
-		reviewer.EvalModeSingle,
-		reviewer.EvalModeMulti,
-		reviewer.EvalModeReflect,
-	}
+	modes := options.modes
 	fixtureReports := make([]FixtureReport, 0, len(fixtures))
 	usage := UsageSummary{}
 	wallStarted := time.Now()

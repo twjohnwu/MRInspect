@@ -70,10 +70,16 @@ func main() {
 		reportPath := flags.String("report", "eval/REPORT.md", "evaluation report output path")
 		retrieval := flags.Bool("retrieval", false, "run the offline retrieval-quality check instead of the review evaluation")
 		storePath := flags.String("store", ".rag/mrinspect-rag.sqlite", "sqlite store used by the retrieval check")
+		modes := flags.String("modes", "", "comma-separated review modes to run: single,multi,reflect (default all)")
 		if err := flags.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				return
 			}
+			slog.Error("evaluation arguments error", "error", err)
+			os.Exit(1)
+		}
+		parsedModes, err := evalrun.ParseModes(*modes)
+		if err != nil {
 			slog.Error("evaluation arguments error", "error", err)
 			os.Exit(1)
 		}
@@ -130,7 +136,11 @@ func main() {
 			StoreName: "mrinspect-rag.sqlite",
 		}})
 		ragwire.RegisterBuiltinBackends()
-		if err := evalrun.RunWithConfig(ctx, *fixturesDir, *reportPath, cfg, log); err != nil {
+		runOpts := []evalrun.RunOption{}
+		if len(parsedModes) > 0 {
+			runOpts = append(runOpts, evalrun.WithModes(parsedModes...))
+		}
+		if err := evalrun.RunWithConfig(ctx, *fixturesDir, *reportPath, cfg, log, runOpts...); err != nil {
 			log.Error("evaluation failed", "error", err)
 			os.Exit(1)
 		}
