@@ -9,3 +9,4 @@ d8b63944a1d82b0efdfeb421d3eaaa22932bc42b94c26c5d995c263cd24ce0c2  ../../internal
 2b2b76c6cb7fe788a843740a529da3ed160ad05c860d5de7d2266ae0e9b63466  ../../internal/reviewer/enrichment_footer_test.go
 8292f30a582d74c23d05da422301c0c7e860fcc3e529f375a70e56389096274d  ../../internal/rag/intake/denylist_more_test.go
 296ea66c15b3a826eb922d487287429d2ee022af0e4b962acb6dbba3bb3bcd94  ../../internal/evalrun/enrichment_test.go
+411752dc1d79a44af04197f5015d9cb4487482e0454db3ba44a11a8173cd95a5  ../../internal/evalrun/modes_test.go
