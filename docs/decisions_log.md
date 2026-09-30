@@ -128,3 +128,10 @@ specific decision is later reversed.
    - 干擾層：rerank 只在 neighbor 類把干擾段擠出前 k（0.78）；scope／version／responsibility／lexical 四類 on 皆 1.00，rerank 對這四類干擾無效。
    - 原層 k=1：on 0.87 對 off 0.76，rerank 讓正解更常排第 1；k=3 起兩者接近飽和。
 6. **學到什麼**：(a) `requiredLanes` 讓每個 fixture 至少兩個三元組，spec 寫「一個三元組」的 scenario 在 execute 時全部要改——寫 scenario 前先對 harness 不變量；(b) BM25 的 IDF 是全表共享，corpus 一長既有目標的名次就漂，名次帶只能靠探針測試迭代，每批新內容都要全量重跑守門；(c) 小樣本的 rerank 效果會高估：這輪把改寫層 recall 從 0.88 修正到 0.50，引用數字要看 n。
+
+## 10. enrichment round 的真實 provider 驗證：Gemini 先行，eval 路徑與免費層各補一刀
+
+1. **最初想法**：S-14 用 `mrinspect eval` 跑一個 fixture，三家 provider 各一次加 OpenAI remote 一次，就能驗 tool-call 回合。
+2. **為什麼錯**：兩個洞。其一，eval 自建 reviewer，從沒呼叫 `SetEnrichment`，開關開了也不會有工具回合，第一輪手動驗證等於沒驗。其二，Gemini 免費層 3.6 Flash 為每分鐘 5 次、每日 20 次；三 mode eval 加每次 3 次重試，一跑就把當日額度燒光（2026-09-29 全數 429）。
+3. **現在做法**：抽 `enrich.NewForRoot` 讓 review 與 eval 共用接線；eval 加 `-modes`，驗證時以 `-modes single`＋`AI_RETRY_ATTEMPTS=1` 跑，一次約 2～3 個 request。2026-09-30 實跑：turn 1 模型要求一次 `repo_search`，turn 2 以本地重送（原樣回放 `thoughtSignature`）被 Gemini 接受並產出 review，transcript 無路徑、URL 或金鑰。模型是否要求工具不可控：同日前一次跑，模型在 turn 1 就直接作答。
+4. **學到什麼**：手動情境要驗的是「那條路徑真的被走到」，指令能跑完不算數；先用 transcript 的 turn／continuation 欄位確認路徑有走到，再看結果。免費層配額是驗證計畫的設計限制，不是環境雜訊。OpenAI（含 remote）與 Anthropic 三次仍待有金鑰的機器。
