@@ -16,7 +16,7 @@ lint:
 	golangci-lint run --max-issues-per-linter=0 --max-same-issues=0
 
 vuln:
-	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 lint-lane-ids:
 	test -d internal/lane && test -d cmd
