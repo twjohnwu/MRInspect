@@ -53,6 +53,9 @@ func (r *MRInspectReviewer) ragFooterWithAggregation(aggregation footerAggregati
 	if len(aggregation.droppedFiles) > 0 {
 		footer += "\n\n_Dropped for diff size budget: " + strings.Join(aggregation.droppedFiles, ", ") + "_"
 	}
+	if len(aggregation.unavailableFiles) > 0 {
+		footer += "\n\n_Not reviewed (diff unavailable from GitLab): " + strings.Join(aggregation.unavailableFiles, ", ") + "_"
+	}
 	return footer
 }
 

@@ -40,6 +40,9 @@ type fetchedDiff struct {
 	diff    string
 	changes []gitlab.Change
 	dropped []diffbudget.DroppedFile
+	// unavailable lists GitLab-truncated files excluded from review; kept apart
+	// from dropped, which is size-budget only.
+	unavailable []diffbudget.DroppedFile
 }
 
 // RAGReviewPath supplies retrieval data to the review path. Its API has no indexing
@@ -67,6 +70,7 @@ type footerAggregation struct {
 	additionalDegraded int
 	laneEvictions      []string
 	droppedFiles       []string
+	unavailableFiles   []string
 	degradedToSingle   bool
 	enrichmentDegraded []string
 }
@@ -222,6 +226,7 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 		return
 	}
 	footer.droppedFiles = dropPaths(fetched.dropped)
+	footer.unavailableFiles = dropPaths(fetched.unavailable)
 
 	if err := r.postReviewWithFooter(ctx, reviewContent, r.ragFooterWithAggregation(footer)); err != nil {
 		finalErr = err
@@ -341,6 +346,12 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 	}
 
 	reduced := codeDiff
+	if len(dropped) == 0 {
+		// The reviewed text is the fetcher's own diff, which may still cover
+		// files GitLab truncated (the local go-git diff does); only files with
+		// no section in it are unavailable.
+		unavailable = absentFromDiff(reduced, unavailable, changesResp.Changes)
+	}
 	if len(dropped) > 0 {
 		rebuilt, convErr := diff.ConvertChangesToDiff(kept)
 		if convErr != nil {
@@ -360,7 +371,25 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 		"supportedFiles": result.SupportedFiles,
 		"droppedFiles":   len(dropped),
 	})
-	return fetchedDiff{diff: reduced, changes: kept, dropped: dropped}, nil
+	return fetchedDiff{diff: reduced, changes: kept, dropped: dropped, unavailable: unavailable}, nil
+}
+
+// absentFromDiff keeps the unavailable entries whose file has no section in
+// diffText, matching the entry path and, when it differs, the file's old path.
+func absentFromDiff(diffText string, unavailable []diffbudget.DroppedFile, changes []gitlab.Change) []diffbudget.DroppedFile {
+	var absent []diffbudget.DroppedFile
+	for _, u := range unavailable {
+		paths := []string{u.Path}
+		for _, c := range changes {
+			if c.NewPath == u.Path && c.OldPath != "" && c.OldPath != c.NewPath {
+				paths = append(paths, c.OldPath)
+			}
+		}
+		if !diff.HasFileSection(diffText, paths...) {
+			absent = append(absent, u)
+		}
+	}
+	return absent
 }
 
 // reduceDiff applies the diff-size reduction stage: dropping whole files
