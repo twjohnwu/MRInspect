@@ -20,7 +20,7 @@ func ReadMeta(ctx context.Context, path string) (Meta, error) {
 	if err != nil {
 		return Meta{}, fmt.Errorf("ReadMeta: sql.Open: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var meta Meta
 	err = db.QueryRowContext(ctx, `SELECT built_at, resources_sha256, embed_model, embed_dim FROM schema_meta WHERE id = 1`).Scan(

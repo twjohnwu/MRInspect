@@ -44,7 +44,7 @@ func assertChunkManifestConsistent(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("Open store for consistency check: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if chunks := countRows(t, store.db, `SELECT count(*) FROM chunks`); chunks != manifestChunks {
 		t.Errorf("chunk count = %d, manifest chunk count = %d; want equal", chunks, manifestChunks)
 	}
@@ -160,7 +160,7 @@ func indexedResourcesFingerprint(t *testing.T, output string, sets []resources.S
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	var fingerprint string
 	if err := store.db.QueryRow(`SELECT resources_sha256 FROM schema_meta WHERE id = 1`).Scan(&fingerprint); err != nil {
@@ -320,13 +320,13 @@ func TestIndex_EmbedsHeadingWhenTextEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	rows, err := store.db.Query(`SELECT heading, text FROM chunks ORDER BY id`)
 	if err != nil {
 		t.Fatalf("query chunks: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var headings, texts []string
 	for rows.Next() {
 		var heading, text string
@@ -394,7 +394,7 @@ func TestS04_IndexWritesEmbeddings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 3 {
 		t.Errorf("embeddings row count = %d, want 3", got)
@@ -403,7 +403,7 @@ func TestS04_IndexWritesEmbeddings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query embedding vector sizes: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var chunkID int64
 		var blobBytes int
@@ -455,7 +455,7 @@ func TestS05_FlagOffIndexUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 0 {
 		t.Errorf("embeddings row count = %d, want 0", got)
 	}
@@ -536,7 +536,7 @@ func TestIndex_EmbeddingsOffByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if got := countRows(t, store.db, `SELECT count(*) FROM embeddings`); got != 0 {
 		t.Errorf("embeddings row count = %d, want 0 when MRI_RAG_EMBEDDINGS is unset", got)
 	}
@@ -600,7 +600,7 @@ func TestIndex_FailedWriteLeavesNoPartialStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open preserved store: %v", err)
 		}
-		defer preserved.Close()
+		defer func() { _ = preserved.Close() }()
 		if got := countRows(t, preserved.db, `SELECT count(*) FROM chunks WHERE text = ?`, "old store marker"); got != 1 {
 			t.Errorf("old marker chunks = %d, want 1; failed indexing must not replace a readable store with a partial one", got)
 		}
@@ -621,7 +621,7 @@ func TestIndex_FullModeSetsAreNotChunked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open indexed store: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	if got := countRows(t, store.db, `SELECT count(*) FROM chunks c JOIN documents d ON d.id = c.document_id JOIN resource_sets s ON s.id = d.set_id WHERE s.name = ?`, set.Name); got != 0 {
 		t.Errorf("chunks for full set %q = %d, want 0", set.Name, got)
 	}
@@ -653,7 +653,7 @@ func TestIndex_AppliesIncludeExclude(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		if got := countRows(t, store.db, `SELECT count(*) FROM documents`); got != 1 {
 			t.Errorf("documents = %d, want 1 (.md only)", got)
 		}
@@ -677,7 +677,7 @@ func TestIndex_AppliesIncludeExclude(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		if got := countRows(t, store.db, `SELECT count(*) FROM documents`); got != 1 {
 			t.Errorf("documents = %d, want 1 (guide.md only)", got)
 		}

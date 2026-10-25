@@ -99,7 +99,9 @@ func TestApplyDotenv(t *testing.T) {
 
 	t.Run("absent keys get set", func(t *testing.T) {
 		t.Setenv("MRI_DOTENV_TEST_KEY", "")
-		os.Unsetenv("MRI_DOTENV_TEST_KEY")
+		if err := os.Unsetenv("MRI_DOTENV_TEST_KEY"); err != nil {
+			t.Fatalf("unset MRI_DOTENV_TEST_KEY: %v", err)
+		}
 		applyDotenv(map[string]string{"MRI_DOTENV_TEST_KEY": "value"})
 		if got := os.Getenv("MRI_DOTENV_TEST_KEY"); got != "value" {
 			t.Errorf("MRI_DOTENV_TEST_KEY: want %q, got %q", "value", got)
@@ -117,7 +119,9 @@ func TestLoadDotenv(t *testing.T) {
 
 	t.Run("present file is parsed and applied, malformed lines returned", func(t *testing.T) {
 		t.Setenv("MRI_DOTENV_LOAD_TEST", "")
-		os.Unsetenv("MRI_DOTENV_LOAD_TEST")
+		if err := os.Unsetenv("MRI_DOTENV_LOAD_TEST"); err != nil {
+			t.Fatalf("unset MRI_DOTENV_LOAD_TEST: %v", err)
+		}
 		path := filepath.Join(t.TempDir(), ".env")
 		if err := os.WriteFile(path, []byte("MRI_DOTENV_LOAD_TEST=loaded\nbroken-line\n"), 0o644); err != nil {
 			t.Fatalf("failed to write test .env: %v", err)

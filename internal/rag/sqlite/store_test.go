@@ -50,7 +50,7 @@ func TestStore_FTS5AvailableCGOFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// chunks_fts must exist as an FTS5 virtual table.
 	var sqlText string
@@ -79,7 +79,7 @@ func TestStore_FTS5AvailableCGOFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bm25 query: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	found := false
 	for rows.Next() {
@@ -119,7 +119,7 @@ func TestStore_FTSTriggersStayInSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	docID := seedDocument(t, store.db)
 
@@ -200,7 +200,7 @@ func TestStore_OpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 
 	var rowCount int
 	if err := second.db.QueryRow(
@@ -232,7 +232,7 @@ func TestStore_SchemaVersionReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	var version int
 	if err := store.db.QueryRow(

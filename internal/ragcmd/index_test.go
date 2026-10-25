@@ -277,7 +277,9 @@ func TestIndex_CheckValidatesStore(t *testing.T) {
 				t.Fatalf("open fixture store: %v", err)
 			}
 			if _, err := db.Exec(tt.corrupt); err != nil {
-				db.Close()
+				if closeErr := db.Close(); closeErr != nil {
+					t.Errorf("close fixture store: %v", closeErr)
+				}
 				t.Fatalf("corrupt fixture store: %v", err)
 			}
 			if err := db.Close(); err != nil {

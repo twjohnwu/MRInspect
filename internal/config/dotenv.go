@@ -81,7 +81,9 @@ func applyDotenv(values map[string]string) {
 		if _, ok := os.LookupEnv(key); ok {
 			continue
 		}
-		os.Setenv(key, value)
+		// Keys are split on the first '=', so Setenv can only fail on a NUL
+		// byte in the key or value; such an entry is skipped.
+		_ = os.Setenv(key, value)
 	}
 }
 
@@ -94,7 +96,7 @@ func LoadDotenv(path string) []int {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	values, malformed := parseDotenv(f)
 	applyDotenv(values)

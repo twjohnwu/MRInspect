@@ -191,7 +191,7 @@ func Run(ctx context.Context, opts Options) error {
 			Wait: opts.RetryWait,
 			OnRetry: func(attempt int, delay time.Duration) {
 				if opts.Progress != nil {
-					fmt.Fprintf(opts.Progress, "embedding rate limited (HTTP 429); retrying in %ds\n", int(delay.Seconds()))
+					_, _ = fmt.Fprintf(opts.Progress, "embedding rate limited (HTTP 429); retrying in %ds\n", int(delay.Seconds()))
 				}
 			},
 		})
@@ -209,7 +209,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return errors.New("open retrieval OFF store failed")
 	}
-	defer off.Close()
+	defer func() { _ = off.Close() }()
 
 	onOptions := []sqlite.RetrieverOption{
 		sqlite.WithReadOnly(),
@@ -224,7 +224,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return errors.New("open retrieval ON store failed")
 	}
-	defer on.Close()
+	defer func() { _ = on.Close() }()
 
 	rows := make([]Row, 0, len(plan))
 	for _, triple := range plan {
@@ -268,15 +268,15 @@ func Run(ctx context.Context, opts Options) error {
 			bareFixture = triple.Fixture
 		}
 		row := Row{
-			System:     system,
-			Fixture:    bareFixture,
-			Lane:       triple.LaneID,
-			Set:        triple.Set.Name,
-			K:          triple.K,
-			RecallByK:  make(map[int]RecallByK),
-			Categories: make(map[string]Triplet),
-			OffMs:      offDuration,
-			OnMs:       onDuration,
+			System:      system,
+			Fixture:     bareFixture,
+			Lane:        triple.LaneID,
+			Set:         triple.Set.Name,
+			K:           triple.K,
+			RecallByK:   make(map[int]RecallByK),
+			Categories:  make(map[string]Triplet),
+			OffDuration: offDuration,
+			OnDuration:  onDuration,
 		}
 		for index := range row.Metrics {
 			integer := index == metricDistractors
@@ -332,9 +332,9 @@ func Run(ctx context.Context, opts Options) error {
 	offDurations := make([]time.Duration, 0, len(rows))
 	onDurations := make([]time.Duration, 0, len(rows))
 	for _, row := range rows {
-		offDurations = append(offDurations, row.OffMs)
+		offDurations = append(offDurations, row.OffDuration)
 		if row.Metrics[metricOrigRecall].On.Degraded == "" {
-			onDurations = append(onDurations, row.OnMs)
+			onDurations = append(onDurations, row.OnDuration)
 		}
 	}
 	header.RetrieveMs = retrieveMsLine(offDurations, onDurations)

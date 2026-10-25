@@ -109,7 +109,7 @@ func productionStore(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`UPDATE schema_meta SET built_at = ?, resources_sha256 = ? WHERE id = 1`, "2026-08-29T00:00:00Z", "0123456789abcdef"); err != nil {
 		t.Fatalf("set provenance: %v", err)
 	}

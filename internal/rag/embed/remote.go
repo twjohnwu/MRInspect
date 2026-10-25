@@ -62,7 +62,7 @@ func (client remoteClient) postJSON(
 	if err != nil {
 		return fmt.Errorf("send embedding request: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return &StatusError{Code: response.StatusCode}

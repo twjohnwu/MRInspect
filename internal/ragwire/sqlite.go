@@ -43,7 +43,7 @@ func (sqliteStoreOpener) OpenAndValidate(ctx context.Context, path string) error
 	if err != nil {
 		return fmt.Errorf("open SQLite store: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var version, manifestCount, actualCount int
 	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {

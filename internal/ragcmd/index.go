@@ -136,7 +136,7 @@ func ParseOptions(args []string, serviceName string, output io.Writer) (Options,
 	check := flags.Bool("check", false, "validate an existing SQLite resource store without writing it")
 	help := flags.Bool("help", false, "show index command help")
 	flags.Usage = func() {
-		fmt.Fprintln(output, "Usage: mrinspect index [--out PATH] [--dry-run | --check]")
+		_, _ = fmt.Fprintln(output, "Usage: mrinspect index [--out PATH] [--dry-run | --check]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -182,7 +182,7 @@ func checkStore(ctx context.Context, opts Options) (int, IndexStats, error) {
 	if err != nil {
 		return indexCheckFailure(opts, stats, "store open check failed", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var version, manifestCount, actualCount int
 	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {
@@ -225,7 +225,7 @@ func printStats(output io.Writer, stats IndexStats) {
 	if output == nil {
 		return
 	}
-	fmt.Fprintf(output, "%s: resource sets=%d files indexed=%d files failed=%d\n",
+	_, _ = fmt.Fprintf(output, "%s: resource sets=%d files indexed=%d files failed=%d\n",
 		stats.Message, stats.ResourceSets, stats.FilesIndexed, stats.FilesFailed)
 }
 

@@ -109,7 +109,7 @@ func (c *Client) ListNotes(ctx context.Context, projectID, mrIID string) ([]Note
 			return nil, fmt.Errorf("ListNotes: %w", err)
 		}
 		data, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("ListNotes: %w", readErr)
 		}
@@ -152,7 +152,7 @@ func (c *Client) HealthCheck(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -168,7 +168,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -204,7 +204,7 @@ func (c *Client) writeJSON(ctx context.Context, method, path string, payload, ou
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -255,7 +255,7 @@ func (c *Client) doWithRetry(ctx context.Context, req *http.Request) (*http.Resp
 		}
 
 		// 5xx — retry
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		c.log.LogAPICall("gitlab", req.URL.Path, dur, false,
 			fmt.Errorf("status %d", resp.StatusCode))
 	}

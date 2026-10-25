@@ -171,7 +171,7 @@ func readTranscriptEntries(t *testing.T, logDir string) []transcriptTestEntry {
 	if err != nil {
 		t.Fatalf("open transcript: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var entries []transcriptTestEntry
 	decoder := json.NewDecoder(file)

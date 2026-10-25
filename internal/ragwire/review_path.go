@@ -66,7 +66,7 @@ func (p *ReviewPath) RetrieveForReview(ctx context.Context, diff string) (review
 	if err != nil {
 		return state, fmt.Errorf("create RAG retriever: %w", err)
 	}
-	defer retriever.Close()
+	defer func() { _ = retriever.Close() }()
 	terms := lane.TermsFromDiff(diff)
 	if err := retrieveResourceSets(ctx, retriever, p.config.ResourceSets, terms, &state); err != nil {
 		return state, err
@@ -133,7 +133,7 @@ func loadStoreProvenance(ctx context.Context, path string, state *reviewer.Revie
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	return db.QueryRowContext(ctx, `SELECT built_at, resources_sha256 FROM schema_meta WHERE id = 1`).Scan(&state.Store.BuiltAt, &state.ResourcesSHA256)
 }
 

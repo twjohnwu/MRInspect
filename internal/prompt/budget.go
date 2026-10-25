@@ -164,10 +164,10 @@ func ComposeWithBudget(input BudgetComposeInput) (ComposeResult, error) {
 			continue
 		}
 		prompt.WriteString(input.Framing.Declaration)
-		prompt.WriteString(fmt.Sprintf(input.Framing.HeadingTemplate, section.Name))
-		prompt.WriteString(fmt.Sprintf(input.Framing.NonceOpenTemplate, nonce))
+		fmt.Fprintf(&prompt, input.Framing.HeadingTemplate, section.Name)
+		fmt.Fprintf(&prompt, input.Framing.NonceOpenTemplate, nonce)
 		prompt.Write(section.Content)
-		prompt.WriteString(fmt.Sprintf(input.Framing.NonceCloseTemplate, nonce))
+		fmt.Fprintf(&prompt, input.Framing.NonceCloseTemplate, nonce)
 	}
 	result.Prompt = prompt.String()
 	return result, nil

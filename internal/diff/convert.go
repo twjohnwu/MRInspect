@@ -23,13 +23,13 @@ func ConvertChangesToDiff(changes []gitlab.Change) (string, error) {
 
 		switch {
 		case c.NewFile:
-			sb.WriteString(fmt.Sprintf("--- /dev/null\n+++ b/%s\n", newPath))
+			fmt.Fprintf(&sb, "--- /dev/null\n+++ b/%s\n", newPath)
 		case c.DeletedFile:
-			sb.WriteString(fmt.Sprintf("--- a/%s\n+++ /dev/null\n", oldPath))
+			fmt.Fprintf(&sb, "--- a/%s\n+++ /dev/null\n", oldPath)
 		case c.RenamedFile:
-			sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", oldPath, newPath))
+			fmt.Fprintf(&sb, "--- a/%s\n+++ b/%s\n", oldPath, newPath)
 		default:
-			sb.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", oldPath, newPath))
+			fmt.Fprintf(&sb, "--- a/%s\n+++ b/%s\n", oldPath, newPath)
 		}
 
 		if c.Diff != "" {

@@ -25,7 +25,7 @@ func Open(path string) (*Store, error) {
 	}
 
 	if _, err := db.Exec(schemaSQL); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("Open: execute schema: %w", err)
 	}
 
@@ -42,7 +42,7 @@ func Open(path string) (*Store, error) {
 		0,
 		0,
 	); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("Open: initialize schema metadata: %w", err)
 	}
 

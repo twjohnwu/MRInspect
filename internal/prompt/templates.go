@@ -84,11 +84,11 @@ func SelectTemplate(serviceType string, _ config.Config) func(string, gitlab.Mer
 func buildLegacyPrompt(svcType, diff string, mr gitlab.MergeRequest, svc config.ServiceConfig, provider config.AIProvider, focusAreas []string) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("You are an expert %s code reviewer.\n\n", svcType))
-	sb.WriteString(fmt.Sprintf("**MR**: !%d - %s\n", mr.IID, mr.Title))
-	sb.WriteString(fmt.Sprintf("**Author**: %s\n", mr.Author.Name))
-	sb.WriteString(fmt.Sprintf("**Branch**: %s → %s\n", mr.SourceBranch, mr.TargetBranch))
-	sb.WriteString(fmt.Sprintf("**Service**: %s (%s)\n\n", svc.Name, svc.Type))
+	fmt.Fprintf(&sb, "You are an expert %s code reviewer.\n\n", svcType)
+	fmt.Fprintf(&sb, "**MR**: !%d - %s\n", mr.IID, mr.Title)
+	fmt.Fprintf(&sb, "**Author**: %s\n", mr.Author.Name)
+	fmt.Fprintf(&sb, "**Branch**: %s → %s\n", mr.SourceBranch, mr.TargetBranch)
+	fmt.Fprintf(&sb, "**Service**: %s (%s)\n\n", svc.Name, svc.Type)
 
 	if mr.Description != "" {
 		sb.WriteString("**Description**:\n")
@@ -98,7 +98,7 @@ func buildLegacyPrompt(svcType, diff string, mr gitlab.MergeRequest, svc config.
 
 	sb.WriteString("## Review Focus Areas\n")
 	for _, area := range focusAreas {
-		sb.WriteString(fmt.Sprintf("- %s\n", area))
+		fmt.Fprintf(&sb, "- %s\n", area)
 	}
 
 	sb.WriteString("\n## Code Changes\n```diff\n")

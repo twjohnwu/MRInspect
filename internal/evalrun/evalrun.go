@@ -514,7 +514,7 @@ func RunWithConfig(ctx context.Context, fixturesDir, reportPath string, cfg conf
 	return runLoaded(ctx, fixtures, reportPath, cfg, log, newRunOptions(options...))
 }
 
-func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger, options runOptions) error {
+func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg config.Config, log *logger.Logger, options runOptions) (returnErr error) {
 	ragwire.RegisterBuiltinBackends()
 	repoRoot := "."
 	resourceRegistry, err := resources.Load(repoRoot, "")
@@ -548,13 +548,17 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 	okModes := 0
 	failedModes := 0
 	defer func() {
-		fmt.Fprintf(options.progressWriter, "Totals: %d modes ok, %d failed (%.1fs wall)\n", okModes, failedModes, time.Since(wallStarted).Seconds())
+		if _, err := fmt.Fprintf(options.progressWriter, "Totals: %d modes ok, %d failed (%.1fs wall)\n", okModes, failedModes, time.Since(wallStarted).Seconds()); err != nil && returnErr == nil {
+			returnErr = fmt.Errorf("write progress totals: %w", err)
+		}
 	}()
 	metricsBase, persistModeMetrics := os.LookupEnv("AI_REVIEW_METRICS_FILE")
 	persistModeMetrics = persistModeMetrics && strings.TrimSpace(metricsBase) != ""
 
 	for fixtureIndex, fixture := range fixtures {
-		fmt.Fprintf(options.progressWriter, "[%d/%d] %s\n", fixtureIndex+1, len(fixtures), fixture.Name)
+		if _, err := fmt.Fprintf(options.progressWriter, "[%d/%d] %s\n", fixtureIndex+1, len(fixtures), fixture.Name); err != nil {
+			return fmt.Errorf("write fixture progress: %w", err)
+		}
 		var runLogs []*logger.Logger
 		var promptLogs []*bytes.Buffer
 		var closers []io.Closer
@@ -609,7 +613,9 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 
 		modeReports := make([]ModeReport, 0, len(modes))
 		for _, mode := range modes {
-			fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s ...\n", fixtureIndex+1, len(fixtures), fixture.Name, mode)
+			if _, err := fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s ...\n", fixtureIndex+1, len(fixtures), fixture.Name, mode); err != nil {
+				return fmt.Errorf("write mode progress: %w", err)
+			}
 			modeStarted := time.Now()
 			results := RunModes(ctx, fixture, []reviewer.EvalMode{mode}, factory)
 			result := results[0]
@@ -623,7 +629,9 @@ func runLoaded(ctx context.Context, fixtures []Fixture, reportPath string, cfg c
 					status = "degraded"
 				}
 			}
-			fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s %s (%.1fs)\n", fixtureIndex+1, len(fixtures), fixture.Name, mode, status, time.Since(modeStarted).Seconds())
+			if _, err := fmt.Fprintf(options.progressWriter, "[%d/%d] %s %s %s (%.1fs)\n", fixtureIndex+1, len(fixtures), fixture.Name, mode, status, time.Since(modeStarted).Seconds()); err != nil {
+				return fmt.Errorf("write mode result progress: %w", err)
+			}
 			runLog := runLogs[len(runLogs)-1]
 			promptLog := promptLogs[len(promptLogs)-1]
 			if persistModeMetrics {

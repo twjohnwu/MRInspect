@@ -311,7 +311,7 @@ func (fixtureSQLiteOpener) OpenAndValidate(ctx context.Context, path string) err
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var version, manifestCount, actualCount int
 	if err := db.QueryRowContext(ctx, `SELECT schema_version, chunk_count FROM schema_meta WHERE id = 1`).Scan(&version, &manifestCount); err != nil {
 		return err
@@ -374,7 +374,7 @@ func manifestMismatchStore(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`UPDATE schema_meta SET chunk_count = chunk_count + 1 WHERE id = 1`); err != nil {
 		t.Fatalf("corrupt chunk_count: %v", err)
 	}
@@ -388,7 +388,7 @@ func validStore(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`
 		CREATE TABLE schema_meta (id INTEGER PRIMARY KEY, schema_version INTEGER NOT NULL, chunk_count INTEGER NOT NULL);
 		CREATE TABLE chunks (id INTEGER PRIMARY KEY);

@@ -83,7 +83,7 @@ func TestEnvExampleMatchesUserSettableVariables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	envLine := regexp.MustCompile(`^\s*#?\s*([A-Z][A-Z0-9_]*)=`)
 	found := make(map[string]struct{})

@@ -74,15 +74,15 @@ func (h *Handler) GenerateMessage(err error, stage string, cat Category) string 
 	steps := h.TroubleshootingSteps(cat, err)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## MRInspect: Review Failed\n\n"))
-	sb.WriteString(fmt.Sprintf("An error occurred during **%s**.\n\n", friendly))
-	sb.WriteString(fmt.Sprintf("**Error**: `%s`\n\n", truncate(err.Error(), h.cfg.ErrorReporting.MaxErrorMessageLength)))
-	sb.WriteString(fmt.Sprintf("**Category**: %s\n\n", cat))
+	sb.WriteString("## MRInspect: Review Failed\n\n")
+	fmt.Fprintf(&sb, "An error occurred during **%s**.\n\n", friendly)
+	fmt.Fprintf(&sb, "**Error**: `%s`\n\n", truncate(err.Error(), h.cfg.ErrorReporting.MaxErrorMessageLength))
+	fmt.Fprintf(&sb, "**Category**: %s\n\n", cat)
 
 	if len(steps) > 0 {
 		sb.WriteString("**Troubleshooting**:\n")
 		for _, s := range steps {
-			sb.WriteString(fmt.Sprintf("- %s\n", s))
+			fmt.Fprintf(&sb, "- %s\n", s)
 		}
 	}
 	return sb.String()

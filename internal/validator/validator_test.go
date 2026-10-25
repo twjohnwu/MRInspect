@@ -70,7 +70,7 @@ func TestValidateDiff(t *testing.T) {
 	t.Run("too many files", func(t *testing.T) {
 		var sb strings.Builder
 		for i := 0; i < 51; i++ {
-			sb.WriteString(fmt.Sprintf("--- a/file%d.go\n+++ b/file%d.go\n@@ -1 +1 @@\n+fix\n", i, i))
+			fmt.Fprintf(&sb, "--- a/file%d.go\n+++ b/file%d.go\n@@ -1 +1 @@\n+fix\n", i, i)
 		}
 		_, err := v.ValidateDiff(sb.String())
 		assertValidationCode(t, err, "TOO_MANY_FILES")

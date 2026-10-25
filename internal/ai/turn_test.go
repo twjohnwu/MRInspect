@@ -44,7 +44,9 @@ func newTurnTestServer(t *testing.T, responses []string) (*httptest.Server, *[][
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, responses[request])
+		if _, err := fmt.Fprint(w, responses[request]); err != nil {
+			t.Errorf("write response: %v", err)
+		}
 		request++
 	}))
 	return server, &requestBodies
@@ -722,7 +724,7 @@ func readEnrichmentTranscriptEntries(t *testing.T, logDir string) []enrichmentTr
 	if err != nil {
 		t.Fatalf("open transcript: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var entries []enrichmentTranscriptEntry
 	decoder := json.NewDecoder(file)

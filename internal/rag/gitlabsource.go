@@ -51,7 +51,7 @@ func localCandidate(ctx context.Context, path string) (StoreCandidate, error) {
 	if err != nil {
 		return StoreCandidate{}, fmt.Errorf("open local store: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, &contextReader{ctx: ctx, reader: file}); err != nil {
 		return StoreCandidate{}, fmt.Errorf("hash local store: %w", err)
@@ -132,7 +132,7 @@ func downloadGitLabStore(ctx context.Context, config *GitLabSourceConfig, path s
 	if err != nil {
 		return StoreCandidate{}, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return StoreCandidate{}, httpStatusError{code: response.StatusCode}
 	}

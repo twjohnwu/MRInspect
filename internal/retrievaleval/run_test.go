@@ -586,7 +586,9 @@ func TestRun_RefusesStaleStore(t *testing.T) {
 		t.Fatalf("OpenFile corpus for one-byte append: %v", err)
 	}
 	if _, err := file.Write([]byte("x")); err != nil {
-		file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			t.Errorf("close corpus after failed append: %v", closeErr)
+		}
 		t.Fatalf("append one byte to corpus: %v", err)
 	}
 	if err := file.Close(); err != nil {
@@ -789,7 +791,9 @@ func TestRun_WritesReportAndSanitizesHeader(t *testing.T) {
 		t.Fatalf("sql.Open store: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE schema_meta SET embed_model = ? WHERE id = 1`, "fixture\npoison"); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			t.Errorf("close store after failed corruption: %v", closeErr)
+		}
 		t.Fatalf("corrupt embed_model: %v", err)
 	}
 	if err := db.Close(); err != nil {

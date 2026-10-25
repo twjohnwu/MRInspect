@@ -55,13 +55,13 @@ type Row struct {
 	Metrics    [metricCount]Triplet
 	RecallByK  map[int]RecallByK
 	Categories map[string]Triplet
-	// OffMs and OnMs are the OFF/ON Retrieve durations for this triple.
+	// OffDuration and OnDuration are the OFF/ON Retrieve durations for this triple.
 	// Populated by run.go, aggregated by retrieveMsLine into the
 	// retrieve_ms header line (REQ-04); kept as time.Duration (not
 	// pre-rounded milliseconds) so the mean is computed before rounding,
 	// not after.
-	OffMs time.Duration
-	OnMs  time.Duration
+	OffDuration time.Duration
+	OnDuration  time.Duration
 }
 
 type Header struct {

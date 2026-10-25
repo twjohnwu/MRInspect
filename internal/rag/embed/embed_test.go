@@ -150,7 +150,9 @@ func TestS01_OpenAIEmbed(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"data":[{"embedding":[0.25,-0.5],"index":0},{"embedding":[1.5,2.25],"index":1}]}`)
+		if _, err := fmt.Fprint(w, `{"data":[{"embedding":[0.25,-0.5],"index":0},{"embedding":[1.5,2.25],"index":1}]}`); err != nil {
+			t.Errorf("write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -237,7 +239,9 @@ func TestS02_GeminiEmbed(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"embeddings":[{"values":[-1.25,0.75]},{"values":[3.5,-4.25]}]}`)
+		if _, err := fmt.Fprint(w, `{"embeddings":[{"values":[-1.25,0.75]},{"values":[3.5,-4.25]}]}`); err != nil {
+			t.Errorf("write response: %v", err)
+		}
 	}))
 	defer server.Close()
 

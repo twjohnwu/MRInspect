@@ -58,14 +58,14 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 	if err != nil {
 		return stats, err
 	}
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 
 	store, err := Open(tempPath)
 	if err != nil {
 		return stats, fmt.Errorf("Index: open temporary store: %w", err)
 	}
 	if _, err := store.db.Exec(`PRAGMA journal_mode = DELETE`); err != nil {
-		store.Close()
+		_ = store.Close()
 		return stats, fmt.Errorf("Index: disable WAL for atomic replacement: %w", err)
 	}
 	progress := opts.Progress
@@ -73,7 +73,7 @@ func Index(ctx context.Context, opts IndexOptions) (stats IndexStats, err error)
 		progress = os.Stderr
 	}
 	if err := buildStore(ctx, store.db, opts.Sets, opts.Embedder, progress, &stats); err != nil {
-		store.Close()
+		_ = store.Close()
 		return stats, err
 	}
 	if err := store.Close(); err != nil {
@@ -132,7 +132,7 @@ func createTempStorePath(outputPath string) (string, error) {
 	}
 	path := temp.Name()
 	if err := temp.Close(); err != nil {
-		os.Remove(path)
+		_ = os.Remove(path)
 		return "", fmt.Errorf("Index: close temporary file: %w", err)
 	}
 	return path, nil
@@ -143,7 +143,7 @@ func syncFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("Index: open temporary store for sync: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := file.Sync(); err != nil {
 		return fmt.Errorf("Index: sync temporary store: %w", err)
 	}
@@ -155,7 +155,7 @@ func buildStore(ctx context.Context, db *sql.DB, sets []resources.Set, embedder 
 	if err != nil {
 		return fmt.Errorf("Index: begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	indexedAt := time.Now().UTC().Format(time.RFC3339)
 	chunkCount := 0
@@ -293,7 +293,7 @@ func embeddingChunks(ctx context.Context, tx *sql.Tx) ([]embeddingChunk, error) 
 	if err != nil {
 		return nil, fmt.Errorf("Index: query chunks for embedding: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var chunks []embeddingChunk
 	for rows.Next() {
@@ -528,7 +528,7 @@ func ManifestChunkCount(path string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("ManifestChunkCount: Open: %w", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	var count int
 	if err := store.db.QueryRow(`SELECT chunk_count FROM schema_meta WHERE id = 1`).Scan(&count); err != nil {

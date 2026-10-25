@@ -28,7 +28,9 @@ func TestOpenAI_RequestSetsStoreFalse(t *testing.T) {
 			t.Fatalf("decode request body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"output":[{"content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`))
+		if _, err := w.Write([]byte(`{"output":[{"content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)); err != nil {
+			t.Errorf("write response: %v", err)
+		}
 	}))
 	defer server.Close()
 

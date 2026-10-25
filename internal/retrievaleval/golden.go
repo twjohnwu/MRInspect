@@ -153,13 +153,13 @@ func (g Golden) ValidateAgainstStore(ctx context.Context, storePath string) erro
 	if err != nil {
 		return fmt.Errorf("validate golden against store: open: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	rows, err := db.QueryContext(ctx, `SELECT s.name, d.rel_path, c.heading FROM chunks c JOIN documents d ON d.id=c.document_id JOIN resource_sets s ON s.id=d.set_id`)
 	if err != nil {
 		return fmt.Errorf("validate golden against store: query targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	stored := make(map[string]struct{})
 	for rows.Next() {

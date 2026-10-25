@@ -223,7 +223,6 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	}
 	footer.droppedFiles = dropPaths(fetched.dropped)
 
-	stage = "postReview"
 	if err := r.postReviewWithFooter(ctx, reviewContent, r.ragFooterWithAggregation(footer)); err != nil {
 		finalErr = err
 		r.log.Error("failed to post review", "error", err)

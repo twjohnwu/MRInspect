@@ -373,7 +373,7 @@ func (p *OpenAIProvider) doTurnRequest(ctx context.Context, reqBody map[string]a
 	if err != nil {
 		return envelope, 0, durationMs, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -217,12 +217,12 @@ func (cryptoNonceSource) Nonce() (string, error) {
 func (c *Composer) ComposeReviewPrompt(p project.LoadedProject, diff string, mr gitlab.MergeRequest) (string, error) {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("You are an expert code reviewer for the **%s** system.\n\n", p.System.Name))
+	fmt.Fprintf(&sb, "You are an expert code reviewer for the **%s** system.\n\n", p.System.Name)
 	if p.System.Description != "" {
 		sb.WriteString(p.System.Description + "\n\n")
 	}
 	if len(p.System.Frameworks) > 0 {
-		sb.WriteString(fmt.Sprintf("**Frameworks**: %s\n\n", strings.Join(p.System.Frameworks, ", ")))
+		fmt.Fprintf(&sb, "**Frameworks**: %s\n\n", strings.Join(p.System.Frameworks, ", "))
 	}
 
 	catalog := c.buildStandardsCatalog(p)
@@ -232,11 +232,11 @@ func (c *Composer) ComposeReviewPrompt(p project.LoadedProject, diff string, mr 
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("## Merge Request\n\n"))
-	sb.WriteString(fmt.Sprintf("**MR**: !%d — %s\n", mr.IID, mr.Title))
-	sb.WriteString(fmt.Sprintf("**Author**: %s\n", mr.Author.Name))
-	sb.WriteString(fmt.Sprintf("**Branch**: `%s` → `%s`\n", mr.SourceBranch, mr.TargetBranch))
-	sb.WriteString(fmt.Sprintf("**Service**: %s (%s)\n", mr.Title, p.ResolvedServiceType))
+	sb.WriteString("## Merge Request\n\n")
+	fmt.Fprintf(&sb, "**MR**: !%d — %s\n", mr.IID, mr.Title)
+	fmt.Fprintf(&sb, "**Author**: %s\n", mr.Author.Name)
+	fmt.Fprintf(&sb, "**Branch**: `%s` → `%s`\n", mr.SourceBranch, mr.TargetBranch)
+	fmt.Fprintf(&sb, "**Service**: %s (%s)\n", mr.Title, p.ResolvedServiceType)
 
 	desc := c.extractDescription(mr.Description)
 	if desc != "" {
@@ -305,9 +305,9 @@ func (c *Composer) formatDocs(docs []project.DocFile, sectionTitle string) strin
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s\n\n", sectionTitle))
+	fmt.Fprintf(&sb, "### %s\n\n", sectionTitle)
 	for _, d := range docs {
-		sb.WriteString(fmt.Sprintf("#### %s\n\n", d.Filename))
+		fmt.Fprintf(&sb, "#### %s\n\n", d.Filename)
 		sb.WriteString(d.Content)
 		sb.WriteString("\n\n")
 	}
@@ -321,7 +321,7 @@ func (c *Composer) buildStandardsCatalog(p project.LoadedProject) string {
 	}
 	var sb strings.Builder
 	for _, d := range all {
-		sb.WriteString(fmt.Sprintf("**%s**\n\n", d.Filename))
+		fmt.Fprintf(&sb, "**%s**\n\n", d.Filename)
 		sb.WriteString(d.Content)
 		sb.WriteString("\n\n")
 	}

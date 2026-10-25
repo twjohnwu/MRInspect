@@ -84,7 +84,9 @@ func TestS07_TokenUsageRecorded(t *testing.T) {
 		request := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, responses[request])
+			if _, err := fmt.Fprint(w, responses[request]); err != nil {
+				t.Errorf("write response: %v", err)
+			}
 			request++
 		}))
 		defer server.Close()
@@ -108,7 +110,9 @@ func TestS07_TokenUsageRecorded(t *testing.T) {
 		request := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, responses[request])
+			if _, err := fmt.Fprint(w, responses[request]); err != nil {
+				t.Errorf("write response: %v", err)
+			}
 			request++
 		}))
 		defer server.Close()
@@ -132,7 +136,9 @@ func TestS07_TokenUsageRecorded(t *testing.T) {
 		request := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, responses[request])
+			if _, err := fmt.Fprint(w, responses[request]); err != nil {
+				t.Errorf("write response: %v", err)
+			}
 			request++
 		}))
 		defer server.Close()

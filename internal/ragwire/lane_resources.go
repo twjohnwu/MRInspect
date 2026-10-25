@@ -85,7 +85,7 @@ func (r *resolvingRetriever) Retrieve(ctx context.Context, query rag.Query) (rag
 	if err != nil {
 		return rag.Result{}, fmt.Errorf("create RAG retriever: %w", err)
 	}
-	defer retriever.Close()
+	defer func() { _ = retriever.Close() }()
 
 	result, err := retriever.Retrieve(ctx, query)
 	if err != nil {

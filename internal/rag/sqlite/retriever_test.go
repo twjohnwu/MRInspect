@@ -519,7 +519,7 @@ func TestS08_RerankDegrades(t *testing.T) {
 			if err != nil {
 				t.Fatalf("OpenRetriever reranker: %v", err)
 			}
-			defer reranker.Close()
+			defer func() { _ = reranker.Close() }()
 			t.Setenv(embeddingsEnv, "true")
 
 			got, err := reranker.Retrieve(context.Background(), rag.Query{Terms: []string{"needle"}, SetRef: set.Name, TopK: 3})

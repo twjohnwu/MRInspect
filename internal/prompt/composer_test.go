@@ -206,7 +206,7 @@ func TestCompose_NonceDelimitedWithoutMutation(t *testing.T) {
 	if openAt < 0 || closeAt < 0 || contentAt < 0 {
 		t.Fatalf("prompt missing nonce boundary or unchanged content: %q", result.Prompt)
 	}
-	if !(openAt < contentAt && contentAt+len(content) <= closeAt) {
+	if openAt >= contentAt || contentAt+len(content) > closeAt {
 		t.Fatalf("content is not wholly inside its nonce block: open=%d content=%d close=%d", openAt, contentAt, closeAt)
 	}
 	if closeAt <= contentAt+len(content)-1 {

@@ -66,7 +66,7 @@ func (*readRangeTool) Run(ctx context.Context, root string, raw json.RawMessage,
 	if err != nil {
 		return "unable to read file", "tool-error"
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if isBinary(file) {
 		return "", "path-rejected"
 	}

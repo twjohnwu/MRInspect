@@ -169,7 +169,7 @@ func (r *Retriever) bm25(ctx context.Context, q rag.Query, widen bool) (rag.Resu
 	if err != nil {
 		return rag.Result{}, fmt.Errorf("query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := rag.Result{}
 	for rows.Next() {
@@ -333,7 +333,7 @@ func (r *Retriever) candidateVectors(ctx context.Context, chunks []rag.Chunk, ex
 	if err != nil {
 		return nil, fmt.Errorf("query candidate vectors: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	vectors := make(map[string][]float32, len(chunks))
 	for rows.Next() {
