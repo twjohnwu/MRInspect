@@ -1,7 +1,7 @@
 BINARY   := mrinspect
 BUILD_DIR := ./bin
 
-.PHONY: build test lint lint-lane-ids clean docker
+.PHONY: build test lint lint-lane-ids vuln clean docker
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/mrinspect
@@ -13,7 +13,10 @@ test-integration:
 	go test -tags integration ./...
 
 lint:
-	golangci-lint run
+	golangci-lint run --max-issues-per-linter=0 --max-same-issues=0
+
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
 lint-lane-ids:
 	test -d internal/lane && test -d cmd
