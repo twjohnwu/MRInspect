@@ -477,7 +477,7 @@ type recordingWarnLogger struct {
 	warnings []string
 }
 
-func (l *recordingWarnLogger) Warn(msg string, args ...any) {
+func (l *recordingWarnLogger) Warnf(msg string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.warnings = append(l.warnings, fmt.Sprintf(msg, args...))

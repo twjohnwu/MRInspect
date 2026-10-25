@@ -41,7 +41,7 @@ type FanoutInput struct {
 
 // WarningLogger is the minimal logging seam needed for fan-out configuration warnings.
 type WarningLogger interface {
-	Warn(string, ...any)
+	Warnf(format string, args ...any)
 }
 
 // FanoutResult separates successful lane results from isolated lane failures.
@@ -73,7 +73,7 @@ func Fanout(ctx context.Context, input FanoutInput) (FanoutResult, error) {
 		if parseErr == nil && value > 0 {
 			concurrency = value
 		} else if input.Logger != nil {
-			input.Logger.Warn(fmt.Sprintf("invalid MRI_LANE_CONCURRENCY %q, using default 4", raw))
+			input.Logger.Warnf("invalid MRI_LANE_CONCURRENCY %q, using default 4", raw)
 		}
 	}
 	group.SetLimit(concurrency)

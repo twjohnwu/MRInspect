@@ -2,6 +2,7 @@ package logger
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -94,6 +95,11 @@ func (l *Logger) Info(msg string, args ...any) {
 
 func (l *Logger) Warn(msg string, args ...any) {
 	l.slog.Warn(msg, args...)
+}
+
+// Warnf logs a printf-formatted warning with no structured attributes.
+func (l *Logger) Warnf(format string, args ...any) {
+	l.slog.Warn(fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Error(msg string, args ...any) {
