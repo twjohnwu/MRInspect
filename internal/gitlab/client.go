@@ -68,10 +68,16 @@ func (c *Client) GetMergeRequest(ctx context.Context, projectID, mrIID string) (
 }
 
 func (c *Client) GetMRChanges(ctx context.Context, projectID, mrIID string) (MRChangesResponse, error) {
-	path := fmt.Sprintf("/projects/%s/merge_requests/%s/changes", projectID, mrIID)
+	// access_raw_diffs reads diffs through Gitaly, avoiding the DB-backed diff
+	// limits that blank out a file's diff on large merge requests.
+	path := fmt.Sprintf("/projects/%s/merge_requests/%s/changes?access_raw_diffs=true", projectID, mrIID)
 	var resp MRChangesResponse
 	if err := c.getJSON(ctx, path, &resp); err != nil {
 		return MRChangesResponse{}, fmt.Errorf("GetMRChanges: %w", err)
+	}
+	if resp.Overflow {
+		c.log.Warn("gitlab reported diff overflow; some file diffs may be unavailable",
+			"projectID", projectID, "mrIID", mrIID)
 	}
 	return resp, nil
 }

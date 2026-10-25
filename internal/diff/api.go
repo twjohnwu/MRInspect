@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"mrinspect/internal/diff/disclosure"
 	"mrinspect/internal/interfaces"
 	"mrinspect/internal/logger"
 )
@@ -32,9 +33,10 @@ func (f *APIDiffFetcher) Fetch(ctx context.Context, _, _ string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("APIDiffFetcher: %w", err)
 	}
-	result, err := ConvertChangesToDiff(changesResp.Changes)
+	reviewable, unavailable := disclosure.SplitTruncated(changesResp.Changes)
+	result, err := ConvertChangesToDiff(reviewable)
 	if err != nil {
 		return "", fmt.Errorf("APIDiffFetcher: convert: %w", err)
 	}
-	return result, nil
+	return result + disclosure.Render(unavailable), nil
 }

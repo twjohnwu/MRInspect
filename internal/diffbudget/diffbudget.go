@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"mrinspect/internal/diff/disclosure"
 	"mrinspect/internal/gitlab"
 	"mrinspect/internal/rag/chunk"
 )
@@ -26,6 +27,9 @@ var DefaultNonReviewablePatterns = []string{
 const (
 	ReasonNonReviewable = "non-reviewable"
 	ReasonSizeBudget    = "size budget"
+	// ReasonDiffUnavailable marks a file whose diff GitLab returned empty
+	// because of its own diff limits; it is never sent to the model.
+	ReasonDiffUnavailable = disclosure.ReasonDiffUnavailable
 )
 
 // DroppedFile records one whole file removed from a diff to fit budget.
@@ -242,22 +246,27 @@ func changePath(change gitlab.Change) string {
 	return change.OldPath
 }
 
+// SplitTruncated separates changes whose diff GitLab withheld (see
+// gitlab.Change.Truncated) from the reviewable ones. The withheld files are
+// returned as DroppedFile entries so Trailer can disclose them.
+func SplitTruncated(changes []gitlab.Change) ([]gitlab.Change, []DroppedFile) {
+	reviewable, entries := disclosure.SplitTruncated(changes)
+	var unavailable []DroppedFile
+	for _, entry := range entries {
+		unavailable = append(unavailable, DroppedFile{Path: entry.Path, Reason: entry.Reason})
+	}
+	return reviewable, unavailable
+}
+
 // Trailer renders a deterministic, clearly-marked comment block disclosing
 // which whole files were dropped and why. It is meant to be appended to the
 // diff string itself so every prompt path that consumes that diff string
 // (the single-mode prompt and every per-lane prompt) inherits the
 // disclosure without any change to prompt-composition code.
 func Trailer(dropped []DroppedFile) string {
-	if len(dropped) == 0 {
-		return ""
-	}
-
-	var trailer strings.Builder
-	trailer.WriteString("\n\n<!-- mrinspect:diff-reduction -->\n")
-	trailer.WriteString("Excluded from this diff (diff size budget):\n")
+	entries := make([]disclosure.Entry, 0, len(dropped))
 	for _, drop := range dropped {
-		fmt.Fprintf(&trailer, "- %s (%s)\n", drop.Path, drop.Reason)
+		entries = append(entries, disclosure.Entry{Path: drop.Path, Reason: drop.Reason})
 	}
-	trailer.WriteString("<!-- /mrinspect:diff-reduction -->\n")
-	return trailer.String()
+	return disclosure.Render(entries)
 }

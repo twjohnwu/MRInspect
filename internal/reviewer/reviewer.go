@@ -332,7 +332,10 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 		return fetchedDiff{diff: codeDiff}, nil
 	}
 
-	kept, dropped, err := r.reduceDiff(codeDiff, changesResp.Changes)
+	// Files whose diff GitLab withheld are never sent as header-only entries;
+	// they are disclosed in the trailer alongside budget drops.
+	reviewable, unavailable := diffbudget.SplitTruncated(changesResp.Changes)
+	kept, dropped, err := r.reduceDiff(codeDiff, reviewable, unavailable)
 	if err != nil {
 		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
 	}
@@ -343,7 +346,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 		if convErr != nil {
 			return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", convErr)
 		}
-		reduced = rebuilt + diffbudget.Trailer(dropped)
+		reduced = rebuilt + diffbudget.Trailer(append(append([]diffbudget.DroppedFile(nil), dropped...), unavailable...))
 	}
 
 	result, err := r.validator.ValidateDiff(reduced)
@@ -369,7 +372,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 // reduction entirely and relies on the existing ValidateDiff KB backstop,
 // so an unconfigured model cannot turn this new stage into a new class of
 // failure for setups that worked before it existed.
-func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
+func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change, unavailable []diffbudget.DroppedFile) ([]gitlab.Change, []diffbudget.DroppedFile, error) {
 	budget, ok := r.budgetForModel(true)
 	if !ok {
 		return changes, nil, nil
@@ -383,7 +386,7 @@ func (r *MRInspectReviewer) reduceDiff(codeDiff string, changes []gitlab.Change)
 		InitialDiff:   codeDiff,
 		Render: func(kept []gitlab.Change, dropped []diffbudget.DroppedFile) (string, error) {
 			rendered, renderErr := diff.ConvertChangesToDiff(kept)
-			return rendered + diffbudget.Trailer(dropped), renderErr
+			return rendered + diffbudget.Trailer(append(append([]diffbudget.DroppedFile(nil), dropped...), unavailable...)), renderErr
 		},
 	})
 }

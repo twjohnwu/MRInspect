@@ -25,10 +25,24 @@ type Change struct {
 	NewFile     bool   `json:"new_file"`
 	RenamedFile bool   `json:"renamed_file"`
 	DeletedFile bool   `json:"deleted_file"`
+	AMode       string `json:"a_mode"`
+	BMode       string `json:"b_mode"`
+}
+
+// Truncated reports whether GitLab returned an empty diff for a file whose
+// content really changed (diff size limits apply). Pure renames, deletions
+// and mode-only changes legitimately carry an empty diff and are not flagged.
+func (c Change) Truncated() bool {
+	if c.Diff != "" || c.RenamedFile || c.DeletedFile {
+		return false
+	}
+	modeOnly := !c.NewFile && c.AMode != "" && c.BMode != "" && c.AMode != c.BMode
+	return !modeOnly
 }
 
 type MRChangesResponse struct {
-	Changes []Change `json:"changes"`
+	Changes  []Change `json:"changes"`
+	Overflow bool     `json:"overflow"`
 }
 
 type Note struct {
