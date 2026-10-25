@@ -4,7 +4,7 @@ stages:
 
 test:
   stage: test
-  image: golang:1.25-alpine
+  image: golang:1.27.3-alpine
   script:
     - go build ./...
     - go test -count=1 ./...
@@ -32,7 +32,7 @@ mrinspect:
 
 index:
   stage: ai-review
-  image: golang:1.25-alpine
+  image: golang:1.27.3-alpine
   script:
     - go build -o mrinspect ./cmd/mrinspect
     - mkdir -p rag-index
