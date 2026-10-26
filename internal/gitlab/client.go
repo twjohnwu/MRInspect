@@ -95,10 +95,11 @@ func (c *Client) GetMergeBase(ctx context.Context, projectID, a, b string) (stri
 	if err := c.getJSON(ctx, path, &resp); err != nil {
 		return "", fmt.Errorf("GetMergeBase: %w", err)
 	}
-	if resp.ID == "" {
+	mergeBase := resp.ID
+	if mergeBase == "" {
 		return "", errors.New("GetMergeBase: empty merge base id")
 	}
-	return resp.ID, nil
+	return mergeBase, nil
 }
 
 // Compare returns the straight diff between from and to.
