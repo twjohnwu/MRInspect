@@ -204,11 +204,19 @@ func fits(tokens, bytes, budget int, maxDiffSizeKB float64) bool {
 }
 
 func matchesAnyPath(change gitlab.Change, patterns []string) bool {
+	return matchesAnyPattern(change.NewPath, patterns) ||
+		(change.OldPath != change.NewPath && matchesAnyPattern(change.OldPath, patterns))
+}
+
+// IsNonReviewable reports whether path matches DefaultNonReviewablePatterns,
+// the same rule Reduce applies when it drops a file as ReasonNonReviewable.
+func IsNonReviewable(path string) bool {
+	return matchesAnyPattern(path, DefaultNonReviewablePatterns)
+}
+
+func matchesAnyPattern(path string, patterns []string) bool {
 	for _, pattern := range patterns {
-		if matchesPath(change.NewPath, pattern) {
-			return true
-		}
-		if change.OldPath != change.NewPath && matchesPath(change.OldPath, pattern) {
+		if matchesPath(path, pattern) {
 			return true
 		}
 	}

@@ -90,7 +90,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；既有 `TestIncremental_*` 與 `TestIncrementalRules_*` 全綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
 
-## T10 `[ ]` `S-08` [MODIFY] spec v4：lockfile 與 binary 不算未送審
+## T10 `[x]` `S-08` [MODIFY] spec v4：lockfile 與 binary 不算未送審
 
 - 來源：spec 第二次修訂（2026-10-26 使用者核准），S-08 新增 (q)、(r)。
 - 檔案：`internal/reviewer/incremental.go`（`unseenPaths`）、`internal/diff/sections.go`（binary 判定）、`internal/diffbudget/diffbudget.go`（若需匯出 non-reviewable 路徑判定）、`internal/reviewer/incremental_v4_test.go`（NEW）

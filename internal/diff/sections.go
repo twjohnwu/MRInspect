@@ -44,3 +44,23 @@ func HasFileHunk(diffText, path string) bool {
 	}
 	return false
 }
+
+// HasFileContent reports whether the sent diff carries content for path: a hunk
+// (see HasFileHunk) or, for a binary file, a "Binary files ... differ" line
+// (git writes /dev/null for the absent side of an add or delete).
+func HasFileContent(diffText, path string) bool {
+	if path == "" {
+		return false
+	}
+	if HasFileHunk(diffText, path) {
+		return true
+	}
+	for _, line := range strings.Split(diffText, "\n") {
+		if line == "Binary files a/"+path+" and b/"+path+" differ" ||
+			line == "Binary files /dev/null and b/"+path+" differ" ||
+			line == "Binary files a/"+path+" and /dev/null differ" {
+			return true
+		}
+	}
+	return false
+}

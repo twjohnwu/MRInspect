@@ -78,8 +78,8 @@ func (ir *incrementalRun) assessRun(r *MRInspectReviewer, fetched fetchedDiff, f
 
 // unseenPaths lists the files of a full run whose content the model did not
 // see (REQ-06): size-budget drops, and files GitLab reported too_large,
-// collapsed or truncated that have no hunk in the sent diff. Non-reviewable
-// drops do not count. Paths are cleaned so they cannot inject lines.
+// collapsed or truncated that have neither a hunk nor a binary-differs line in
+// the sent diff. Non-reviewable drops and paths do not count. Paths are cleaned so they cannot inject lines.
 func unseenPaths(fetched fetchedDiff) []string {
 	seen := map[string]bool{}
 	var paths []string
@@ -95,7 +95,8 @@ func unseenPaths(fetched fetchedDiff) []string {
 		}
 	}
 	for _, c := range fetched.allChanges {
-		if (c.TooLarge || c.Collapsed || c.Truncated()) && !diff.HasFileHunk(fetched.diff, c.NewPath) {
+		if (c.TooLarge || c.Collapsed || c.Truncated()) &&
+			!diffbudget.IsNonReviewable(c.NewPath) && !diff.HasFileContent(fetched.diff, c.NewPath) {
 			add(c.NewPath)
 		}
 	}
