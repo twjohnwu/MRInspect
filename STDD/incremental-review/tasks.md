@@ -89,6 +89,16 @@ language: zh-TW
 - REFACTOR：SOLID＋DRY 檢查。
 - Spec re-check：`/stdd-lint`；既有 `TestIncremental_*` 與 `TestIncrementalRules_*` 全綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
+
+## T10 `[ ]` `S-08` [MODIFY] spec v4：lockfile 與 binary 不算未送審
+
+- 來源：spec 第二次修訂（2026-10-26 使用者核准），S-08 新增 (q)、(r)。
+- 檔案：`internal/reviewer/incremental.go`（`unseenPaths`）、`internal/diff/sections.go`（binary 判定）、`internal/diffbudget/diffbudget.go`（若需匯出 non-reviewable 路徑判定）、`internal/reviewer/incremental_v4_test.go`（NEW）
+- RED：`TestIncremental_DegradeAndStateWritingV4`（REQ-06 / S-08 (q)–(r)）：(q) collapsed lockfile、無 hunk、無超預算丟檔 → 寫 full r0 state；(r) too_large binary、送審 diff 有 `Binary files … differ` 行 → 寫 full r0 state。會寫 state 的列，fake `GetMRChanges` 回 `sha=<head>`、diff fetcher source commit 為 `<head>`。
+- GREEN：`unseenPaths` 略過符合 non-reviewable 規則的路徑；該檔有 hunk 或有 `Binary files … differ` 行即視為已送審。
+- REFACTOR：SOLID＋DRY 檢查（non-reviewable 判定只留一份來源）。
+- Spec re-check：`/stdd-lint`；既有 `TestIncremental_*`、`TestIncrementalRules_*`、`TestHasFileHunk` 全綠。
+- Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
 ## Manual verification checklist
 
 - [ ] `S-10` [MANUAL] 真實 GitLab MR 端到端，依 spec S-10 的 8 步操作與預期 note 序列；記錄編輯 note 後 `updated_at` 是否改變。
@@ -106,6 +116,7 @@ flowchart LR
     T5 --> T6
     T6 --> T7
     T6 --> T9
+    T9 --> T10
     T7 --> T8
 ```
 
@@ -117,7 +128,7 @@ flowchart LR
 - [ ] S-04 → T3；S-05 → T4
 - [ ] S-06 → T2
 - [ ] S-07 → T5
-- [ ] S-08 → T6；(j)–(p) → T9
+- [ ] S-08 → T6；(j)–(p) → T9；(q)–(r) → T10
 - [ ] S-09 → T5
 - [ ] S-10 → Manual checklist
 - [ ] D5 deferred 與已知限制：spec 已明列，plan 不另做
