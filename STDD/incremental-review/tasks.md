@@ -44,7 +44,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；既有 `TestPostReview_UpdatesExistingNote` 仍綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DisabledPathUnchanged|TestIncremental_SkipSameHead|TestPostReview_UpdatesExistingNote' -count=1 -v`
 
-## T5 `[ ]` `S-07,S-09` [MODIFY] update review 與新 note
+## T5 `[x]` `S-07,S-09` [MODIFY] update review 與新 note
 
 - 檔案：`internal/reviewer/incremental.go`（`fetchUpdateDiff`、`otherFilesSection`、`postIncrementalNote`）、`internal/reviewer/reviewer.go`（`Run` :179、`reduceDiff` :404）、`internal/reviewer/incremental_test.go`
 - RED：

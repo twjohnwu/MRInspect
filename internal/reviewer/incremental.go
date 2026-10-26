@@ -2,9 +2,20 @@ package reviewer
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+	"unicode"
 
+	"mrinspect/internal/diff"
 	"mrinspect/internal/gitlab"
 )
+
+// maxOtherFiles caps the "other files" section of an update review.
+const maxOtherFiles = 200
+
+const otherFilesHeader = "Other files changed in this MR (not shown in this diff):"
 
 // incrementalRun carries the pinned head/base, the prior state and the
 // decision for one run. dirty collects the reasons a run must not record
@@ -52,4 +63,137 @@ func (r *MRInspectReviewer) planIncremental(ctx context.Context, mr gitlab.Merge
 	}
 	run.decision = Decide(run.prior, run.head, run.base, r.cfg.Incremental.FullEvery, isAncestor)
 	return run
+}
+
+// fetchUpdateDiff builds the reviewed diff for an update run from the
+// prior..head compare. ok is false when the run is not an update or the
+// compare cannot be trusted; the plan then falls back to a full round-0
+// review and the caller uses fetchDiff. The disabled path never gets here
+// with a non-nil plan.
+func (r *MRInspectReviewer) fetchUpdateDiff(ctx context.Context, plan *incrementalRun) (fetchedDiff, bool) {
+	if plan == nil || plan.decision.Mode != ModeUpdate {
+		return fetchedDiff{}, false
+	}
+	fallback := func(reason string, args ...any) (fetchedDiff, bool) {
+		r.log.Warn("incremental: "+reason+", full review", args...)
+		plan.decision = Decision{Mode: ModeFull}
+		return fetchedDiff{}, false
+	}
+
+	start := time.Now()
+	cmp, err := r.gitlab.Compare(ctx, r.projectID, plan.prior.SHA, plan.head)
+	if err != nil {
+		return fallback("compare failed", "error", err)
+	}
+	if cmp.CompareTimeout {
+		return fallback("compare timed out")
+	}
+	for _, c := range cmp.Diffs {
+		if c.TooLarge || c.Collapsed || c.Truncated() {
+			return fallback("compare diff incomplete", "path", c.NewPath)
+		}
+	}
+	rendered, err := diff.ConvertChangesToDiff(cmp.Diffs)
+	if err != nil {
+		return fallback("cannot render compare diff", "error", err)
+	}
+	fetched, err := r.reduceAndValidate(start, rendered, cmp.Diffs)
+	if err != nil {
+		return fallback("cannot reduce compare diff", "error", err)
+	}
+
+	var mrPaths []string
+	changes, err := r.gitlab.GetMRChanges(ctx, r.projectID, r.mrIID)
+	switch {
+	case err != nil:
+		plan.markDirty(r, fmt.Sprintf("MR file list unavailable: %v", err))
+	case changes.Overflow:
+		plan.markDirty(r, "MR file list overflow")
+	case changes.SHA != plan.head:
+		plan.markDirty(r, "MR file list is not at the pinned head")
+	default:
+		mrPaths = make([]string, 0, len(changes.Changes))
+		for _, c := range changes.Changes {
+			mrPaths = append(mrPaths, c.NewPath)
+		}
+	}
+	deltaPaths := make([]string, 0, len(cmp.Diffs))
+	for _, c := range cmp.Diffs {
+		deltaPaths = append(deltaPaths, c.NewPath)
+	}
+	section, truncated := otherFilesSection(mrPaths, deltaPaths)
+	if truncated {
+		plan.markDirty(r, "file list truncated")
+	}
+	if section != "" {
+		fetched.diff += "\n\n" + section
+	}
+	return fetched, true
+}
+
+// otherFilesSection lists MR files absent from the update delta so the
+// model knows they exist without seeing their diffs. Paths are deduped,
+// sorted, stripped of control characters and capped; truncated reports a cap
+// hit, which makes the run dirty (REQ-06).
+func otherFilesSection(mrPaths, deltaPaths []string) (section string, truncated bool) {
+	inDelta := make(map[string]bool, len(deltaPaths))
+	for _, p := range deltaPaths {
+		inDelta[cleanPath(p)] = true
+	}
+	seen := make(map[string]bool, len(mrPaths))
+	var others []string
+	for _, p := range mrPaths {
+		p = cleanPath(p)
+		if p == "" || inDelta[p] || seen[p] {
+			continue
+		}
+		seen[p] = true
+		others = append(others, p)
+	}
+	if len(others) == 0 {
+		return "", false
+	}
+	sort.Strings(others)
+	more := 0
+	if len(others) > maxOtherFiles {
+		more = len(others) - maxOtherFiles
+		others = others[:maxOtherFiles]
+	}
+	lines := append([]string{otherFilesHeader}, others...)
+	if more > 0 {
+		lines = append(lines, fmt.Sprintf("... and %d more", more))
+	}
+	return strings.Join(lines, "\n"), more > 0
+}
+
+// cleanPath drops control characters so a crafted path cannot inject lines.
+func cleanPath(p string) string {
+	return strings.Map(func(c rune) rune {
+		if unicode.IsControl(c) {
+			return -1
+		}
+		return c
+	}, p)
+}
+
+// postIncrementalNote always posts a new note (never UpdateNote) carrying
+// the marker, the state line when the run is clean, and a mode header.
+// T6 adds the remaining dirty sources before this point: reviewed-SHA check
+// for full runs, lane failure and degradedToSingle (append via markDirty).
+func (r *MRInspectReviewer) postIncrementalNote(ctx context.Context, plan *incrementalRun, content, footer string) error {
+	var b strings.Builder
+	b.WriteString(ReviewNoteMarker + "\n")
+	if len(plan.dirty) == 0 {
+		b.WriteString(FormatState(State{SHA: plan.head, Base: plan.base, Mode: plan.decision.Mode, Round: plan.decision.Round}) + "\n")
+	}
+	if plan.decision.Mode == ModeUpdate {
+		b.WriteString("Update review " + shortSHA(plan.prior.SHA) + ".." + shortSHA(plan.head))
+	} else {
+		b.WriteString("Full review at " + shortSHA(plan.head))
+	}
+	b.WriteString("\n\n" + r.validator.SanitizeInput(content+footer))
+	if _, err := r.gitlab.PostNote(ctx, r.projectID, r.mrIID, b.String()); err != nil {
+		return fmt.Errorf("postReview: %w", err)
+	}
+	return nil
 }

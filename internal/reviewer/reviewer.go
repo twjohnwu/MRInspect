@@ -210,19 +210,24 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 		return
 	}
 
+	var plan *incrementalRun
 	if r.cfg.Incremental.Enabled {
-		if plan := r.planIncremental(ctx, mr, r.projectID); plan.decision.Skip {
+		plan = r.planIncremental(ctx, mr, r.projectID)
+		if plan.decision.Skip {
 			r.log.Info("incremental: head unchanged, skipping review", "head", shortSHA(plan.head))
 			return
 		}
 	}
 
 	stage = "fetchDiff"
-	fetched, err := r.fetchDiff(ctx)
-	if err != nil {
-		finalErr = err
-		r.postErrorComment(ctx, err, stage)
-		return
+	fetched, ok := r.fetchUpdateDiff(ctx, plan)
+	if !ok {
+		fetched, err = r.fetchDiff(ctx)
+		if err != nil {
+			finalErr = err
+			r.postErrorComment(ctx, err, stage)
+			return
+		}
 	}
 
 	stage = "generateReview"
@@ -235,7 +240,13 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 	footer.droppedFiles = dropPaths(fetched.dropped)
 	footer.unavailableFiles = dropPaths(fetched.unavailable)
 
-	if err := r.postReviewWithFooter(ctx, reviewContent, r.ragFooterWithAggregation(footer)); err != nil {
+	postFooter := r.ragFooterWithAggregation(footer)
+	if plan != nil {
+		err = r.postIncrementalNote(ctx, plan, reviewContent, postFooter)
+	} else {
+		err = r.postReviewWithFooter(ctx, reviewContent, postFooter)
+	}
+	if err != nil {
 		finalErr = err
 		r.log.Error("failed to post review", "error", err)
 		return
@@ -344,9 +355,16 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 		return fetchedDiff{diff: codeDiff}, nil
 	}
 
+	return r.reduceAndValidate(start, codeDiff, changesResp.Changes)
+}
+
+// reduceAndValidate applies truncation split, diff-size reduction and
+// ValidateDiff to codeDiff, whose per-file form is changes. It is the shared
+// tail of fetchDiff and the incremental update fetch.
+func (r *MRInspectReviewer) reduceAndValidate(start time.Time, codeDiff string, changes []gitlab.Change) (fetchedDiff, error) {
 	// Files whose diff GitLab withheld are never sent as header-only entries;
 	// they are disclosed in the trailer alongside budget drops.
-	reviewable, unavailable := diffbudget.SplitTruncated(changesResp.Changes)
+	reviewable, unavailable := diffbudget.SplitTruncated(changes)
 	kept, dropped, err := r.reduceDiff(codeDiff, reviewable, unavailable)
 	if err != nil {
 		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
@@ -357,7 +375,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 		// The reviewed text is the fetcher's own diff, which may still cover
 		// files GitLab truncated (the local go-git diff does); only files with
 		// no section in it are unavailable.
-		unavailable = absentFromDiff(reduced, unavailable, changesResp.Changes)
+		unavailable = absentFromDiff(reduced, unavailable, changes)
 	}
 	if len(dropped) > 0 {
 		rebuilt, convErr := diff.ConvertChangesToDiff(kept)

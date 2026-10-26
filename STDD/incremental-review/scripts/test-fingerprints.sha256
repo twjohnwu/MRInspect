@@ -2,4 +2,4 @@ a3199a318bd063017b2bfada46d5e7ccae08b0075bed3530b9fb0bd52204bc91  ../../internal
 635dd4d73381a0a09f9141a139872966d35fb5b76d77b64ae0b23e9851bef11a  ../../internal/gitlab/incremental_client_test.go
 554524d04b6fb725314787dda450af8ee714b0d7456174db3e37643b3d395d76  ../../internal/reviewer/incremental_state_test.go
 22408fc68c05a4a9627f49ec1a2bc183d396b1ba154ab27ca64593ce3ec0b242  ../../internal/reviewer/incremental_state_edge_test.go
-2934a944c066f558980a297c05ae94949cda4f70cda4b708888e699fd23b9c4d  ../../internal/reviewer/incremental_test.go
+7570781167c5879ef82e4cc9321a55dcdf2a8e20620f938ddcfbb9ccf5a77a14  ../../internal/reviewer/incremental_test.go
