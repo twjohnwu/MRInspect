@@ -20,17 +20,24 @@ func NewLocalDiffFetcher(log *logger.Logger) *LocalDiffFetcher {
 
 // Fetch opens the current working directory as a git repo and returns the diff
 // between targetBranch and sourceBranch.
-func (f *LocalDiffFetcher) Fetch(_ context.Context, sourceBranch, targetBranch string) (string, error) {
+func (f *LocalDiffFetcher) Fetch(ctx context.Context, sourceBranch, targetBranch string) (string, error) {
+	patch, _, err := f.FetchWithSource(ctx, sourceBranch, targetBranch)
+	return patch, err
+}
+
+// FetchWithSource is Fetch plus the resolved source commit hash (40 hex),
+// the reviewed SHA of the returned patch.
+func (f *LocalDiffFetcher) FetchWithSource(_ context.Context, sourceBranch, targetBranch string) (string, string, error) {
 	repo, err := gogit.PlainOpenWithOptions(".", &gogit.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
-		return "", fmt.Errorf("LocalDiffFetcher: open repo: %w", err)
+		return "", "", fmt.Errorf("LocalDiffFetcher: open repo: %w", err)
 	}
 
 	sourceHash, err := repo.ResolveRevision(plumbing.Revision("origin/" + sourceBranch))
 	if err != nil {
 		sourceHash, err = repo.ResolveRevision(plumbing.Revision(sourceBranch))
 		if err != nil {
-			return "", fmt.Errorf("LocalDiffFetcher: resolve source branch %q: %w", sourceBranch, err)
+			return "", "", fmt.Errorf("LocalDiffFetcher: resolve source branch %q: %w", sourceBranch, err)
 		}
 	}
 
@@ -38,23 +45,23 @@ func (f *LocalDiffFetcher) Fetch(_ context.Context, sourceBranch, targetBranch s
 	if err != nil {
 		targetHash, err = repo.ResolveRevision(plumbing.Revision(targetBranch))
 		if err != nil {
-			return "", fmt.Errorf("LocalDiffFetcher: resolve target branch %q: %w", targetBranch, err)
+			return "", "", fmt.Errorf("LocalDiffFetcher: resolve target branch %q: %w", targetBranch, err)
 		}
 	}
 
 	sourceCommit, err := repo.CommitObject(*sourceHash)
 	if err != nil {
-		return "", fmt.Errorf("LocalDiffFetcher: get source commit: %w", err)
+		return "", "", fmt.Errorf("LocalDiffFetcher: get source commit: %w", err)
 	}
 	targetCommit, err := repo.CommitObject(*targetHash)
 	if err != nil {
-		return "", fmt.Errorf("LocalDiffFetcher: get target commit: %w", err)
+		return "", "", fmt.Errorf("LocalDiffFetcher: get target commit: %w", err)
 	}
 
 	patch, err := targetCommit.Patch(sourceCommit)
 	if err != nil {
-		return "", fmt.Errorf("LocalDiffFetcher: generate patch: %w", err)
+		return "", "", fmt.Errorf("LocalDiffFetcher: generate patch: %w", err)
 	}
 
-	return patch.String(), nil
+	return patch.String(), sourceHash.String(), nil
 }

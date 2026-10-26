@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -269,5 +270,128 @@ func TestIncremental_NoStateNoteDoesNotEnableSkip(t *testing.T) {
 	wantState := FormatState(State{SHA: updHeadSHA, Base: updBaseSHA, Mode: ModeUpdate, Round: 1})
 	if body := gl.lastNote(t); !strings.Contains(body, wantState) {
 		t.Errorf("body lacks state %q: %q", wantState, body)
+	}
+}
+
+const degradePatch = "diff --git a/full.go b/full.go\n--- a/full.go\n+++ b/full.go\n@@ -1,1 +1,1 @@\n-old\n+new\n"
+
+// sourceDiff is a full-review diff fetcher that also reports the reviewed
+// SHA (IDiffSourceFetcher), so tests control whether it matches the head.
+type sourceDiff struct{ sha string }
+
+func (d sourceDiff) Fetch(context.Context, string, string) (string, error) {
+	return degradePatch, nil
+}
+func (d sourceDiff) FetchWithSource(context.Context, string, string) (string, string, error) {
+	return degradePatch, d.sha, nil
+}
+
+// TestIncremental_DegradeAndStateWriting verifies REQ-06 / S-08.
+func TestIncremental_DegradeAndStateWriting(t *testing.T) {
+	const otherSHA = "4444444444444444444444444444444444444444"
+	tests := []struct {
+		name      string
+		mode      string
+		sourceSHA string // reviewed SHA the diff fetcher reports
+		wantState bool
+		wantWarn  bool
+		setup     func(*fakeGitLab, *modeRoutingProvider)
+	}{
+		{name: "a no prior state, stateless marker note", wantState: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.listedNotes[0].Body = ReviewNoteMarker + "\nold review without state"
+			}},
+		{name: "b ListNotes error", wantState: true, wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) { gl.listErr = errors.New("list failed") }},
+		{name: "c merge_base 404", wantState: true, wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.mergeBaseErr = errors.New("404 Not Found")
+			}},
+		{name: "d compare timeout", wantState: true, wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.compare = gitlab.CompareResponse{CompareTimeout: true}
+			}},
+		{name: "e compare diff too large", wantState: true, wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.compare = gitlab.CompareResponse{Diffs: []gitlab.Change{
+					{OldPath: "x.go", NewPath: "x.go", TooLarge: true},
+				}}
+			}},
+		{name: "f multi mode one lane fails", mode: "multi", wantWarn: true,
+			setup: func(gl *fakeGitLab, p *modeRoutingProvider) {
+				gl.listedNotes[0].Body = ReviewNoteMarker + "\nold review without state"
+				p.laneErrors["code-diff"] = errors.New("code diff response timed out")
+			}},
+		{name: "g local source commit differs from pinned head", sourceSHA: otherSHA, wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.listedNotes[0].Body = ReviewNoteMarker + "\nold review without state"
+			}},
+		{name: "h GetMRChanges overflow", wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.listedNotes[0].Body = ReviewNoteMarker + "\nold review without state"
+				gl.changes.Overflow = true
+			}},
+		{name: "i pinned base empty", wantWarn: true,
+			setup: func(gl *fakeGitLab, _ *modeRoutingProvider) {
+				gl.listedNotes[0].Body = ReviewNoteMarker + "\nold review without state"
+				gl.mr.DiffRefs.BaseSHA = ""
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mode := tt.mode
+			if mode == "" {
+				mode = "single"
+			}
+			r, gl, provider, _ := updateFixture(t, mode)
+			readWarn := installWarningLogRecorder(t, r)
+			sha := tt.sourceSHA
+			if sha == "" {
+				sha = updHeadSHA
+			}
+			r.diff = sourceDiff{sha: sha}
+			gl.changes = gitlab.MRChangesResponse{SHA: updHeadSHA, Changes: []gitlab.Change{
+				{OldPath: "full.go", NewPath: "full.go", Diff: updDiffBody},
+			}}
+			tt.setup(gl, provider)
+
+			r.Run(context.Background())
+
+			if gl.postCalls != 1 || len(gl.updateCalls) != 0 {
+				t.Fatalf("PostNote/UpdateNote calls = %d/%d, want 1/0", gl.postCalls, len(gl.updateCalls))
+			}
+			provider.mu.Lock()
+			prompts := append([]string(nil), provider.prompts...)
+			provider.mu.Unlock()
+			reviewed := 0
+			for _, prompt := range prompts {
+				if prompt == "reflection" {
+					continue
+				}
+				reviewed++
+				if !diff.HasFileSection(prompt, "full.go") {
+					t.Errorf("prompt lacks the full MR diff (full.go section): %q", prompt)
+				}
+			}
+			if reviewed == 0 {
+				t.Error("model received no review prompt")
+			}
+			body := gl.lastNote(t)
+			hasState := strings.Contains(body, "mrinspect:state")
+			if tt.wantState {
+				wantState := FormatState(State{SHA: updHeadSHA, Base: updBaseSHA, Mode: ModeFull, Round: 0})
+				if !strings.Contains(body, wantState) {
+					t.Errorf("body lacks state %q: %q", wantState, body)
+				}
+				if !strings.Contains(body, "Full review at") {
+					t.Errorf("body lacks %q: %q", "Full review at", body)
+				}
+			} else if hasState {
+				t.Errorf("dirty run wrote a state comment: %q", body)
+			}
+			if tt.wantWarn && strings.TrimSpace(readWarn()) == "" {
+				t.Error("no Warn line logged")
+			}
+		})
 	}
 }

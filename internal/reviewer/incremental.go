@@ -32,12 +32,50 @@ func (ir *incrementalRun) markDirty(r *MRInspectReviewer, reason string) {
 	r.log.Warn("incremental: run is dirty", "reason", reason)
 }
 
+// isFullSHA reports whether s is a 40-character lowercase hex commit id.
+func isFullSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// assessRun is the single place that decides, after generation, whether the
+// run may record a state line (REQ-06): reviewed SHA of a full run, MR
+// changes facts of a full run, lane failures and degradation to single.
+// Update-run sources are marked in fetchUpdateDiff.
+func (ir *incrementalRun) assessRun(r *MRInspectReviewer, fetched fetchedDiff, footer footerAggregation) {
+	if ir.decision.Mode == ModeFull {
+		if fetched.sourceSHA == "" || fetched.sourceSHA != ir.head {
+			ir.markDirty(r, "reviewed SHA differs from pinned head")
+		}
+		switch {
+		case fetched.changesErr != nil:
+			ir.markDirty(r, fmt.Sprintf("MR file list unavailable: %v", fetched.changesErr))
+		case fetched.changesOverflow:
+			ir.markDirty(r, "MR file list overflow")
+		}
+	}
+	if footer.laneFailures > 0 {
+		ir.markDirty(r, fmt.Sprintf("%d lane(s) failed", footer.laneFailures))
+	}
+	if footer.degradedToSingle {
+		ir.markDirty(r, "multi-lane review degraded to single")
+	}
+}
+
 // planIncremental pins head/base from the already-fetched MR and decides
 // skip / update / full. Any lookup failure degrades to a full review.
 func (r *MRInspectReviewer) planIncremental(ctx context.Context, mr gitlab.MergeRequest, projectID string) *incrementalRun {
 	run := &incrementalRun{head: mr.SHA, base: mr.DiffRefs.BaseSHA, decision: Decision{Mode: ModeFull}}
-	if run.head == "" || run.base == "" {
-		run.markDirty(r, "head or base sha missing from merge request")
+	if !isFullSHA(run.head) || !isFullSHA(run.base) {
+		run.head, run.base = "", ""
+		run.markDirty(r, "head or base sha missing or malformed in merge request")
 		return run
 	}
 	user, err := r.gitlab.CurrentUser(ctx)
@@ -178,8 +216,7 @@ func cleanPath(p string) string {
 
 // postIncrementalNote always posts a new note (never UpdateNote) carrying
 // the marker, the state line when the run is clean, and a mode header.
-// T6 adds the remaining dirty sources before this point: reviewed-SHA check
-// for full runs, lane failure and degradedToSingle (append via markDirty).
+// Dirty sources are all collected before this point (assessRun).
 func (r *MRInspectReviewer) postIncrementalNote(ctx context.Context, plan *incrementalRun, content, footer string) error {
 	var b strings.Builder
 	b.WriteString(ReviewNoteMarker + "\n")

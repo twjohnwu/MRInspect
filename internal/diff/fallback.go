@@ -20,12 +20,27 @@ func NewFallbackDiffFetcher(primary, secondary interfaces.IDiffFetcher, log *log
 }
 
 func (f *FallbackDiffFetcher) Fetch(ctx context.Context, sourceBranch, targetBranch string) (string, error) {
-	result, err := f.primary.Fetch(ctx, sourceBranch, targetBranch)
+	patch, _, err := f.FetchWithSource(ctx, sourceBranch, targetBranch)
+	return patch, err
+}
+
+// FetchWithSource reports the source SHA of whichever fetcher produced the
+// patch; a fetcher without IDiffSourceFetcher support yields "".
+func (f *FallbackDiffFetcher) FetchWithSource(ctx context.Context, sourceBranch, targetBranch string) (string, string, error) {
+	result, sha, err := fetchWithSource(ctx, f.primary, sourceBranch, targetBranch)
 	if err != nil {
 		f.log.Warn("primary diff fetch failed, falling back to API", "error", err)
-		return f.secondary.Fetch(ctx, sourceBranch, targetBranch)
+		return fetchWithSource(ctx, f.secondary, sourceBranch, targetBranch)
 	}
-	return result, nil
+	return result, sha, nil
+}
+
+func fetchWithSource(ctx context.Context, fetcher interfaces.IDiffFetcher, sourceBranch, targetBranch string) (string, string, error) {
+	if sf, ok := fetcher.(interfaces.IDiffSourceFetcher); ok {
+		return sf.FetchWithSource(ctx, sourceBranch, targetBranch)
+	}
+	patch, err := fetcher.Fetch(ctx, sourceBranch, targetBranch)
+	return patch, "", err
 }
 
 // compile-time check that FallbackDiffFetcher satisfies IDiffFetcher

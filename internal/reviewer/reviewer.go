@@ -43,6 +43,13 @@ type fetchedDiff struct {
 	// unavailable lists GitLab-truncated files excluded from review; kept apart
 	// from dropped, which is size-budget only.
 	unavailable []diffbudget.DroppedFile
+
+	// Facts for the incremental clean-run check (REQ-06); read only when an
+	// incremental plan exists.
+	sourceSHA       string
+	changesSHA      string
+	changesOverflow bool
+	changesErr      error
 }
 
 // RAGReviewPath supplies retrieval data to the review path. Its API has no indexing
@@ -72,6 +79,7 @@ type footerAggregation struct {
 	droppedFiles       []string
 	unavailableFiles   []string
 	degradedToSingle   bool
+	laneFailures       int
 	enrichmentDegraded []string
 }
 
@@ -242,6 +250,7 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 
 	postFooter := r.ragFooterWithAggregation(footer)
 	if plan != nil {
+		plan.assessRun(r, fetched, footer)
 		err = r.postIncrementalNote(ctx, plan, reviewContent, postFooter)
 	} else {
 		err = r.postReviewWithFooter(ctx, reviewContent, postFooter)
@@ -330,7 +339,13 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 	start := time.Now()
 	src := r.validator.GetSourceBranch()
 	tgt := r.validator.GetTargetBranch()
-	codeDiff, err := r.diff.Fetch(ctx, src, tgt)
+	var codeDiff, sourceSHA string
+	var err error
+	if sf, ok := r.diff.(interfaces.IDiffSourceFetcher); ok {
+		codeDiff, sourceSHA, err = sf.FetchWithSource(ctx, src, tgt)
+	} else {
+		codeDiff, err = r.diff.Fetch(ctx, src, tgt)
+	}
 	if err != nil {
 		return fetchedDiff{}, fmt.Errorf("fetchDiff: %w", err)
 	}
@@ -352,10 +367,17 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 			"supportedFiles": result.SupportedFiles,
 			"droppedFiles":   0,
 		})
-		return fetchedDiff{diff: codeDiff}, nil
+		return fetchedDiff{diff: codeDiff, sourceSHA: sourceSHA, changesErr: err}, nil
 	}
 
-	return r.reduceAndValidate(start, codeDiff, changesResp.Changes)
+	fetched, err := r.reduceAndValidate(start, codeDiff, changesResp.Changes)
+	if err != nil {
+		return fetchedDiff{}, err
+	}
+	fetched.sourceSHA = sourceSHA
+	fetched.changesSHA = changesResp.SHA
+	fetched.changesOverflow = changesResp.Overflow
+	return fetched, nil
 }
 
 // reduceAndValidate applies truncation split, diff-size reduction and

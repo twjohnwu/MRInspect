@@ -56,7 +56,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；T4 兩個測試仍綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_' -count=1 -v`
 
-## T6 `[ ]` `S-08` [MODIFY] 降級與 state 寫入條件
+## T6 `[x]` `S-08` [MODIFY] 降級與 state 寫入條件
 
 - 檔案：`internal/interfaces/interfaces.go`（新增 `IDiffSourceFetcher`）、`internal/diff/local.go`（`Fetch` :23）、`internal/diff/api.go`（`Fetch` :31）、`internal/diff/fallback.go`（`Fetch` :22）、`internal/reviewer/reviewer.go`（`fetchDiff` :311、`fetchedDiff` :39）、`internal/reviewer/incremental.go`、`internal/reviewer/incremental_test.go`
 - RED：

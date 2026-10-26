@@ -28,15 +28,22 @@ func NewAPIDiffFetcher(gc interfaces.IGitLabClient, projectID, mrIID string, log
 	}
 }
 
-func (f *APIDiffFetcher) Fetch(ctx context.Context, _, _ string) (string, error) {
+func (f *APIDiffFetcher) Fetch(ctx context.Context, sourceBranch, targetBranch string) (string, error) {
+	patch, _, err := f.FetchWithSource(ctx, sourceBranch, targetBranch)
+	return patch, err
+}
+
+// FetchWithSource is Fetch plus the SHA GitLab reports for the MR changes,
+// the reviewed SHA of the returned patch.
+func (f *APIDiffFetcher) FetchWithSource(ctx context.Context, _, _ string) (string, string, error) {
 	changesResp, err := f.gitlabClient.GetMRChanges(ctx, f.projectID, f.mrIID)
 	if err != nil {
-		return "", fmt.Errorf("APIDiffFetcher: %w", err)
+		return "", "", fmt.Errorf("APIDiffFetcher: %w", err)
 	}
 	reviewable, unavailable := disclosure.SplitTruncated(changesResp.Changes)
 	result, err := ConvertChangesToDiff(reviewable)
 	if err != nil {
-		return "", fmt.Errorf("APIDiffFetcher: convert: %w", err)
+		return "", "", fmt.Errorf("APIDiffFetcher: convert: %w", err)
 	}
-	return result + disclosure.Render(unavailable), nil
+	return result + disclosure.Render(unavailable), changesResp.SHA, nil
 }

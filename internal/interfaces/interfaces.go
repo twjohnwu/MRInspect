@@ -27,6 +27,12 @@ type IDiffFetcher interface {
 	Fetch(ctx context.Context, sourceBranch, targetBranch string) (string, error)
 }
 
+// IDiffSourceFetcher is implemented by diff fetchers that also report the
+// source commit the returned patch corresponds to (the reviewed SHA).
+type IDiffSourceFetcher interface {
+	FetchWithSource(ctx context.Context, sourceBranch, targetBranch string) (patch, sourceSHA string, err error)
+}
+
 // IProjectLoader abstracts loading review projects from disk.
 type IProjectLoader interface {
 	IsAvailable() bool

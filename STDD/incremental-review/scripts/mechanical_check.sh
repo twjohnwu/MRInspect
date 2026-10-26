@@ -4,7 +4,7 @@
 #   bash scripts/mechanical_check.sh [expected-passed-test-count]
 #
 # The generator replaces the placeholder values below. The first argument overrides
-# 59 when supplied. MECH_LOG defaults to
+# 66 when supplied. MECH_LOG defaults to
 # $TMPDIR/stdd-mechanical-check.log (or /tmp when TMPDIR is unset).
 
 set -u
@@ -13,8 +13,8 @@ ledger='scripts/test-fingerprints.sha256'
 allowlist='scripts/scope-allowlist.txt'
 spec_file='spec.md'
 design_file=''
-test_command='cd ../.. && go test ./internal/config/ ./internal/gitlab/ ./internal/reviewer/ ./internal/testfake/ -count=1 -v'
-generated_expected='59'
+test_command='cd ../.. && go test ./internal/config/ ./internal/gitlab/ ./internal/reviewer/ ./internal/testfake/ ./internal/diff/ -count=1 -v'
+generated_expected='66'
 expected_passed=${1-$generated_expected}
 log_file=${MECH_LOG:-${TMPDIR:-/tmp}/stdd-mechanical-check.log}
 overall_status=0

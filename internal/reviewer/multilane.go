@@ -69,6 +69,7 @@ func (r *MRInspectReviewer) generateMultiReview(ctx context.Context, codeDiff st
 	renderInput, selectorDegraded := r.multiRenderInputWithDegradations(registry.Lanes, result, changes)
 	footer := aggregateLaneFooter(result.LaneResults)
 	footer = mergeLaneDegradations(footer, result.LaneResults, selectorDegraded)
+	footer.laneFailures = len(result.Failures)
 	if r.cfg.RAGOnNormativeEviction == "fail" {
 		if failure, ok := normativeEvictionFailure(result.Failures); ok {
 			renderInput.Findings = nil

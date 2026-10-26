@@ -532,7 +532,8 @@ type fakeGitLab struct {
 	compareErr   error
 
 	// changes, when non-empty, is returned by GetMRChanges.
-	changes gitlab.MRChangesResponse
+	changes    gitlab.MRChangesResponse
+	changesErr error
 
 	mergeBaseCalls int
 	compareCalls   int
@@ -558,7 +559,7 @@ func (g *fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.Me
 }
 func (g *fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
 	g.changesCalls++
-	return g.changes, nil
+	return g.changes, g.changesErr
 }
 func (g *fakeGitLab) GetMergeBase(_ context.Context, projectID, _, _ string) (string, error) {
 	g.mergeBaseCalls++
