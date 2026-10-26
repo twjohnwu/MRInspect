@@ -10,3 +10,4 @@ a2f4c693a70df115eed1e2322ddd916089ce93c451a21e914fd47dc37b203c08  ../../internal
 f77c701efc5a5f4a50e431818e3258cf1c0c63cdf9214662fc3a38a63c31847f  ../../internal/reviewer/incremental_unseen_test.go
 f07e0aa4f1b56bc5625aafd37d5cb871f4a049a1783cee16a5faa4e0e39d6dc0  ../../internal/reviewer/incremental_v4_test.go
 a0337c949d13104e7fb6c15924349eb5e15771d6d3df0ae701224e9fbbb4246f  ../../internal/reviewer/incremental_changes_sha_test.go
+d188f418f0d35f2f8b6793aada2c36ea53dd39c3547627440522b1dbd0dec799  ../../internal/reviewer/incremental_v5_test.go

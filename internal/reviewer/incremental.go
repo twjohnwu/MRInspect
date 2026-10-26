@@ -95,6 +95,9 @@ func unseenPaths(fetched fetchedDiff) []string {
 		}
 	}
 	for _, c := range fetched.allChanges {
+		if isEmptyNewFile(c) {
+			continue
+		}
 		if (c.TooLarge || c.Collapsed || c.Truncated()) &&
 			!diffbudget.IsNonReviewable(c.NewPath) && !diff.HasFileContent(fetched.diff, c.NewPath) {
 			add(c.NewPath)
@@ -272,4 +275,10 @@ func (r *MRInspectReviewer) postIncrementalNote(ctx context.Context, plan *incre
 		return fmt.Errorf("postReview: %w", err)
 	}
 	return nil
+}
+
+// isEmptyNewFile reports a newly added file that GitLab returns with an empty
+// diff and no size flags; it has no content to send, so it is not unseen.
+func isEmptyNewFile(c gitlab.Change) bool {
+	return c.NewFile && c.Diff == "" && !c.TooLarge && !c.Collapsed
 }

@@ -100,7 +100,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；既有 `TestIncremental_*`、`TestIncrementalRules_*`、`TestHasFileHunk` 全綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
 
-## T11 `[ ]` `S-08` [MODIFY] spec v5：空的新檔不算未送審
+## T11 `[x]` `S-08` [MODIFY] spec v5：空的新檔不算未送審
 
 - 來源：spec 第三次修訂（2026-10-26 使用者裁決），S-08 新增 (s)。
 - 檔案：`internal/reviewer/incremental.go`（`unseenPaths`）、`internal/reviewer/incremental_v5_test.go`（NEW）
