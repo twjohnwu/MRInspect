@@ -210,6 +210,13 @@ func (r *MRInspectReviewer) Run(ctx context.Context) {
 		return
 	}
 
+	if r.cfg.Incremental.Enabled {
+		if plan := r.planIncremental(ctx, mr, r.projectID); plan.decision.Skip {
+			r.log.Info("incremental: head unchanged, skipping review", "head", shortSHA(plan.head))
+			return
+		}
+	}
+
 	stage = "fetchDiff"
 	fetched, err := r.fetchDiff(ctx)
 	if err != nil {

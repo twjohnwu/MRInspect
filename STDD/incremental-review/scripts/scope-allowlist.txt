@@ -15,3 +15,15 @@ internal/reviewer/reviewer_test.go
 internal/reviewer/incremental_state.go
 internal/reviewer/incremental_state_test.go
 internal/reviewer/incremental_state_edge_test.go
+internal/reviewer/incremental_test.go
+internal/reviewer/incremental.go
+internal/reviewer/reviewer.go
+internal/diff/local.go
+internal/diff/api.go
+internal/diff/fallback.go
+internal/diff/source_sha_test.go
+AGENTS.md
+docs/us/configuration.md
+docs/tw/configuration.md
+docs/us/architecture.md
+docs/tw/architecture.md

@@ -33,7 +33,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`。
 - Verification command: `go test ./internal/reviewer/ -run 'TestState_ParseFormatAndSelect|TestDecide_Table' -count=1 -v`
 
-## T4 `[ ]` `S-02,S-05` [MODIFY] 關閉路徑 golden 與 skip
+## T4 `[x]` `S-02,S-05` [MODIFY] 關閉路徑 golden 與 skip
 
 - 檔案：`internal/reviewer/reviewer.go`（`Run` :179、deferred log :186-196、`fetchMRDetails` :297）、`internal/reviewer/incremental.go`（NEW：`incrementalRun`、`planIncremental`）、`internal/reviewer/incremental_test.go`（NEW）
 - RED：

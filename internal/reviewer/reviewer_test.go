@@ -522,6 +522,10 @@ type fakeGitLab struct {
 	listErr     error
 	updateCalls []fakeNoteUpdate
 
+	// mr, when its IID is non-zero, is returned by GetMergeRequest instead
+	// of the canned value.
+	mr gitlab.MergeRequest
+
 	mergeBase    string
 	mergeBaseErr error
 	compare      gitlab.CompareResponse
@@ -544,6 +548,9 @@ func (g *fakeGitLab) CurrentUser(context.Context) (gitlab.Author, error) {
 }
 func (g *fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.MergeRequest, error) {
 	g.getMRCalls++
+	if g.mr.IID != 0 {
+		return g.mr, nil
+	}
 	return gitlab.MergeRequest{IID: 7, Title: "RAG test", SourceBranch: "feature", TargetBranch: "main"}, nil
 }
 func (g *fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
