@@ -14,3 +14,4 @@ internal/testfake/gitlab_client.go
 internal/reviewer/reviewer_test.go
 internal/reviewer/incremental_state.go
 internal/reviewer/incremental_state_test.go
+internal/reviewer/incremental_state_edge_test.go
