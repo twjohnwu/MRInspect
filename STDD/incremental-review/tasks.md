@@ -73,7 +73,7 @@ language: zh-TW
 - 步驟：`AGENTS.md` `## Key Environment Variables`（:101）加兩列；`docs/us/configuration.md`、`docs/tw/configuration.md`（:61 附近）加兩列；`docs/us/architecture.md`、`docs/tw/architecture.md` :37 補「`MRI_INCREMENTAL_REVIEW=true` 時每次另開新 note，不更新舊 note」。
 - Verification command: `grep -c 'MRI_INCREMENTAL_REVIEW' AGENTS.md docs/us/configuration.md docs/tw/configuration.md docs/us/architecture.md docs/tw/architecture.md`（每檔 ≥1）
 
-## T8 `[ ]` [INFRA] 全套 gate
+## T8 `[x]` [INFRA] 全套 gate
 
 - 原因：跨 task 的整體回歸，不對應單一 scenario。
 - 步驟：`go build ./...`、`go vet ./...`、`make lint`、`make vuln`、`go test ./... -count=1`，依序單獨跑。
