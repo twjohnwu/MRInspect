@@ -28,3 +28,4 @@ docs/tw/configuration.md
 docs/us/architecture.md
 docs/tw/architecture.md
 internal/reviewer/multilane.go
+internal/reviewer/incremental_rules_test.go
