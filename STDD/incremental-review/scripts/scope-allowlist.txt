@@ -35,3 +35,4 @@ internal/diff/sections_hunk_test.go
 internal/reviewer/incremental_unseen_test.go
 internal/reviewer/incremental_v4_test.go
 internal/diffbudget/diffbudget.go
+internal/reviewer/incremental_changes_sha_test.go

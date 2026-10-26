@@ -61,7 +61,7 @@ func (ir *incrementalRun) assessRun(r *MRInspectReviewer, fetched fetchedDiff, f
 		case fetched.changesOverflow:
 			ir.markDirty(r, "MR file list overflow")
 		}
-		if fetched.changesSHA != "" && fetched.changesSHA != ir.head {
+		if fetched.changesErr == nil && fetched.changesSHA != ir.head {
 			ir.markDirty(r, "MR file list is not at the pinned head")
 		}
 		if paths := unseenPaths(fetched); len(paths) > 0 {
