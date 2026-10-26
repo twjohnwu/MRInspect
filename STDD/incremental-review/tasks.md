@@ -79,6 +79,16 @@ language: zh-TW
 - 步驟：`go build ./...`、`go vet ./...`、`make lint`、`make vuln`、`go test ./... -count=1`，依序單獨跑。
 - Verification command: `go test ./... -count=1 && make lint`
 
+
+## T9 `[ ]` `S-08` [MODIFY] spec v3：未送審內容與 changes SHA 不寫 state
+
+- 來源：spec 實作後修訂（2026-10-26 使用者核准），S-08 新增 (j)–(p)、REQ-05 增量丟檔改全審。
+- 檔案：`internal/reviewer/incremental.go`（`assessRun`、`fetchUpdateDiff`）、`internal/reviewer/reviewer.go`（`fetchDiff`、`reduceAndValidate`、`fetchedDiff` :39 的 `dropped`／`unavailable`／`changesSHA`）、`internal/reviewer/incremental_v3_test.go`（NEW）
+- RED：`TestIncremental_DegradeAndStateWritingV3`（REQ-06 / S-08 (j)–(p)），table-driven；(j)、(k)、(m)、(n) 不含 `mrinspect:state` 且 Warn 指出原因；(l)、(o)、(p) 寫 full r0 state；(l) 模型收到完整 MR diff 而非增量。會寫 state 的列，fake `GetMRChanges` 回 `sha=<head>`、diff fetcher source commit 為 `<head>`。逐列回報哪些列在 RED 時已綠。
+- GREEN：`assessRun` 讀 `changesSHA`（full review 不等於 pinned head → dirty）、以超出預算為由的 `dropped`（non-reviewable 不算）→ dirty、`too_large`／`collapsed`／`Truncated()` 且送審 diff 無該檔段落 → dirty；`fetchUpdateDiff` 增量 diff 經 `diffbudget` 以超出預算為由丟檔 → Warn 並改走 full review。
+- REFACTOR：SOLID＋DRY 檢查。
+- Spec re-check：`/stdd-lint`；既有 `TestIncremental_*` 與 `TestIncrementalRules_*` 全綠。
+- Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
 ## Manual verification checklist
 
 - [ ] `S-10` [MANUAL] 真實 GitLab MR 端到端，依 spec S-10 的 8 步操作與預期 note 序列；記錄編輯 note 後 `updated_at` 是否改變。
@@ -95,6 +105,7 @@ flowchart LR
     T4 --> T5
     T5 --> T6
     T6 --> T7
+    T6 --> T9
     T7 --> T8
 ```
 
@@ -106,7 +117,7 @@ flowchart LR
 - [ ] S-04 → T3；S-05 → T4
 - [ ] S-06 → T2
 - [ ] S-07 → T5
-- [ ] S-08 → T6
+- [ ] S-08 → T6；(j)–(p) → T9
 - [ ] S-09 → T5
 - [ ] S-10 → Manual checklist
 - [ ] D5 deferred 與已知限制：spec 已明列，plan 不另做

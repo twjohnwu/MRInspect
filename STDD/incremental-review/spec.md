@@ -1,7 +1,7 @@
 ---
 status: approved
 approved_date: 2026-10-26
-approved_fingerprint: 082341df59f84a6f2489b0638daf851545b53b1ff2a28a51a0defb8c98a82bbe
+approved_fingerprint: 144e37a66bccba200bca956047451cdb9d66f3d702ddd3522cb7cce3b46b77d2
 design_ux_fingerprint: null
 language: zh-TW
 ---
@@ -149,7 +149,7 @@ client（`internal/gitlab`、`internal/interfaces`、兩個 fake：`internal/tes
 
 update review：
 
-- diff 來源：`Compare(prior.sha, pinned head).Diffs`。只要有任一條 `CompareTimeout`、任一 diff 的 `TooLarge` 或 `Collapsed` 為 true、任一 diff 的 `Truncated()` 為 true、或 `Compare` 回錯 → 改走 full review 並 Warn 一行。
+- diff 來源：`Compare(prior.sha, pinned head).Diffs`。只要有任一條 `CompareTimeout`、任一 diff 的 `TooLarge` 或 `Collapsed` 為 true、任一 diff 的 `Truncated()` 為 true、`Compare` 回錯、或增量 diff 經 `diffbudget` 以超出預算為由丟掉任何檔案 → 改走 full review 並 Warn 一行。
 - 通過上述檢查的 diffs 經既有 `reduceDiff`／`ConvertChangesToDiff` 流程；丟檔揭露只針對增量範圍內的檔案。本機 go-git diff 不參與 update review。
 - prompt 額外附一段 MR 檔案清單：`GetMRChanges` 的 `new_path`（去重、排序、去除控制字元），只列不在增量 diff 內的路徑，最多 200 條；超過時最後一行寫 `... and <n> more`。標題固定為 `Other files changed in this MR (not shown in this diff):`。single 與 multi（每個 lane）都帶這段。
 - enrichment 開啟時照常運作，本 change 不改其行為。
@@ -178,10 +178,12 @@ update review：
   - pinned head 或 pinned base 為空；
   - reviewed SHA 不等於 pinned head（full review 用本機 diff 時比對本機解析到的 source commit；用 API diff 時比對 `GetMRChanges` 的 `sha`；update review 另外要求 `GetMRChanges` 的 `sha` 等於 pinned head）；
   - `GetMRChanges` 回錯或 `overflow` 為 true；
+  - full review 時 `GetMRChanges` 的 `sha` 不等於 pinned head（不論 diff 來源；丟檔後的重建會用這份 changes）；
+  - 本次有任何檔案的內容沒送進模型：(1) 被 `diffbudget` 以超出預算為由丟掉（以 non-reviewable 為由丟掉的檔案，例如 lockfile，不算）；或 (2) `GetMRChanges` 中 `too_large` 或 `collapsed` 為 true（不論是否為 rename／delete）、或 `Truncated()` 為 true 的檔案，在送進模型的 diff 中沒有該檔的段落；
   - multi 模式任一 lane 失敗，或降級為 single（`degradedToSingle`）；
   - MR 檔案清單被截斷（超過 200 條）。
 - 不寫 state 的 note 不會被選為 prior state，下一次 run 會從更早的 state 開始比，或改走全審；同一個 head 重跑也不會 skip。
-- 已知限制（不處理）：兩條 pipeline 同時跑時，ID 較大的 note 可能屬於較舊的 head，使下一次 run 多審一段（不會漏審）；MR 超過 2000 則 note 時 `ListNotes` 會失敗，每次都全審。
+- 已知限制（不處理）：兩條 pipeline 同時跑時，ID 較大的 note 可能屬於較舊的 head，使下一次 run 多審一段（不會漏審）；MR 超過 2000 則 note 時 `ListNotes` 會失敗，每次都全審；full review 也必須以超出預算為由丟檔的 MR 不會寫 state，之後每次 push 都全審並另發新 note（審查範圍等同開關關閉時）。
 
 ### S-08 降級與 state 寫入條件
 
@@ -195,11 +197,19 @@ update review：
   - (g) 本機 diff 解析到的 source commit 不等於 pinned head
   - (h) `GetMRChanges` 回 `overflow=true`
   - (i) pinned base 為空
+  - (j) full review 時 `diffbudget` 以超出預算為由丟掉一個檔案
+  - (k) full review 時 diff fetcher 回傳的 diff 不含某個 `GetMRChanges` 截斷檔案（`Truncated()` 為 true）的段落
+  - (l) update review 時增量 diff 超出預算，`diffbudget` 會丟檔；完整 MR diff 則在預算內
+  - (m) full review 時 diff fetcher 的 source commit 等於 pinned head，但 `GetMRChanges` 的 `sha` 不等於 pinned head
+  - (n) full review 時 `diffbudget` 丟檔而以 `GetMRChanges` 重建 diff，其中一個檔案為 rename 且 `too_large=true`、diff 為空
+  - (o) full review 時 `diffbudget` 只以 non-reviewable 為由丟掉一個 lockfile
+  - (p) full review 時 diff fetcher 回傳的 diff 含某個 `GetMRChanges` 截斷檔案的段落，且沒有丟檔
 - WHEN 執行
-- THEN 每個情境都 `PostNote` 一次、`UpdateNote` 零次、模型收到完整 MR diff（(f) 為各 lane）；
-  AND (a)–(e) 的 note state 為 `sha=<head> base=<base> mode=full round=0`，含 `Full review at`；
-  AND (f)–(i) 的 note 不含 `mrinspect:state`；
-  AND (b)–(i) 各有一行 Warn
+- THEN 每個情境都 `PostNote` 一次、`UpdateNote` 零次；模型收到完整 MR diff（(f) 為各 lane；(j)、(n)、(o) 為丟檔後的 diff；(k) 為不含該檔、帶揭露尾段的 diff；(l) 為完整 MR diff 而非增量）；
+  AND (a)–(e)、(l)、(o)、(p) 的 note state 為 `sha=<head> base=<base> mode=full round=0`，含 `Full review at`；
+  AND (f)–(k)、(m)、(n) 的 note 不含 `mrinspect:state`；
+  AND (b)–(n) 各有一行 Warn，(j)、(k)、(m)、(n) 的 Warn 指出原因（未送審的檔案，或 changes 不在 pinned head），(l) 的 Warn 指出增量超出預算
+- 測試前提：會寫 state 的情境，fake `GetMRChanges` 必須回 `sha=<head>`，diff fetcher 的 source commit 也必須是 `<head>`
 - Test mapping: `internal/reviewer/incremental_test.go::TestIncremental_DegradeAndStateWriting`
 - Verification command: `go test ./internal/reviewer/ -run TestIncremental_DegradeAndStateWriting -count=1 -v`
 
@@ -233,7 +243,9 @@ update review：
 - GIVEN 一個測試 repo 的 MR，CI 設 `MRI_INCREMENTAL_REVIEW=true`、`MRI_INCREMENTAL_FULL_EVERY=2`
 - WHEN 依序操作，每一步都等上一條 pipeline 跑完：建立 MR、push 一個 commit、重跑同一條 pipeline、push 一個 commit、再 push 一個 commit、在 GitLab 介面把 target branch merge 進 source branch、force-push 改寫歷史、手動編輯最新一則 bot note 的 state 行後重跑 pipeline
 - THEN note 依序為：full r0、update r1、（重跑無新 note）、update r2、full r0（達上限）、full r0（base 改變）、full r0（force-push）、full r0（被編輯的 note 不採信，因此不 skip）；每則 update 只評論該次新增的變更；state comment 在 GitLab 畫面上不可見；
-  AND 記錄 GitLab 編輯 note 後 `updated_at` 是否改變（REQ-03 (c) 依賴此行為；若不改變，回到 spec 修訂）
+  AND 記錄 GitLab 編輯 note 後 `updated_at` 是否改變（REQ-03 (c) 依賴此行為；若不改變，回到 spec 修訂）；
+  AND 對最新一則 bot note 加一個 emoji 回應後重跑，記錄 `updated_at` 是否改變（若改變，該 note 的 state 不再被採信，只會多一次全審，記錄即可）；
+  AND push 一個讓增量超過 GitLab compare 單檔或總量安全上限的 commit，記錄 compare 回應是否以 `too_large`／`collapsed`／`compare_timeout` 標示被省略的內容；同一個 commit 也檢查 MR changes 回應中超大的 rename／delete 是否帶 `too_large` 或 `collapsed`（任一處有內容被省略卻沒有標示，回到 spec 修訂）
 - Test mapping: manual
 - Verification command: manual
 
@@ -254,7 +266,7 @@ update review：
 - [ ] 決策表六列，base 改變即全審（S-04）；skip 不呼叫模型、不發 note、不打額外 API（S-05）
 - [ ] client：`MergeRequest.SHA`／`DiffRefs.BaseSHA`、`MRChangesResponse.SHA`、`Note` 時間欄位、`Change.TooLarge`／`Collapsed`、`GetMergeBase`、`Compare`、兩個 fake 同步（S-06）
 - [ ] update review：compare diff、不完整即全審、MR 檔案清單段（上限 200、去控制字元）、single 與 multi、trigger 模式 project ID（S-07）
-- [ ] 開啟時一律發新 note；降級為全審的情境；只有 clean run 寫 state（S-08）
+- [ ] 開啟時一律發新 note；降級為全審的情境；只有 clean run 寫 state，含丟檔與 changes SHA 不符（S-08）
 - [ ] 不寫 state 的 note 不會讓同 head 重跑被 skip（S-09）
 - [ ] 真實 GitLab MR 手動驗證，含 merge target、force-push、編輯 note（S-10）
 - [ ] D5 deferred 與已知限制明列；Rejected options 逐字
@@ -285,4 +297,5 @@ Panel（elf-archer／orc-saboteur／hobbit-gardener，v1 草稿，三者皆 REFU
 - REQ-05: REFUTED（orc：compare 不完整時仍會推進 state；MR 檔案清單無上限且可注入）→ v2 解出 `too_large`／`collapsed`（noldor 證實 compare diffs 有這兩欄）、任一不完整即全審、清單上限 200 並去除控制字元；hobbit 建議 S-08／S-09 合併 → v2 合併為 S-07。
 - REQ-06: REFUTED（elf、orc：降級的 run 仍寫 state，使用者重跑會被 skip；merge_base 失敗沒有執行層測試；hobbit：降級規則分散）→ v2 集中為「只有 clean run 寫 state」一條規則與 S-08 九個情境，新增 S-09 驗證不寫 state 不會造成 skip。
 - REQ-07（v1 編號，併入 v2 REQ-06）：見上。
+- 實作後修訂（2026-10-26，使用者裁決）：T6 驗證與整體 diff 審查發現 (1) `diffbudget` 丟掉或 GitLab 截斷的檔案沒送審卻仍寫 state，之後的增量只看新 commit，這些檔案要等下一次強制全審；(2) full review 只比對本機 diff 的 SHA，丟檔後用來重建的 `GetMRChanges` 若落後 pinned head，state 會記錄沒審過的 SHA → REQ-06 新增兩條不寫 state 的條件，update 增量丟檔改走全審（避免同一個 prior 一路重審變大的增量）；以 non-reviewable 為由丟掉的檔案不影響 state；S-08 新增 (j)–(p)，其中 (l)、(o)、(p) 為必須寫 state 的反向控制；S-10 新增 emoji 與 compare 省略兩項觀察。單一 challenger（elf-archer）第一版 REFUTED：`Truncated()` 漏掉 rename＋too_large、over-budget MR 會無限重審、缺反向控制 → 依上述修正。
 - 未採納：orc 建議以 HMAC 簽 state（見 Rejected options）；orc 建議改寫 `ListNotes` 為新到舊並提早停止（列 D5）；orc 指出並行 pipeline 可能使 state 回退（只會多審，列已知限制）；hobbit 建議刪除人類可讀標頭（保留，但移除 `1/5` 分母）。
