@@ -72,6 +72,13 @@ type EnrichmentConfig struct {
 	ToolTimeout time.Duration
 }
 
+// IncrementalConfig controls incremental review: a new note per push, with a
+// forced full review every FullEvery update rounds (0 = never) (REQ-01).
+type IncrementalConfig struct {
+	Enabled   bool
+	FullEvery int
+}
+
 type Config struct {
 	AIProvider    AIProvider
 	AIProviderKey string
@@ -104,7 +111,8 @@ type Config struct {
 	LogLevel       string
 	ErrorReporting ErrorReportingConfig
 
-	Enrichment EnrichmentConfig
+	Enrichment  EnrichmentConfig
+	Incremental IncrementalConfig
 }
 
 func Load() (Config, error) {
@@ -150,6 +158,10 @@ func load(requireGitLabToken bool) (Config, error) {
 		return Config{}, err
 	}
 	toolTimeoutMs, err := parseBoundedInt("MRI_ENRICHMENT_TOOL_TIMEOUT_MS", 5000, 1, 60000)
+	if err != nil {
+		return Config{}, err
+	}
+	fullEvery, err := parseBoundedInt("MRI_INCREMENTAL_FULL_EVERY", 5, 0, 100)
 	if err != nil {
 		return Config{}, err
 	}
@@ -238,6 +250,11 @@ func load(requireGitLabToken bool) (Config, error) {
 			MaxCalls:    maxCalls,
 			ResultBytes: resultBytes,
 			ToolTimeout: time.Duration(toolTimeoutMs) * time.Millisecond,
+		},
+
+		Incremental: IncrementalConfig{
+			Enabled:   getEnv("MRI_INCREMENTAL_REVIEW", "false") == "true",
+			FullEvery: fullEvery,
 		},
 	}
 

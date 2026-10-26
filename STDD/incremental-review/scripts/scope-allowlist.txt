@@ -1,0 +1,8 @@
+internal/config/config.go
+internal/config/incremental_test.go
+internal/config/envexample_test.go
+.env.example
+STDD/incremental-review/tasks.md
+STDD/incremental-review/scripts/mechanical_check.sh
+STDD/incremental-review/scripts/test-fingerprints.sha256
+STDD/incremental-review/scripts/scope-allowlist.txt

@@ -6,7 +6,7 @@ language: zh-TW
 
 依 test file 分組。例外：`internal/reviewer/incremental_test.go` 承載 S-02、S-05、S-07、S-08、S-09，拆成 T4／T5／T6 三個 task，原因是單一 task 會跨 6 個以上檔案，超過一次 dispatch 的範圍，且各組需各自的 RED/GREEN commit；後一個 task 只在前一個標 `[x]` 後才重開該檔。所有測試指令全機同時只跑一個。
 
-## T1 `[ ]` `S-01` [MODIFY] 設定與值域
+## T1 `[x]` `S-01` [MODIFY] 設定與值域
 
 - 檔案：`internal/config/config.go`（`Config`、`load` Enrichment 區塊 :235-241、`parseBoundedInt` :308）、`internal/config/envexample_test.go`（canonical :14 起，字母序）、`.env.example`、`internal/config/incremental_test.go`（NEW）
 - RED：`TestIncrementalConfig`（REQ-01 / S-01）：未設 → `Enabled=false`、`FullEvery=5`；`MRI_INCREMENTAL_REVIEW=yes` → false 不報錯；`MRI_INCREMENTAL_FULL_EVERY=-1`、`=101` 回錯且訊息含變數名與 `invalid value`；`=0` 合法；兩變數在 canonical 清單。
