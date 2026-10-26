@@ -80,7 +80,7 @@ language: zh-TW
 - Verification command: `go test ./... -count=1 && make lint`
 
 
-## T9 `[ ]` `S-08` [MODIFY] spec v3：未送審內容與 changes SHA 不寫 state
+## T9 `[x]` `S-08` [MODIFY] spec v3：未送審內容與 changes SHA 不寫 state
 
 - 來源：spec 實作後修訂（2026-10-26 使用者核准），S-08 新增 (j)–(p)、REQ-05 增量丟檔改全審。
 - 檔案：`internal/reviewer/incremental.go`（`assessRun`、`fetchUpdateDiff`）、`internal/reviewer/reviewer.go`（`fetchDiff`、`reduceAndValidate`、`fetchedDiff` :39 的 `dropped`／`unavailable`／`changesSHA`）、`internal/reviewer/incremental_v3_test.go`（NEW）

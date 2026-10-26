@@ -50,6 +50,9 @@ type fetchedDiff struct {
 	changesSHA      string
 	changesOverflow bool
 	changesErr      error
+	// allChanges is the full GetMRChanges list of a full run, before any size
+	// budget drop; changes holds only the kept files.
+	allChanges []gitlab.Change
 }
 
 // RAGReviewPath supplies retrieval data to the review path. Its API has no indexing
@@ -377,6 +380,7 @@ func (r *MRInspectReviewer) fetchDiff(ctx context.Context) (fetchedDiff, error) 
 	fetched.sourceSHA = sourceSHA
 	fetched.changesSHA = changesResp.SHA
 	fetched.changesOverflow = changesResp.Overflow
+	fetched.allChanges = changesResp.Changes
 	return fetched, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"mrinspect/internal/diff"
+	"mrinspect/internal/diffbudget"
 	"mrinspect/internal/gitlab"
 )
 
@@ -60,6 +61,12 @@ func (ir *incrementalRun) assessRun(r *MRInspectReviewer, fetched fetchedDiff, f
 		case fetched.changesOverflow:
 			ir.markDirty(r, "MR file list overflow")
 		}
+		if fetched.changesSHA != "" && fetched.changesSHA != ir.head {
+			ir.markDirty(r, "MR file list is not at the pinned head")
+		}
+		if paths := unseenPaths(fetched); len(paths) > 0 {
+			ir.markDirty(r, "content not sent to the model: "+strings.Join(paths, ", "))
+		}
 	}
 	if footer.laneFailures > 0 {
 		ir.markDirty(r, fmt.Sprintf("%d lane(s) failed", footer.laneFailures))
@@ -67,6 +74,32 @@ func (ir *incrementalRun) assessRun(r *MRInspectReviewer, fetched fetchedDiff, f
 	if footer.degradedToSingle {
 		ir.markDirty(r, "multi-lane review degraded to single")
 	}
+}
+
+// unseenPaths lists the files of a full run whose content the model did not
+// see (REQ-06): size-budget drops, and files GitLab reported too_large,
+// collapsed or truncated that have no hunk in the sent diff. Non-reviewable
+// drops do not count. Paths are cleaned so they cannot inject lines.
+func unseenPaths(fetched fetchedDiff) []string {
+	seen := map[string]bool{}
+	var paths []string
+	add := func(p string) {
+		if p = cleanPath(p); p != "" && !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	for _, d := range fetched.dropped {
+		if d.Reason == diffbudget.ReasonSizeBudget {
+			add(d.Path)
+		}
+	}
+	for _, c := range fetched.allChanges {
+		if (c.TooLarge || c.Collapsed || c.Truncated()) && !diff.HasFileHunk(fetched.diff, c.NewPath) {
+			add(c.NewPath)
+		}
+	}
+	return paths
 }
 
 // planIncremental pins head/base from the already-fetched MR and decides
@@ -138,6 +171,11 @@ func (r *MRInspectReviewer) fetchUpdateDiff(ctx context.Context, plan *increment
 	fetched, err := r.reduceAndValidate(start, rendered, cmp.Diffs)
 	if err != nil {
 		return fallback("cannot reduce compare diff", "error", err)
+	}
+	for _, d := range fetched.dropped {
+		if d.Reason == diffbudget.ReasonSizeBudget {
+			return fallback("update diff exceeds the size budget", "path", d.Path)
+		}
 	}
 
 	var mrPaths []string
