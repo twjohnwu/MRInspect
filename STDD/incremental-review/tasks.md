@@ -24,7 +24,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；`go build ./... && go vet ./...` 綠。
 - Verification command: `go test ./internal/gitlab/ -run TestClient_IncrementalEndpoints -count=1 -v`
 
-## T3 `[ ]` `S-03,S-04` [NEW] state 純函式與決策
+## T3 `[x]` `S-03,S-04` [NEW] state 純函式與決策
 
 - 檔案：`internal/reviewer/incremental_state.go`（NEW）、`internal/reviewer/incremental_state_test.go`（NEW）
 - RED：`TestState_ParseFormatAndSelect`（REQ-03 / S-03）照 spec 的 7 則 note 選中 ID 30，並驗 `ParseState(FormatState(s))==s`（full、update、round=2147483647）；`TestDecide_Table`（REQ-04 / S-04）逐列覆蓋 spec `## Decision tables` 六列，另加 `FullEvery=0` 的一列；`isAncestor` 為 `func() bool`，並斷言前四列不呼叫它（design-be 決定 6）。stub：`State`、`FormatState`、`ParseState`、`SelectPrior`、`Decide` 的簽章，一律回零值，使測試以斷言失敗而非編譯錯誤收場。
