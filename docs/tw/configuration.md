@@ -63,6 +63,8 @@ MRInspect 支援三種 AI backend，用 `AI_PROVIDER` 選擇：
 | `MRI_ENRICHMENT_MAX_CALLS` | `3` | 每個 attempt 的工具呼叫上限；1–10。整個 review 另有固定總預算 24 次，跨所有 attempt 共用。 |
 | `MRI_ENRICHMENT_RESULT_BYTES` | `8192` | 單一工具結果內容上限（bytes）；256–65536。 |
 | `MRI_ENRICHMENT_TOOL_TIMEOUT_MS` | `5000` | 單一工具執行 timeout（毫秒）；1–60000。 |
+| `MRI_INCREMENTAL_REVIEW` | `false` | 只有值剛好是 `true` 才啟用。每次 push 都發一則新的審查 note，只審自上次完整審查的 commit 之後的新 commit，並列出 MR 中其他變動的檔案；head 與 target base 都沒變時略過；force-push／rebase、target base 變更或資料不完整時退回完整審查。 |
+| `MRI_INCREMENTAL_FULL_EVERY` | `5` | 自上次完整審查後累計執行這麼多次更新審查時，強制做一次完整審查；0–100，`0` 表示不強制。 |
 | `MRI_REVIEW_DUMP_ENABLED` | _(未設定)_ | 設為精確字串 `true` 才會在 review 驗證失敗時把 failure-only 的 prompt/response dump 寫入 CI job log。預設關閉：預設的失敗 log 只帶驗證錯誤原因、找到的標題清單、清洗前後長度，以及 prompt 與 response 的 sha256 前 12 碼——絕不含內容。僅在除錯時開啟，且僅限 diff 不含敏感值的 repo。 |
 | `MRI_DAILY_TOKEN_BUDGET` | _(未設定；停用)_ | 離線 eval 的預算對照。以單次執行的 token 總量和每日預算比較，不保留跨執行狀態；usage 未知的呼叫會讓總量成為帶 `≥` 的下限，超過預算只記錄 Warn。建議值為每日 `2500000` tokens，推導自每日 20 次 review × 高情境 100k input + 8k output tokens ≈ 216 萬，再加上餘裕。定價研究取回日期為 2026-08-30；實測校準中，一輪 9 次 small-diff review 共使用 ≥79.5k tokens，每次約 6–10k，因此 250 萬是安全上限。 |
 | `MRI_EVAL_ALLOW_CI` | _(未設定)_ | 設為精確字串 `true` 才允許在 CI 內執行 `mrinspect eval`，以防意外產生三倍模式花費。 |

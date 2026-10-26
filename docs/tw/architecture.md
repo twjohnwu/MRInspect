@@ -34,7 +34,7 @@ mrinspect (Go)              superpowers layer
 
 所有層都是 `allow_failure: true`——它們只提供建議，永遠不會擋住 merge。
 
-Go 審查留言帶有固定的 `<!-- mrinspect:review -->` 標記。重跑時，mrinspect 會找出作者 ID 或使用者名稱與當前 GitLab token 使用者相符、且帶有該標記的留言，直接更新它而不是再疊一則；如果找不到可辨識為自己的留言，就貼一則新的。
+Go 審查留言帶有固定的 `<!-- mrinspect:review -->` 標記。重跑時，mrinspect 會找出作者 ID 或使用者名稱與當前 GitLab token 使用者相符、且帶有該標記的留言，直接更新它而不是再疊一則；如果找不到可辨識為自己的留言，就貼一則新的。設定 `MRI_INCREMENTAL_REVIEW=true` 時，每次未略過的執行都另發一則新 note，之後的 push 只審新增的 commit。
 
 ## 審查層一覽
 
@@ -45,7 +45,7 @@ Go 審查留言帶有固定的 `<!-- mrinspect:review -->` 標記。重跑時，
 
 ## Single 模式流程
 
-預設路徑會先驗證設定，抓取 MR 與其 diff，接著沿著 `package / artifact / baked` 這條鏈解析出 RAG store，再用專案文件、diff 與 MR metadata 組出一份 prompt。AI 回傳的內容若沒通過驗證就會重試。`IS_SELF_REFLECTION` 決定貼出審查前要不要再跑一次 reflection；而所謂貼出，是指在已有自己標記的留言時直接更新它。
+預設路徑會先驗證設定，抓取 MR 與其 diff，接著沿著 `package / artifact / baked` 這條鏈解析出 RAG store，再用專案文件、diff 與 MR metadata 組出一份 prompt。AI 回傳的內容若沒通過驗證就會重試。`IS_SELF_REFLECTION` 決定貼出審查前要不要再跑一次 reflection；而所謂貼出，是指在已有自己標記的留言時直接更新它。設定 `MRI_INCREMENTAL_REVIEW=true` 時，每次未略過的執行都另發一則新 note，之後的 push 只審新增的 commit。
 
 ```mermaid
 flowchart TD

@@ -34,7 +34,7 @@ Installs Claude Code CLI and the superpowers plugin, then runs three skills in s
 
 All layers are `allow_failure: true` — they are advisory and never block a merge.
 
-Go review notes carry the stable `<!-- mrinspect:review -->` marker. On a rerun, mrinspect looks for a marked note whose author ID or username matches the current GitLab token user and updates that note instead of stacking another one; if it cannot identify a matching owned note, it posts a new note.
+Go review notes carry the stable `<!-- mrinspect:review -->` marker. On a rerun, mrinspect looks for a marked note whose author ID or username matches the current GitLab token user and updates that note instead of stacking another one; if it cannot identify a matching owned note, it posts a new note. With `MRI_INCREMENTAL_REVIEW=true`, every non-skipped run posts a new note instead, and later pushes review only the new commits.
 
 ## Review layers at a glance
 
@@ -45,7 +45,7 @@ Go review notes carry the stable `<!-- mrinspect:review -->` marker. On a rerun,
 
 ## Single mode flow
 
-The default path validates configuration, pulls the MR and its diff, then resolves a RAG store through the `package / artifact / baked` chain before composing one prompt out of the project docs, the diff, and the MR metadata. The AI call retries when the output fails validation. `IS_SELF_REFLECTION` decides whether a second reflection pass runs before the review is posted, and posting means updating the tool's own marked note when one exists.
+The default path validates configuration, pulls the MR and its diff, then resolves a RAG store through the `package / artifact / baked` chain before composing one prompt out of the project docs, the diff, and the MR metadata. The AI call retries when the output fails validation. `IS_SELF_REFLECTION` decides whether a second reflection pass runs before the review is posted, and posting means updating the tool's own marked note when one exists. With `MRI_INCREMENTAL_REVIEW=true`, every non-skipped run posts a new note instead, and later pushes review only the new commits.
 
 ```mermaid
 flowchart TD

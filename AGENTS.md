@@ -109,6 +109,8 @@ The Go binary uses the `projects/` directory. In CI, projects are baked into the
 | `MRI_SERVICE_TYPE` | `backend` | `backend` \| `frontend` \| `ai` \| `iac` |
 | `MRI_REVIEW_MODE` | `single` | Go runner: `single` \| `multi`; `multi` runs configured lane fan-out |
 | `MRI_LANE_CONCURRENCY` | `4` | Positive integer; invalid values are logged and defaulted to `4` |
+| `MRI_INCREMENTAL_REVIEW` | `false` | Only the exact value `true` enables incremental review: each push gets a new note and reviews only commits since the last fully reviewed one; falls back to a full review when data is incomplete |
+| `MRI_INCREMENTAL_FULL_EVERY` | `5` | Integer 0–100; force a full review after this many update reviews since the last full one; `0` never forces |
 | `IS_SELF_REFLECTION` | `false` | Set `true` for a second AI validation pass |
 | `PROJECTS_DIR` | `./projects` | Override projects directory path |
 | `MRI_RAG_STORE` | _(unset)_ | Explicit SQLite path for the Go `path` source; put `path` first in the source chain for precedence |

@@ -67,7 +67,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`；`go test ./internal/diff/ ./internal/reviewer/ -count=1` 全綠。
 - Verification command: `go test ./internal/diff/ -run TestFetchWithSource -count=1 -v && go test ./internal/reviewer/ -run TestIncremental_DegradeAndStateWriting -count=1 -v`
 
-## T7 `[ ]` [INFRA] 文件同步
+## T7 `[x]` [INFRA] 文件同步
 
 - 原因：只改文件，沒有可測行為；REQ-01 的文件要求以 grep 驗證。
 - 步驟：`AGENTS.md` `## Key Environment Variables`（:101）加兩列；`docs/us/configuration.md`、`docs/tw/configuration.md`（:61 附近）加兩列；`docs/us/architecture.md`、`docs/tw/architecture.md` :37 補「`MRI_INCREMENTAL_REVIEW=true` 時每次另開新 note，不更新舊 note」。
