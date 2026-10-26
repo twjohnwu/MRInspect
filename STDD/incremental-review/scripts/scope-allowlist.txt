@@ -31,3 +31,5 @@ internal/reviewer/multilane.go
 internal/reviewer/incremental_rules_test.go
 internal/reviewer/incremental_v3_test.go
 internal/diff/sections.go
+internal/diff/sections_hunk_test.go
+internal/reviewer/incremental_unseen_test.go

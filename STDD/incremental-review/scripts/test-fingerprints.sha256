@@ -6,3 +6,5 @@ a3199a318bd063017b2bfada46d5e7ccae08b0075bed3530b9fb0bd52204bc91  ../../internal
 463b0463f263dc8681ff6da59fdf8d62be6118e53ed9c32b545d6901003d5dfa  ../../internal/diff/source_sha_test.go
 7050ac47ced8c2576d70900fc5eed27da54c04b5538e18c5c2805c66cbd0fcb6  ../../internal/reviewer/incremental_rules_test.go
 a2f4c693a70df115eed1e2322ddd916089ce93c451a21e914fd47dc37b203c08  ../../internal/reviewer/incremental_v3_test.go
+218a593e91211c1b7b0a3435896e34c44daf501cedfd17d408766d3806fb54ec  ../../internal/diff/sections_hunk_test.go
+f77c701efc5a5f4a50e431818e3258cf1c0c63cdf9214662fc3a38a63c31847f  ../../internal/reviewer/incremental_unseen_test.go
