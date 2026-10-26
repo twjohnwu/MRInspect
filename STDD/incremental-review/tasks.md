@@ -99,6 +99,16 @@ language: zh-TW
 - REFACTOR：SOLID＋DRY 檢查（non-reviewable 判定只留一份來源）。
 - Spec re-check：`/stdd-lint`；既有 `TestIncremental_*`、`TestIncrementalRules_*`、`TestHasFileHunk` 全綠。
 - Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
+
+## T11 `[ ]` `S-08` [MODIFY] spec v5：空的新檔不算未送審
+
+- 來源：spec 第三次修訂（2026-10-26 使用者裁決），S-08 新增 (s)。
+- 檔案：`internal/reviewer/incremental.go`（`unseenPaths`）、`internal/reviewer/incremental_v5_test.go`（NEW）
+- RED：`TestIncremental_DegradeAndStateWritingV5`（REQ-06 / S-08 (s)）：空的新檔（`new_file=true`、diff 為空、`too_large` 與 `collapsed` 皆為 false），送審 diff 沒有它的 hunk → 寫 full r0 state，沒有 `not sent to the model` Warn；另加對照：同一個新檔但 `too_large=true` → 不寫 state。會寫 state 的列，fake `GetMRChanges` 回 `sha=<head>`、diff fetcher source commit 為 `<head>`。
+- GREEN：`unseenPaths` 略過空的新檔；`gitlab.Change.Truncated()` 與 note footer 的「無法審查」行為不變。
+- REFACTOR：SOLID＋DRY 檢查。
+- Spec re-check：`/stdd-lint`；既有 `TestIncremental_*`、`TestIncrementalRules_*`、`TestHasFileHunk` 全綠。
+- Verification command: `go test ./internal/reviewer/ -run 'TestIncremental_DegradeAndStateWriting' -count=1 -v`
 ## Manual verification checklist
 
 - [ ] `S-10` [MANUAL] 真實 GitLab MR 端到端，依 spec S-10 的 8 步操作與預期 note 序列；記錄編輯 note 後 `updated_at` 是否改變。
@@ -117,6 +127,7 @@ flowchart LR
     T6 --> T7
     T6 --> T9
     T9 --> T10
+    T10 --> T11
     T7 --> T8
 ```
 
@@ -128,7 +139,7 @@ flowchart LR
 - [ ] S-04 → T3；S-05 → T4
 - [ ] S-06 → T2
 - [ ] S-07 → T5
-- [ ] S-08 → T6；(j)–(p) → T9；(q)–(r) → T10
+- [ ] S-08 → T6；(j)–(p) → T9；(q)–(r) → T10；(s) → T11
 - [ ] S-09 → T5
 - [ ] S-10 → Manual checklist
 - [ ] D5 deferred 與已知限制：spec 已明列，plan 不另做
