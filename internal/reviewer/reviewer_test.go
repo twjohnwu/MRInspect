@@ -521,22 +521,51 @@ type fakeGitLab struct {
 	currentErr  error
 	listErr     error
 	updateCalls []fakeNoteUpdate
+
+	mergeBase    string
+	mergeBaseErr error
+	compare      gitlab.CompareResponse
+	compareErr   error
+
+	mergeBaseCalls int
+	compareCalls   int
+	postCalls      int
+	changesCalls   int
+	getMRCalls     int
+	listCalls      int
+
+	lastMergeBaseProject string
+	lastCompareProject   string
 }
 
 func (*fakeGitLab) HealthCheck(context.Context) bool { return true }
 func (g *fakeGitLab) CurrentUser(context.Context) (gitlab.Author, error) {
 	return g.currentUser, g.currentErr
 }
-func (*fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.MergeRequest, error) {
+func (g *fakeGitLab) GetMergeRequest(context.Context, string, string) (gitlab.MergeRequest, error) {
+	g.getMRCalls++
 	return gitlab.MergeRequest{IID: 7, Title: "RAG test", SourceBranch: "feature", TargetBranch: "main"}, nil
 }
-func (*fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
+func (g *fakeGitLab) GetMRChanges(context.Context, string, string) (gitlab.MRChangesResponse, error) {
+	g.changesCalls++
 	return gitlab.MRChangesResponse{}, nil
 }
+func (g *fakeGitLab) GetMergeBase(_ context.Context, projectID, _, _ string) (string, error) {
+	g.mergeBaseCalls++
+	g.lastMergeBaseProject = projectID
+	return g.mergeBase, g.mergeBaseErr
+}
+func (g *fakeGitLab) Compare(_ context.Context, projectID, _, _ string) (gitlab.CompareResponse, error) {
+	g.compareCalls++
+	g.lastCompareProject = projectID
+	return g.compare, g.compareErr
+}
 func (g *fakeGitLab) ListNotes(context.Context, string, string) ([]gitlab.Note, error) {
+	g.listCalls++
 	return append([]gitlab.Note(nil), g.listedNotes...), g.listErr
 }
 func (g *fakeGitLab) PostNote(_ context.Context, _, _, body string) (gitlab.Note, error) {
+	g.postCalls++
 	g.notes = append(g.notes, body)
 	note := gitlab.Note{ID: 1000 + len(g.notes), Body: body, Author: g.currentUser}
 	g.listedNotes = append(g.listedNotes, note)

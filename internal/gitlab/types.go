@@ -7,15 +7,22 @@ type Author struct {
 }
 
 type MergeRequest struct {
-	ID           int    `json:"id"`
-	IID          int    `json:"iid"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	SourceBranch string `json:"source_branch"`
-	TargetBranch string `json:"target_branch"`
-	Author       Author `json:"author"`
-	ChangesCount string `json:"changes_count"`
-	WebURL       string `json:"web_url"`
+	ID           int      `json:"id"`
+	IID          int      `json:"iid"`
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	SourceBranch string   `json:"source_branch"`
+	TargetBranch string   `json:"target_branch"`
+	Author       Author   `json:"author"`
+	ChangesCount string   `json:"changes_count"`
+	WebURL       string   `json:"web_url"`
+	SHA          string   `json:"sha"`
+	DiffRefs     DiffRefs `json:"diff_refs"`
+}
+
+// DiffRefs carries the commit anchors GitLab reports for a merge request.
+type DiffRefs struct {
+	BaseSHA string `json:"base_sha"`
 }
 
 type Change struct {
@@ -27,6 +34,8 @@ type Change struct {
 	DeletedFile bool   `json:"deleted_file"`
 	AMode       string `json:"a_mode"`
 	BMode       string `json:"b_mode"`
+	TooLarge    bool   `json:"too_large"`
+	Collapsed   bool   `json:"collapsed"`
 }
 
 // Truncated reports whether GitLab returned an empty diff for a file whose
@@ -43,10 +52,20 @@ func (c Change) Truncated() bool {
 type MRChangesResponse struct {
 	Changes  []Change `json:"changes"`
 	Overflow bool     `json:"overflow"`
+	SHA      string   `json:"sha"`
+}
+
+// CompareResponse is the repository compare payload; CompareTimeout marks a
+// partial result when GitLab timed out computing the diffs.
+type CompareResponse struct {
+	Diffs          []Change `json:"diffs"`
+	CompareTimeout bool     `json:"compare_timeout"`
 }
 
 type Note struct {
-	ID     int    `json:"id"`
-	Body   string `json:"body"`
-	Author Author `json:"author"`
+	ID        int    `json:"id"`
+	Body      string `json:"body"`
+	Author    Author `json:"author"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }

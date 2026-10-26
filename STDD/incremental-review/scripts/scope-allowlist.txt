@@ -6,3 +6,9 @@ STDD/incremental-review/tasks.md
 STDD/incremental-review/scripts/mechanical_check.sh
 STDD/incremental-review/scripts/test-fingerprints.sha256
 STDD/incremental-review/scripts/scope-allowlist.txt
+internal/gitlab/types.go
+internal/gitlab/client.go
+internal/gitlab/incremental_client_test.go
+internal/interfaces/interfaces.go
+internal/testfake/gitlab_client.go
+internal/reviewer/reviewer_test.go

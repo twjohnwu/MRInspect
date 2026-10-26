@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -78,6 +79,38 @@ func (c *Client) GetMRChanges(ctx context.Context, projectID, mrIID string) (MRC
 	if resp.Overflow {
 		c.log.Warn("gitlab reported diff overflow; some file diffs may be unavailable",
 			"projectID", projectID, "mrIID", mrIID)
+	}
+	return resp, nil
+}
+
+// GetMergeBase returns the SHA of the best common ancestor of refs a and b.
+func (c *Client) GetMergeBase(ctx context.Context, projectID, a, b string) (string, error) {
+	query := url.Values{}
+	query.Add("refs[]", a)
+	query.Add("refs[]", b)
+	path := fmt.Sprintf("/projects/%s/repository/merge_base?%s", projectID, query.Encode())
+	var resp struct {
+		ID string `json:"id"`
+	}
+	if err := c.getJSON(ctx, path, &resp); err != nil {
+		return "", fmt.Errorf("GetMergeBase: %w", err)
+	}
+	if resp.ID == "" {
+		return "", errors.New("GetMergeBase: empty merge base id")
+	}
+	return resp.ID, nil
+}
+
+// Compare returns the straight diff between from and to.
+func (c *Client) Compare(ctx context.Context, projectID, from, to string) (CompareResponse, error) {
+	query := url.Values{}
+	query.Set("from", from)
+	query.Set("to", to)
+	query.Set("straight", "true")
+	path := fmt.Sprintf("/projects/%s/repository/compare?%s", projectID, query.Encode())
+	var resp CompareResponse
+	if err := c.getJSON(ctx, path, &resp); err != nil {
+		return CompareResponse{}, fmt.Errorf("Compare: %w", err)
 	}
 	return resp, nil
 }

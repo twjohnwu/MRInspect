@@ -15,6 +15,8 @@ type IGitLabClient interface {
 	CurrentUser(ctx context.Context) (gitlab.Author, error)
 	GetMergeRequest(ctx context.Context, projectID, mrIID string) (gitlab.MergeRequest, error)
 	GetMRChanges(ctx context.Context, projectID, mrIID string) (gitlab.MRChangesResponse, error)
+	GetMergeBase(ctx context.Context, projectID, a, b string) (string, error)
+	Compare(ctx context.Context, projectID, from, to string) (gitlab.CompareResponse, error)
 	ListNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error)
 	PostNote(ctx context.Context, projectID, mrIID, body string) (gitlab.Note, error)
 	UpdateNote(ctx context.Context, projectID, mrIID string, noteID int, body string) (gitlab.Note, error)

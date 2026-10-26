@@ -15,7 +15,7 @@ language: zh-TW
 - Spec re-check：`/stdd-lint`。
 - Verification command: `go test ./internal/config/ -run 'TestIncrementalConfig|TestEnvExample' -count=1 -v`
 
-## T2 `[ ]` `S-06` [MODIFY] GitLab client 新欄位與兩個新方法
+## T2 `[x]` `S-06` [MODIFY] GitLab client 新欄位與兩個新方法
 
 - 檔案：`internal/gitlab/types.go`（`MergeRequest` :9、`Change` :21、`MRChangesResponse` :43、`Note` :48）、`internal/gitlab/client.go`（`getJSON` :165）、`internal/interfaces/interfaces.go`（`IGitLabClient` :13）、`internal/testfake/gitlab_client.go`（`FakeGitLabClient` :104）、`internal/reviewer/reviewer_test.go`（`fakeGitLab` :517）、`internal/gitlab/incremental_client_test.go`（NEW）
 - RED：`TestClient_IncrementalEndpoints`（REQ-05 / S-06），httptest server：解出 `MergeRequest.SHA`、`DiffRefs.BaseSHA`、`MRChangesResponse.SHA`、`Note.CreatedAt`／`UpdatedAt`；merge_base query 恰含 `refs[]=aaa`、`refs[]=bbb` 並回 `id`；compare 含 `from=aaa`、`to=bbb`、`straight=true`，解出 `Diffs`（`a_mode`、`b_mode`、`too_large`、`collapsed`）與 `CompareTimeout`；404 時兩方法回 error。stub：新欄位先加上（不帶 json tag），方法簽章先回 `errors.New("not implemented")`，使 RED 以斷言失敗而非編譯錯誤收場。

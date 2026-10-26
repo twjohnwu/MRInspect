@@ -50,6 +50,20 @@ type UpdateNoteResponse struct {
 	Delay time.Duration
 }
 
+// MergeBaseResponse is one programmed result from FakeGitLabClient.GetMergeBase.
+type MergeBaseResponse struct {
+	SHA   string
+	Err   error
+	Delay time.Duration
+}
+
+// CompareResponse is one programmed result from FakeGitLabClient.Compare.
+type CompareResponse struct {
+	Compare gitlab.CompareResponse
+	Err     error
+	Delay   time.Duration
+}
+
 // HealthCheckCall records the context of one HealthCheck call.
 type HealthCheckCall struct {
 	Context context.Context
@@ -72,6 +86,22 @@ type MRChangesCall struct {
 	Context   context.Context
 	ProjectID string
 	MRIID     string
+}
+
+// MergeBaseCall records the arguments of one GetMergeBase call.
+type MergeBaseCall struct {
+	Context   context.Context
+	ProjectID string
+	A         string
+	B         string
+}
+
+// CompareCall records the arguments of one Compare call.
+type CompareCall struct {
+	Context   context.Context
+	ProjectID string
+	From      string
+	To        string
 }
 
 // PostNoteCall records the arguments of one PostNote call.
@@ -114,6 +144,10 @@ type FakeGitLabClient struct {
 	DefaultPostNoteResponse     PostNoteResponse
 	UpdateNoteResponses         []UpdateNoteResponse
 	DefaultUpdateNoteResponse   UpdateNoteResponse
+	MergeBaseResponses          []MergeBaseResponse
+	DefaultMergeBaseResponse    MergeBaseResponse
+	CompareResponses            []CompareResponse
+	DefaultCompareResponse      CompareResponse
 
 	mu                sync.Mutex
 	healthCheckIndex  int
@@ -122,6 +156,8 @@ type FakeGitLabClient struct {
 	listNotesIndex    int
 	postNoteIndex     int
 	updateNoteIndex   int
+	mergeBaseIndex    int
+	compareIndex      int
 	healthCheckCalls  []HealthCheckCall
 	currentUserCalls  []CurrentUserCall
 	mergeRequestCalls []MergeRequestCall
@@ -129,6 +165,8 @@ type FakeGitLabClient struct {
 	listNotesCalls    []ListNotesCall
 	postNoteCalls     []PostNoteCall
 	updateNoteCalls   []UpdateNoteCall
+	mergeBaseCalls    []MergeBaseCall
+	compareCalls      []CompareCall
 }
 
 // CurrentUser records its context and returns the T11 compile-only default.
@@ -394,3 +432,88 @@ func cloneMRChanges(changes gitlab.MRChangesResponse) gitlab.MRChangesResponse {
 }
 
 var _ interfaces.IGitLabClient = (*FakeGitLabClient)(nil)
+
+// GetMergeBase records its arguments and returns the next programmed response.
+func (f *FakeGitLabClient) GetMergeBase(ctx context.Context, projectID, a, b string) (string, error) {
+	f.mu.Lock()
+	f.mergeBaseCalls = append(f.mergeBaseCalls, MergeBaseCall{
+		Context: ctx, ProjectID: projectID, A: a, B: b,
+	})
+	response := f.DefaultMergeBaseResponse
+	if f.mergeBaseIndex < len(f.MergeBaseResponses) {
+		response = f.MergeBaseResponses[f.mergeBaseIndex]
+		f.mergeBaseIndex++
+	}
+	f.mu.Unlock()
+
+	if err := waitContext(ctx, response.Delay); err != nil {
+		return "", err
+	}
+	return response.SHA, response.Err
+}
+
+// Compare records its arguments and returns the next programmed response.
+func (f *FakeGitLabClient) Compare(ctx context.Context, projectID, from, to string) (gitlab.CompareResponse, error) {
+	f.mu.Lock()
+	f.compareCalls = append(f.compareCalls, CompareCall{
+		Context: ctx, ProjectID: projectID, From: from, To: to,
+	})
+	response := f.DefaultCompareResponse
+	if f.compareIndex < len(f.CompareResponses) {
+		response = f.CompareResponses[f.compareIndex]
+		f.compareIndex++
+	}
+	f.mu.Unlock()
+
+	if err := waitContext(ctx, response.Delay); err != nil {
+		return gitlab.CompareResponse{}, err
+	}
+	return cloneCompare(response.Compare), response.Err
+}
+
+// EnqueueMergeBaseResponses appends responses to the GetMergeBase response queue.
+func (f *FakeGitLabClient) EnqueueMergeBaseResponses(responses ...MergeBaseResponse) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.MergeBaseResponses = append(f.MergeBaseResponses, responses...)
+}
+
+// EnqueueCompareResponses appends responses to the Compare response queue.
+func (f *FakeGitLabClient) EnqueueCompareResponses(responses ...CompareResponse) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.CompareResponses = append(f.CompareResponses, responses...)
+}
+
+// GetMergeBaseCallCount returns the number of GetMergeBase calls.
+func (f *FakeGitLabClient) GetMergeBaseCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.mergeBaseCalls)
+}
+
+// GetMergeBaseCalls returns a snapshot of recorded GetMergeBase calls.
+func (f *FakeGitLabClient) GetMergeBaseCalls() []MergeBaseCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]MergeBaseCall(nil), f.mergeBaseCalls...)
+}
+
+// CompareCallCount returns the number of Compare calls.
+func (f *FakeGitLabClient) CompareCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.compareCalls)
+}
+
+// CompareCalls returns a snapshot of recorded Compare calls.
+func (f *FakeGitLabClient) CompareCalls() []CompareCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]CompareCall(nil), f.compareCalls...)
+}
+
+func cloneCompare(compare gitlab.CompareResponse) gitlab.CompareResponse {
+	compare.Diffs = append([]gitlab.Change(nil), compare.Diffs...)
+	return compare
+}
